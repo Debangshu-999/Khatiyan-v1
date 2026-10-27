@@ -1,3 +1,5 @@
+import { ModalTitle } from "@/components/modal-title";
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { Children, Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,7 +30,6 @@ import {
 } from "@/components/skeletons/owner";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, ViewOnlyChip, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
-import { HeaderGradient } from "@/components/header-gradient";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { PaymentMethodIcon } from "@/features/billing/payment-method-toggle";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
@@ -160,9 +161,9 @@ function StaffGroupCard({
   return (
     <Card style={{ padding: spacing.md }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <Text numberOfLines={1} style={[type.display, { color: colors.ink, flex: 1, fontSize: 18, lineHeight: 23 }]}>
+        <FitText numberOfLines={1} style={[type.display, { color: colors.ink, flex: 1, fontSize: 18, lineHeight: 23 }]}>
           {title}
-        </Text>
+        </FitText>
         {headerAccessory}
         {actionLabel && onAction ? (
           <AnimatedPressable
@@ -181,9 +182,9 @@ function StaffGroupCard({
             }}
           >
             <Plus color={colors.primary} size={15} strokeWidth={2.1} />
-            <Text numberOfLines={1} style={[type.caption, { color: colors.primary, fontSize: 12, fontWeight: "700" }]}>
+            <FitText numberOfLines={1} style={[type.caption, { color: colors.primary, fontSize: 12, fontWeight: "700" }]}>
               {actionLabel}
-            </Text>
+            </FitText>
           </AnimatedPressable>
         ) : null}
       </View>
@@ -221,7 +222,7 @@ function SalaryFilterButton({
         paddingHorizontal: spacing.xs,
       }}
     >
-      <Text
+      <FitText
         numberOfLines={1}
         style={[
           type.caption,
@@ -233,7 +234,7 @@ function SalaryFilterButton({
         ]}
       >
         {label}
-      </Text>
+      </FitText>
       <View
         style={{
           backgroundColor: active ? colors.primary : "transparent",
@@ -258,7 +259,7 @@ export function StaffWorkspace() {
 
   if (!property) {
     return (
-      <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]} surface={colors.surface}
+      <ScreenScrollView safeAreaEdges={["top", "bottom"]} surface={colors.surface}
       contentContainerStyle={{ gap: spacing.lg, paddingBottom: PINNED_FOOTER_CLEARANCE }}
     >
         <StaffHeader />
@@ -273,7 +274,7 @@ export function StaffWorkspace() {
   }
 
   return (
-    <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
       <StaffHeader propertyName={property.name} />
 
       {/* Pulled up from the container's gap so the switcher sits close under
@@ -315,7 +316,7 @@ function ManagerStaffView({ property }: { property: OwnerProperty }) {
   const employment = employmentQuery.data;
 
   return (
-    <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ gap: spacing.lg }} surface={colors.surface}>
       <StaffHeader propertyName={property.name} viewOnly />
 
       <Section title="My employment">
@@ -329,8 +330,8 @@ function ManagerStaffView({ property }: { property: OwnerProperty }) {
                   <BriefcaseBusiness color={colors.ink} size={30} strokeWidth={2.1} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 18 }]}>{employment.fullName}</Text>
-                  <Text style={[type.caption, { color: colors.muted }]}>{employment.referenceCode}  ·  {employment.phone}</Text>
+                  <FitText style={[type.bodyStrong, { color: colors.ink, fontSize: 18 }]}>{cardName(employment.fullName)}</FitText>
+                  <Text style={[type.caption, { color: colors.muted }]}>{employment.referenceCode}  ·  {formatIndianPhone(employment.phone)}</Text>
                 </View>
               </View>
               <DetailRow label="Salary" value={salaryRateLabel(employment.salaryStructure, employment.salaryRatePaise)} />
@@ -368,15 +369,15 @@ function ManagerStaffView({ property }: { property: OwnerProperty }) {
                 <UsersRound color={colors.ink} size={28} strokeWidth={2.1} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{member.categoryName}</Text>
-                <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{member.fullName}</Text>
+                <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{member.categoryName}</FitText>
+                <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{cardName(member.fullName)}</FitText>
                 {/* Whether they work here, not whether their ID was checked. The
                     redacted manager view carries no dates, so this is the coarser
                     of the two answers — but it is at least an answer about their
                     employment. */}
-                <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+                <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
                   {member.active ? "Active" : "Ended"}
-                </Text>
+                </FitText>
               </View>
             </View>
             ))}
@@ -761,8 +762,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
               <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 18 }]}>
                 Payable this month
               </Text>
-              <Text
-                adjustsFontSizeToFit
+              <FitText
                 numberOfLines={1}
                 style={{
                   color: colors.primaryDeep,
@@ -773,7 +773,7 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
                 }}
               >
                 {formatMoneyFull(salaryTotal.totalPayableThisMonthPaise)}
-              </Text>
+              </FitText>
               <Text style={[type.description, { color: colors.muted }]}>
                 Opened months plus projected pay
               </Text>
@@ -1031,11 +1031,11 @@ function DailyPayableCard({ kind, person }: { kind: "MANAGER" | "STAFF_MEMBER"; 
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
+          <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</FitText>
           <PayStructurePill label="Daily" />
         </View>
-        <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{person.fullName}</Text>
-        <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{formatMoneyPaise(person.salaryRatePaise)} / day × {days} days</Text>
+        <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>{cardName(person.fullName)}</FitText>
+        <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{formatMoneyPaise(person.salaryRatePaise)} / day × {days} days</FitText>
       </View>
       <View style={{ alignItems: "flex-end", gap: 2 }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]}>Payable</Text>
@@ -1267,14 +1267,13 @@ function PayslipList({
               <Text style={[type.caption, { color: colors.muted }]}>{humanizeToken(payslip.paymentMethod)}</Text>
             </View>
             {showHolder ? <Text style={[type.bodyStrong, { color: colors.ink }]}>{payslip.holderName}</Text> : null}
-            <Text
-              adjustsFontSizeToFit
+            <FitText
               minimumFontScale={0.6}
               numberOfLines={1}
               style={[type.metric, { color: colors.ink, fontSize: 22, lineHeight: 26 }]}
             >
               {formatMoneyPaise(payslip.amountPaise)}
-            </Text>
+            </FitText>
             <Text style={[type.caption, { color: colors.muted }]}>
               Paid {formatDate(payslip.paidOn)}
               {payslip.referenceText ? `  ·  ${payslip.referenceText}` : ""}
@@ -1515,9 +1514,9 @@ function HistoryCard({ item, propertyId }: { item: EmployeeHistoryItem; property
             <Icon color={colors.muted} size={22} strokeWidth={2.1} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{item.holderType === "MANAGER" ? "Manager" : item.categoryName}</Text>
-            <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 18 }]}>{item.fullName}</Text>
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{item.referenceCode}  ·  {salaryRateLabel(item.salaryStructure, item.salaryRatePaise)}</Text>
+            <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{item.holderType === "MANAGER" ? "Manager" : item.categoryName}</FitText>
+            <FitText style={[type.bodyStrong, { color: colors.ink, fontSize: 18 }]}>{cardName(item.fullName)}</FitText>
+            <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{item.referenceCode}  ·  {salaryRateLabel(item.salaryStructure, item.salaryRatePaise)}</FitText>
           </View>
         </View>
         <View style={{ gap: spacing.sm }}>
@@ -1618,9 +1617,9 @@ function CategoryFilterBar({
         <Filter color={colors.kicker} size={19} strokeWidth={2.2} />
         <View style={{ flex: 1 }}>
           <Text style={[type.caption, { color: colors.kicker }]}>Category</Text>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+          <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
             {selected ?? "All staff"}
-          </Text>
+          </FitText>
         </View>
         <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
       </AnimatedPressable>
@@ -1686,22 +1685,22 @@ function ManagerCard({ entry, onOpen }: { entry: ManagerDirectoryEntry; onOpen: 
     >
       <BriefcaseBusiness color={colors.primary} size={30} strokeWidth={2} />
       <View style={{ flex: 1, gap: 3 }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{employment?.referenceCode ?? "Manager"}</Text>
-        <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 16 }]} numberOfLines={1}>{assignment.managerFullName}</Text>
+        <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{employment?.referenceCode ?? "Manager"}</FitText>
+        <FitText style={[type.bodyStrong, { color: colors.ink, fontSize: 16 }]} numberOfLines={1}>{assignment.managerFullName}</FitText>
         {/* The same line staff carry: what they are paid, then where they are
             in their employment. A manager whose start date has not arrived is
             assigned but not yet working, and nothing on the row said so. */}
         {employment ? (
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            <Text style={[type.caption, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>
+            <FitText style={[type.caption, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>
               {salaryRateLabel(employment.salaryStructure, employment.salaryRatePaise)}
-            </Text>
+            </FitText>
             <PersonStatusChip label={employmentStatus(employment)} />
           </View>
         ) : (
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
-            {assignment.managerPhone}
-          </Text>
+          <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+            {formatIndianPhone(assignment.managerPhone)}
+          </FitText>
         )}
       </View>
       <View style={staffRoundButtonStyle(colors)}>
@@ -1729,7 +1728,7 @@ function ManagerDetailModal({ entry, onClose, onEdit, onPermissions, onRemove, o
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 22 }]}>{assignment.managerFullName}</Text>
-          <Text style={[type.caption, { color: colors.muted }]}>{assignment.managerPhone}</Text>
+          <Text style={[type.caption, { color: colors.muted }]}>{formatIndianPhone(assignment.managerPhone)}</Text>
           <Text style={[type.caption, { color: colors.kicker }]}>{employment?.referenceCode ?? "Employment record loading"}</Text>
         </View>
       </View>
@@ -1763,7 +1762,7 @@ function ManagerDetailModal({ entry, onClose, onEdit, onPermissions, onRemove, o
             <AnimatedPressable key={target.id} onPress={() => onShift(target)} style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
               <ArrowLeftRight color={colors.primary} size={18} />
               <View style={{ flex: 1 }}>
-                <Text style={[type.bodyStrong, { color: colors.ink }]}>{target.name}</Text>
+                <FitText style={[type.bodyStrong, { color: colors.ink }]}>{cardName(target.name)}</FitText>
                 <Text style={[type.caption, { color: colors.muted }]}>{[target.city, target.state].filter(Boolean).join(", ")}</Text>
               </View>
               <ChevronRight color={colors.muted} size={18} />
@@ -1895,20 +1894,20 @@ function PersonCard({
       <Icon color={colors.primary} size={32} strokeWidth={2} />
       <View style={{ flex: 1, gap: 3 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</Text>
+          <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>{meta}</FitText>
           {payStructure ? <PayStructurePill label={payStructure} /> : null}
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs, flexWrap: "wrap" }}>
-          <Text style={[type.bodyStrong, { color: colors.ink, fontSize: 16, flexShrink: 1 }]} numberOfLines={1}>{title}</Text>
+          <FitText style={[type.bodyStrong, { color: colors.ink, fontSize: 16, flexShrink: 1 }]} numberOfLines={1}>{title}</FitText>
           {category ? <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}><Folder color={colors.muted} size={12} /><Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>{category}</Text></View> : null}
         </View>
         {status ? (
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            <Text style={[type.description, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>{detail}</Text>
+            <FitText style={[type.description, { color: colors.muted, flexShrink: 1 }]} numberOfLines={1}>{detail}</FitText>
             <PersonStatusChip label={status} />
           </View>
         ) : (
-          <Text style={[type.description, { color: colors.muted }]} numberOfLines={1}>{detail}</Text>
+          <FitText style={[type.description, { color: colors.muted }]} numberOfLines={1}>{detail}</FitText>
         )}
       </View>
       <View style={staffRoundButtonStyle(colors)}>
@@ -1993,18 +1992,17 @@ function AmountMetric({ label, value }: { label: string; value: string }) {
   const { colors, type } = useTheme();
   return (
     <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 12, flex: 1, gap: 2, padding: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{label}</Text>
+      <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>{label}</FitText>
       {/* Shrinks to fit rather than clipping. Three of these share a row, so a
           six-figure amount has roughly a third of the width — MetricTile solves
           the same problem the same way. */}
-      <Text
-        adjustsFontSizeToFit
+      <FitText
         minimumFontScale={0.6}
         numberOfLines={1}
         style={[type.bodyStrong, { color: colors.ink, fontVariant: ["tabular-nums"] }]}
       >
         {value}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -2402,9 +2400,9 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
             paddingHorizontal: spacing.md,
           }}
         >
-          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 15 }}>
-            {manager.fullName}
-          </Text>
+          <FitText style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 15 }}>
+            {cardName(manager.fullName)}
+          </FitText>
         </View>
         <Text style={[type.caption, { color: colors.kicker, lineHeight: 17 }]}>
           Set on their own account, so only they can change it.
@@ -2900,11 +2898,11 @@ function Sheet({
           >
             <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={2}>{title}</Text>
+                <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }} >{title}</ModalTitle>
                 {subtitle ? (
-                  <Text style={[type.modalDescription, { color: colors.muted }]} numberOfLines={2}>
+                  <FitText style={[type.modalDescription, { color: colors.muted }]} numberOfLines={2}>
                     {subtitle}
-                  </Text>
+                  </FitText>
                 ) : null}
               </View>
               <IconButton accessibilityLabel="Close" filled={filledClose} icon={X} onPress={() => dismiss()} />
@@ -3093,3 +3091,5 @@ import { CalendarDays, Folder, UserRoundCog } from "lucide-react-native";
 import { CheckCircle2 } from "lucide-react-native";
 import { ListEnd } from "@/components/list-end";
 import { PayrollPayableVector } from "@/components/payroll-payable-vector";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";

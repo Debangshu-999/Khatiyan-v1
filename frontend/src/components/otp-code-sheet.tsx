@@ -1,12 +1,14 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useState, type ReactNode } from "react";
-import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
-import { CodeField } from "@/features/auth/auth-ui";
-import { ActionButton, IconButton } from "@/features/owner/owner-ui";
+import { CodeField, OtpBoxes } from "@/features/auth/auth-ui";
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { ActionButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -24,6 +26,7 @@ export const RESEND_COOLDOWN_SECONDS = 30;
  * agreement has no sheet of its own, so it uses {@link OtpCodeSheet}.
  */
 export function OtpCodeEntry({
+  boxed = false,
   busy,
   busyLabel,
   cooldownSeconds = RESEND_COOLDOWN_SECONDS,
@@ -33,6 +36,8 @@ export function OtpCodeEntry({
   onSubmit,
   resending,
 }: {
+  /** Signing uses auth's six boxes with explicit confirmation. */
+  boxed?: boolean;
   busy: boolean;
   /** The confirm button's label while the code is being checked. */
   busyLabel: string;
@@ -48,7 +53,7 @@ export function OtpCodeEntry({
   onSubmit: (otp: string) => void;
   resending: boolean;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const [otp, setOtp] = useState("");
   const [cooldown, setCooldown] = useState(cooldownSeconds);
 
@@ -67,18 +72,15 @@ export function OtpCodeEntry({
 
   return (
     <View style={{ gap: spacing.md }}>
-      <Text style={[type.modalDescription, { color: colors.muted }]}>
+      <Text style={[type.modalDescription, { color: colors.muted }, boxed ? { fontFamily: fonts.sans } : undefined]}>
         {message}
       </Text>
 
-      {/* The same one field the auth screens use, not six boxes over a
-          hidden input. That arrangement stretched a zero-opacity TextInput
-          across the boxes to hold focus, and a field nobody can see is a field
-          whose taps are one layout change away from landing nowhere — which is
-          exactly how it ended up unusable inside the signing screen. One real
-          input cannot fail that way, and it keeps paste, autofill and the SMS
-          suggestion. */}
-      <CodeField label="Six-digit code" onChangeText={setOtp} value={otp} />
+      {boxed ? (
+        <OtpBoxes value={otp} onChangeText={setOtp} busy={busy || resending} />
+      ) : (
+        <CodeField label="Six-digit code" onChangeText={setOtp} value={otp} />
+      )}
 
       {/* Side by side: confirming and asking again are the two answers to the
           same question, and stacking them made the resend read as a lesser
@@ -95,9 +97,13 @@ export function OtpCodeEntry({
           variant="secondary"
         />
         <ActionButton
-          disabled={!complete || busy}
+          disabled={!complete || busy || resending}
           label={busy ? busyLabel : confirmLabel}
-          onPress={() => onSubmit(otp)}
+          onPress={() => {
+            if (!complete || busy || resending) return;
+            if (boxed) Keyboard.dismiss();
+            onSubmit(otp);
+          }}
         />
       </View>
     </View>
@@ -148,7 +154,7 @@ export function OtpCodeSheet({
   const keyboardInset = useKeyboardInset();
 
   return (
-    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
+    <BottomSheetModal dismissOnDrag={false} navigationBarTranslucent onRequestClose={onClose} onDismissStart={() => Keyboard.dismiss()} statusBarTranslucent visible>
       {(dismiss) => <>
       {/* iOS keeps the platform avoider, where it works. Android measures the
           keyboard itself and lifts the sheet by margin: "padding" there is
@@ -157,7 +163,11 @@ export function OtpCodeSheet({
           padding never returns to zero on dismissal, which left the sheet
           shoved up the screen after the keyboard closed. */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <View style={{ flex: 1, justifyContent: "flex-end", marginBottom: keyboardInset }}>
+          <AnimatedPressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => dismiss()}
+            style={{ alignSelf: "center", marginBottom: 14, backgroundColor: colors.surface, borderRadius: 24, width: 46, height: 46, alignItems: "center", justifyContent: "center" }}>
+            <X color={colors.ink} size={23} />
+          </AnimatedPressable>
           <View
             style={{
               backgroundColor: colors.surface,
@@ -166,19 +176,18 @@ export function OtpCodeSheet({
               borderTopRightRadius: 24,
               borderWidth: 1,
               gap: spacing.md,
-              marginBottom: keyboardInset,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}
           >
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22 }}>
+            <View>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: "center" }}>
                 {title}
-              </Text>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
+              </ModalTitle>
             </View>
 
             <OtpCodeEntry
+              boxed
               busy={busy}
               busyLabel={busyLabel}
               confirmLabel={confirmLabel}

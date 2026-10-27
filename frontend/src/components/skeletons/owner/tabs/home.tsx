@@ -6,6 +6,7 @@ import {
   OwnerDigestCardSkeleton,
   OwnerMetricGridSkeleton,
 } from "@/components/skeletons/owner/shared";
+import { tabShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -28,10 +29,7 @@ export function OwnerPropertySelectorSkeleton() {
           gap: spacing.md,
           minHeight: 72,
           padding: spacing.md,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 2, width: 0 },
-          shadowOpacity: 1,
-          shadowRadius: 6,
+          ...tabShadow(colors.shadow, 2, 6),
         }}
       >
         <Skeleton height={42} radius={12} width={42} />

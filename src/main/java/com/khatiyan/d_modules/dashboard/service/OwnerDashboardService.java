@@ -17,6 +17,8 @@ import org.springframework.stereotype.Service;
 
 
 import com.khatiyan.d_modules.billing.BillingModule;
+import com.khatiyan.d_modules.booking.BookingModule;
+import com.khatiyan.d_modules.lead.VisitModule;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardMonths;
 import com.khatiyan.d_modules.billing.api.dto.BillingDashboardSummary;
 import com.khatiyan.d_modules.concerns.ConcernModule;
@@ -75,6 +77,8 @@ public class OwnerDashboardService {
     private final StaffModule staffModule;
     private final ExpenseModule expenseModule;
     private final EnquiryModule enquiryModule;
+    private final BookingModule bookingModule;
+    private final VisitModule visitModule;
 
     private final int upcomingExitDays;
     private final ActivityEventService activityEventService;
@@ -88,6 +92,8 @@ public class OwnerDashboardService {
             StaffModule staffModule,
             ExpenseModule expenseModule,
             EnquiryModule enquiryModule,
+            BookingModule bookingModule,
+            VisitModule visitModule,
             @Value("${app.dashboard.upcoming-exit-days:7}") int upcomingExitDays,
             ActivityEventService activityEventService,
             @Value("${app.dashboard.recent-activity-limit:10}") int recentActivityLimit) {
@@ -98,6 +104,8 @@ public class OwnerDashboardService {
         this.staffModule = staffModule;
         this.expenseModule = expenseModule;
         this.enquiryModule = enquiryModule;
+        this.bookingModule = bookingModule;
+        this.visitModule = visitModule;
         this.upcomingExitDays = upcomingExitDays;
         this.activityEventService = activityEventService;
         this.recentActivityLimit = recentActivityLimit;
@@ -144,8 +152,8 @@ public class OwnerDashboardService {
 
         OccupancySnapshot occupancy = buildOccupancy(rooms, activeTenancies);
         TenancySnapshot tenancy = buildTenancy(activeTenancies, inactiveTenancies, allTenancies, exitRequests, today);
-        MoneySnapshot money = buildMoney(billing, months, activeTenancies, monthStart);
-        TodayDigest todayDigest = buildToday(billing, concern, activeTenancies, exitRequests, today);
+        MoneySnapshot money = buildMoney(billing, months);
+        TodayDigest todayDigest = buildToday(billing, concern, activeTenancies, inactiveTenancies, exitRequests, today);
         long pendingDepositSettlements = billingModule.countPropertyDepositsPendingSettlement(propertyId);
         var paymentIntents = billingModule.getPaymentIntentDigestForDashboard(propertyId);
         AttentionSummary attention = buildAttention(
@@ -177,6 +185,9 @@ public class OwnerDashboardService {
                 budget,
                 concernQueue,
                 paymentIntents,
+                bookingModule.attentionForProperty(propertyId),
+                visitModule.attentionForProperty(propertyId),
+                enquiryModule.attentionForProperty(propertyId),
                 recentActivity,
                 Instant.now());
     }
@@ -300,6 +311,17 @@ public class OwnerDashboardService {
         return count;
     }
 
+    /** Current stays due today, by the same checkout date used by the tenancy list. */
+    static long countExitsDueToday(List<TenancyResponse> activeTenancies, LocalDate today) {
+        return activeTenancies.stream()
+                .filter(tenancy -> switch (tenancy.status()) {
+                    case ACTIVE, ON_NOTICE, ON_PREMATURE_NOTICE, PENDING_EXIT -> true;
+                    default -> false;
+                })
+                .filter(tenancy -> today.equals(tenancy.checkoutDate()))
+                .count();
+    }
+
     /**
      * Stays past their checkout date that nobody has ended: approved exit
      * requests whose checkout has passed, plus every current stay (pending exit
@@ -393,36 +415,14 @@ public class OwnerDashboardService {
                 unavailableRooms);
     }
 
-    private MoneySnapshot buildMoney(
-            BillingDashboardSummary billing,
-            BillingDashboardMonths months,
-            List<TenancyResponse> activeTenancies,
-            LocalDate monthStart) {
-        LocalDate nextMonthStart = monthStart.plusMonths(1);
-
+    private MoneySnapshot buildMoney(BillingDashboardSummary billing, BillingDashboardMonths months) {
         // Monthly cycles generate lazily on each tenancy's anniversary day, so early
-        // in the month "billed" is near zero even though rent is collectable. Project
-        // the month from active monthly tenancies that are not exiting this month and
-        // whose cycle has not generated yet, so billed and pending reflect what is
-        // collectable rather than only what has already been billed. (Same rule as the
-        // billing screen's month summary.)
-        // Whose RENT is already on the books. Category matters: a one-off bill is
-        // not rent, so counting it here suppressed that tenancy's rent projection
-        // — three one-off bills were enough to zero the projection for the whole
-        // property. Same rule as BillingCycleService.getPropertyMonthSummary.
-        Set<UUID> billedTenancyIds = months.rentBilledTenancyIds();
-        long projectedExtraPaise = 0;
-        for (TenancyResponse tenancy : activeTenancies) {
-            if (tenancy.billingType() != TenancyBillingType.MONTHLY || tenancy.rentAmountPaise() == null) {
-                continue;
-            }
-            LocalDate end = tenancy.endDate();
-            boolean endingThisMonth = end != null && !end.isBefore(monthStart) && end.isBefore(nextMonthStart);
-            if (endingThisMonth || billedTenancyIds.contains(tenancy.id())) {
-                continue;
-            }
-            projectedExtraPaise = projectedExtraPaise + tenancy.rentAmountPaise();
-        }
+        // in the month "billed" is near zero even though rent is collectable. The
+        // rent still to be raised comes from billing, worked out by the same rule
+        // as its month summary and the Upcoming cycles screen (2026-10-18). This
+        // used its own copy, which read endDate alone and projected a fixed term's
+        // bill for the day it leaves.
+        long projectedExtraPaise = months.rentStillToRaisePaise();
 
         long billedThisMonth = billing.billedThisMonthPaise() + projectedExtraPaise;
         long collectedThisMonth = billing.collectedThisMonthPaise();
@@ -442,23 +442,50 @@ public class OwnerDashboardService {
             BillingDashboardSummary billing,
             ConcernDashboardSummary concern,
             List<TenancyResponse> activeTenancies,
+            List<TenancyResponse> inactiveTenancies,
             List<TenancyExitRequestResponse> exitRequests,
             LocalDate today) {
         long startedToday = activeTenancies.stream()
                 .filter(tenancy -> tenancy.startDate() != null && tenancy.startDate().isEqual(today))
                 .count();
-        long endingToday = exitRequests.stream()
-                .filter(request -> request.status() == TenancyExitRequestStatus.APPROVED)
-                .filter(request -> request.approvedCheckoutDate() != null
-                        && request.approvedCheckoutDate().isEqual(today))
-                .count();
-
         return new TodayDigest(
                 billing.paymentsMadeToday(),
                 billing.paymentsMadeTodayPaise(),
                 concern.raisedToday(),
                 startedToday,
-                endingToday);
+                endingToday(activeTenancies, inactiveTenancies, exitRequests, today).size());
+    }
+
+    /**
+     * The stays due to end today (user, 2026-10-18): an approved exit for
+     * today, or a fixed term whose end date is today, by the one checkout rule
+     * ({@code checkoutDate()} = endDate ?? plannedEndDate). One already ended
+     * today still counts, so ending it does not take it off the card. The
+     * Move-outs screen lists the same stays by the same rule.
+     */
+    static Set<UUID> endingToday(
+            List<TenancyResponse> activeTenancies,
+            List<TenancyResponse> inactiveTenancies,
+            List<TenancyExitRequestResponse> exitRequests,
+            LocalDate today) {
+        Set<UUID> ending = new HashSet<>();
+        for (TenancyResponse tenancy : activeTenancies) {
+            if (today.equals(tenancy.checkoutDate())) {
+                ending.add(tenancy.id());
+            }
+        }
+        for (TenancyResponse tenancy : inactiveTenancies) {
+            if ((tenancy.status() == TenancyStatus.EXITED || tenancy.status() == TenancyStatus.EVICTED)
+                    && today.equals(tenancy.endDate())) {
+                ending.add(tenancy.id());
+            }
+        }
+        for (TenancyExitRequestResponse request : exitRequests) {
+            if (request.status() == TenancyExitRequestStatus.APPROVED && today.equals(request.approvedCheckoutDate())) {
+                ending.add(request.tenancyId());
+            }
+        }
+        return ending;
     }
 
     private AttentionSummary buildAttention(
@@ -504,6 +531,7 @@ public class OwnerDashboardService {
                 pendingExitRequests,
                 pendingRoomChangeRequests,
                 upcomingExits,
+                countExitsDueToday(activeTenancies, today),
                 exitsPastDue,
                 tenantsOnNotice,
                 pendingDepositSettlements,

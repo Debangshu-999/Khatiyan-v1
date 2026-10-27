@@ -53,6 +53,11 @@ public class ConcernModule {
         return concernService.listAvailableConcerns(actorUserId, propertyId);
     }
 
+    /** The concerns raised today, for Home's Concerns today screen. */
+    public List<ConcernResponse> listConcernsRaisedToday(UUID actorUserId, UUID propertyId) {
+        return concernService.listConcernsRaisedToday(actorUserId, propertyId);
+    }
+
     /**
      * Property-scoped concern rollup for the owner action center.
      */

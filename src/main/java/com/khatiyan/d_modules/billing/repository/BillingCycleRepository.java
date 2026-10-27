@@ -327,6 +327,25 @@ public interface BillingCycleRepository extends JpaRepository<BillingCycle, UUID
             Instant toInstant);
 
     /**
+     * The cycles that count gives, newest payment first: Home's Payments today
+     * screen lists exactly what its digest tile counts (2026-10-18).
+     */
+    @Query("""
+        SELECT cycle
+        FROM BillingCycle cycle
+        WHERE cycle.propertyId = :propertyId
+          AND cycle.status = :status
+          AND cycle.paidAt >= :fromInstant
+          AND cycle.paidAt < :toInstant
+        ORDER BY cycle.paidAt DESC
+        """)
+    List<BillingCycle> findForPropertyByStatusAndPaidAtBetween(
+            UUID propertyId,
+            BillingCycleStatus status,
+            Instant fromInstant,
+            Instant toInstant);
+
+    /**
      * Sum of cycle totals for a property across a set of statuses. Used for
      * "pending" (UNPAID + OVERDUE).
      */

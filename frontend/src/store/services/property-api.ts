@@ -402,6 +402,12 @@ export type ManagerResource =
    * resource exists here because that list reads and writes the same grant.
    */
   | "CHATS"
+  /**
+   * Post-visit bookings. Like `CHATS`, absent from `ACCESS_MODULES`: it is
+   * granted from the bookings screen's own access list, and the permission
+   * screen must keep it when it saves the grants it does list.
+   */
+  | "BOOKINGS"
   | "VACANCY_FINDER";
 
 export type ManagerAccessLevel = "NONE" | "VIEW" | "MANAGE";

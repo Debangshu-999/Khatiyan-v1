@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -9,7 +9,8 @@ import { SelectionTabs } from "@/components/selection-tabs";
 import { AppBackground } from "@/components/app-background";
 import { EmptyState } from "@/components/empty-state";
 import { MarqueeText } from "@/components/marquee-text";
-import { ScreenHeader } from "@/components/screen-header";
+import { SCREEN_HEADER_COLLAPSE_DISTANCE } from "@/components/header-scroll-layout";
+import { ScreenHeader, ScreenHeaderScrollContext } from "@/components/screen-header";
 import { FoodForecastSkeleton } from "@/components/skeletons";
 import { AlertModal } from "@/components/alert-modal";
 import { useToast } from "@/components/toast";
@@ -47,8 +48,10 @@ import {
   type SkippedItem,
 } from "@/store/services/food-api";
 import type { MealType } from "@/store/services/property-api";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * How much to cook, for one meal on one day.
@@ -398,9 +401,9 @@ function PhaseChip({ phase }: { phase: MealPhase }) {
         paddingVertical: 4,
       }}
     >
-      <Text numberOfLines={1} style={{ color: tint.text, fontFamily: fonts.sansBold, fontSize: 12 }}>
+      <FitText numberOfLines={1} style={{ color: tint.text, fontFamily: fonts.sansBold, fontSize: 12 }}>
         {PHASE_TAG[phase].label}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -476,10 +479,7 @@ function FloatingNote({ anchor, message, onClose }: { anchor: Anchor; message: s
             paddingHorizontal: spacing.md,
             paddingVertical: spacing.sm + 2,
             position: "absolute",
-            shadowColor: colors.shadow,
-            shadowOffset: { height: 4, width: 0 },
-            shadowOpacity: 0.16,
-            shadowRadius: 12,
+            ...softShadow(colors.shadow, 4, 12, 0.16),
             top,
             width: cardWidth,
           }}
@@ -507,29 +507,61 @@ function ForecastFrame({
 }) {
   const { colors } = useTheme();
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const headerScrollY = useRef(new Animated.Value(0)).current;
+  const scrollOffset = useRef(0);
+  // A menu that scrolls at all scrolls far enough for the header to collapse
+  // the whole way (user, 2026-10-18). Otherwise one a little taller than the
+  // space stopped halfway, its description left on screen half faded. Judged
+  // on where the menu itself ends, which the room added for it does not move.
+  const [scrollHeight, setScrollHeight] = useState(0);
+  const [naturalBottom, setNaturalBottom] = useState(0);
+  const overflows = scrollHeight > 0 && naturalBottom > scrollHeight + 1;
 
   return (
     <SafeAreaView edges={["top", "bottom"]} style={{ backgroundColor: colors.background, flex: 1 }}>
       <View pointerEvents="none" style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}>
         <AppBackground />
       </View>
-      <View
-        onLayout={(event) => {
-          const { width, height } = event.nativeEvent.layout;
-          setViewport((current) => current.width === width && current.height === height ? current : { width, height });
-        }}
-        style={{ flex: 1, gap: spacing.lg, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}
+      <ScreenHeaderScrollContext.Provider
+        value={{ scrollY: headerScrollY, sticky: true, surface: colors.background }}
       >
-        <View style={{ flexShrink: 0, gap: spacing.lg }}>{header}</View>
-        <ScrollView
-          contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.sm }}
-          showsVerticalScrollIndicator={false}
-          style={{ flex: 1 }}
+        <View
+          onLayout={(event) => {
+            const { width, height } = event.nativeEvent.layout;
+            setViewport((current) => current.width === width && current.height === height ? current : { width, height });
+          }}
+          style={{ flex: 1, gap: spacing.lg, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}
         >
-          {children}
-        </ScrollView>
-        <FloatingForecastChef viewport={viewport} />
-      </View>
+          <View style={{ flexShrink: 0, gap: spacing.lg }}>{header}</View>
+          <ScrollView
+            contentContainerStyle={{
+              gap: spacing.lg,
+              minHeight: overflows ? scrollHeight + SCREEN_HEADER_COLLAPSE_DISTANCE : undefined,
+              paddingBottom: spacing.sm,
+            }}
+            onLayout={(event) => setScrollHeight(event.nativeEvent.layout.height)}
+            onScroll={(event) => {
+              const nextOffset = event.nativeEvent.contentOffset.y;
+              scrollOffset.current = nextOffset;
+              headerScrollY.setValue(nextOffset);
+            }}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+            style={{ flex: 1 }}
+          >
+            {children}
+            <View
+              onLayout={(event) => {
+                // Read with the header open only, as ScreenScrollView does.
+                if (scrollOffset.current <= 0) setNaturalBottom(event.nativeEvent.layout.y);
+              }}
+              pointerEvents="none"
+              style={{ height: 0, marginTop: -spacing.lg }}
+            />
+          </ScrollView>
+          <FloatingForecastChef viewport={viewport} />
+        </View>
+      </ScreenHeaderScrollContext.Provider>
       {overlay}
     </SafeAreaView>
   );
@@ -764,16 +796,16 @@ function ForecastRow({
           {unavailable ? (
             // No number, because there is no quantity: it is not being cooked.
             // A struck-through figure would still be a figure to misread.
-            <Text
+            <FitText
               numberOfLines={1}
               style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5 }}
             >
               Not cooking
-            </Text>
+            </FitText>
           ) : (
-            <Text numberOfLines={1} style={[type.metric, { color: colors.ink, fontSize: 17 }]}>
+            <FitText numberOfLines={1} style={[type.metric, { color: colors.ink, fontSize: 17 }]}>
               {formatBulkQuantity(item.targetQuantity, item.quantityUnit)}
-            </Text>
+            </FitText>
           )}
         </View>
       </View>
@@ -794,9 +826,9 @@ function ForecastRow({
                 paddingVertical: spacing.sm,
               }}
             >
-              <Text numberOfLines={1} style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sans, fontSize: 12.5 }}>
+              <FitText numberOfLines={1} style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sans, fontSize: 12.5 }}>
                 {split.profileName}
-              </Text>
+              </FitText>
               <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
                 {formatBulkQuantity(split.targetQuantity, item.quantityUnit)}
               </Text>

@@ -1,4 +1,5 @@
 import { api, ifMatch } from "@/store/api";
+import type { Page } from "@/store/pagination";
 
 /** What the person reading is to the enquiry. */
 export type EnquiryParty = "ENQUIRER" | "ACTING_MANAGEMENT" | "OTHER_MANAGEMENT" | "OUTSIDER";
@@ -82,7 +83,7 @@ export type VisitAvailability = {
  * RESCHEDULED is only on the list of the day a visit was moved off: the visit
  * itself is in Upcoming, as SCHEDULED.
  */
-export type VisitCardState = "SCHEDULED" | "VISITED" | "MISSED" | "RESCHEDULED";
+export type VisitCardState = "SCHEDULED" | "VISITED" | "MISSED" | "RESCHEDULED" | "CANCELLED";
 
 /** The visit that stands on one of the property's enquiries: booked, attended or missed. */
 export type BookedVisit = {
@@ -103,6 +104,9 @@ export type BookedVisit = {
 export type VisitImpression = "LIKED" | "OKAY" | "DISLIKED";
 
 /** One visit on the Manage Visits screen (2026-10-04). */
+/** The History tab's status filter. */
+export type VisitHistoryStatus = "ALL" | "VISITED" | "NO_VISIT" | "CANCELLED";
+
 export type VisitCard = {
   visitId: string;
   /** The short code shown to people, never the id. */
@@ -140,6 +144,8 @@ export type VisitCard = {
   /** When it took the date and slot it has now: booked, or last moved. */
   placedAt: string;
   version: number;
+  /** Someone who walked in and was recorded by the property, with no app (2026-10-19). */
+  external: boolean;
 };
 
 /** The Manage Visits screen's three tabs. */
@@ -236,6 +242,18 @@ export const enquiryChatApi = api.injectEndpoints({
     /** The Manage Visits screen: today, upcoming and missed, in one read. */
     getPropertyVisits: builder.query<PropertyVisits, string>({
       query: (propertyId) => `/api/v1/properties/${propertyId}/visits`,
+      providesTags: ["EnquiryChat"],
+    }),
+
+    getPropertyVisitHistory: builder.query<Page<VisitCard>, { propertyId: string; page: number; status?: VisitHistoryStatus }>({
+      // Narrowed by status on the server, All when not given (user, 2026-10-19).
+      query: ({ propertyId, page, status = "ALL" }) =>
+        `/api/v1/properties/${propertyId}/visits/history?page=${page}&size=12&status=${status}`,
+      providesTags: ["EnquiryChat"],
+    }),
+
+    getMyVisitHistory: builder.query<Page<MyVisit>, { page: number }>({
+      query: ({ page }) => `/api/v1/visits/mine/history?page=${page}&size=12`,
       providesTags: ["EnquiryChat"],
     }),
 
@@ -347,6 +365,24 @@ export const enquiryChatApi = api.injectEndpoints({
       invalidatesTags: ["EnquiryChat", "Enquiry"],
     }),
 
+    /**
+     * A visit booked straight from the property profile, with no enquiry
+     * (user, 2026-10-17). It goes on the person's live enquiry there, or on a
+     * direct record carrying the contact they agreed to share. Sent once the
+     * consent step is done.
+     */
+    scheduleDirectVisit: builder.mutation<
+      EnquiryChatActions,
+      { propertyId: string; date: string; slotStart: string }
+    >({
+      query: ({ date, propertyId, slotStart }) => ({
+        body: { date, slotStart },
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/direct-visits`,
+      }),
+      invalidatesTags: ["EnquiryChat", "Enquiry", "Lead"],
+    }),
+
     /** Frees the place and puts them back at Enquired. They may book again while the enquiry is open. */
     /** Still interested or not, and why, both required (2026-10-03). */
     cancelVisit: builder.mutation<
@@ -379,6 +415,8 @@ export const enquiryChatApi = api.injectEndpoints({
 });
 
 export const {
+  useGetPropertyVisitHistoryQuery,
+  useGetMyVisitHistoryQuery,
   useCancelVisitMutation,
   useCheckInVisitMutation,
   useCompleteVisitFormMutation,
@@ -394,6 +432,7 @@ export const {
   useGetEnquiryChatActionsQuery,
   useGetVisitAvailabilityQuery,
   useRescheduleVisitMutation,
+  useScheduleDirectVisitMutation,
   useScheduleVisitMutation,
   useSetEnquirySentimentMutation,
   useClearEnquirySentimentMutation,

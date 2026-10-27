@@ -323,6 +323,9 @@ public class TenancyRoomChangeRequestService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void closeAfterExecutionFailure(UUID requestId, RuntimeException exception) {
+        UUID propertyId = roomChangeRequestRepository.findPropertyIdById(requestId).orElse(null);
+        if (propertyId == null) return;
+        propertyModule.lockRoomInventory(propertyId);
         TenancyRoomChangeRequest request = roomChangeRequestRepository.findByIdForUpdate(requestId).orElse(null);
         if (request == null
                 || request.getStatus() != TenancyRoomChangeRequestStatus.APPROVED
@@ -411,6 +414,7 @@ public class TenancyRoomChangeRequestService {
      */
     @Transactional
     public void closeOpenRequestsForEndedTenancy(UUID tenancyId) {
+        tenancyRepository.findPropertyIdById(tenancyId).ifPresent(propertyModule::lockRoomInventory);
         for (TenancyRoomChangeRequest request : roomChangeRequestRepository.findByTenancyId(tenancyId)) {
             if (!request.cancelBecauseTenancyEnded()) {
                 continue;
@@ -532,6 +536,9 @@ public class TenancyRoomChangeRequestService {
     }
 
     private TenancyRoomChangeRequest getRequest(UUID requestId) {
+        UUID propertyId = roomChangeRequestRepository.findPropertyIdById(requestId)
+                .orElseThrow(() -> new NotFoundException("TenancyRoomChangeRequest", requestId));
+        propertyModule.lockRoomInventory(propertyId);
         return roomChangeRequestRepository.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new NotFoundException("TenancyRoomChangeRequest", requestId));
     }

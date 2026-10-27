@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
@@ -15,7 +16,6 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { PaginationBar } from "@/components/pagination-bar";
 import { FilteredQueue } from "@/components/filtered-queue";
-import { HeaderGradient } from "@/components/header-gradient";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
@@ -36,6 +36,7 @@ import { useToast } from "@/components/toast";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 type PropertyTab = "all" | "available" | "escalated";
 type MyTab = "all" | "review" | "progress" | "reopened" | "resolved" | "history";
@@ -63,7 +64,6 @@ function myTabHeadingText(tab: MyTab) {
   return "Closed by me";
 }
 
-const CONCERN_HEADER_ILLUSTRATION = require("../assets/images/workspace/concern-header.png");
 const CONCERN_MONITOR_ILLUSTRATION = require("../assets/images/workspace/concern-monitor.png");
 const CONCERN_HISTORY_ILLUSTRATION = require("../assets/images/workspace/concern-history.png");
 const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
@@ -203,14 +203,12 @@ export default function OwnerConcernsScreen() {
   }
 
   return (
-    // Header artwork means the gradient — see HeaderGradient.
-    <ScreenScrollView background={<HeaderGradient />} safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} surface={colors.surface}>
       <ScreenHeader
         badge={!canWorkConcerns ? <ViewOnlyChip /> : null}
         title="Concern"
         italicTail="queues."
         subtitle={selectedProperty ? `Concern workspace for ${selectedProperty.name}.` : "Select a property on Home first."}
-        artwork={CONCERN_HEADER_ILLUSTRATION}
       />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
@@ -460,7 +458,9 @@ function ConcernRouteCard({
   );
 }
 
-function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; concern: ConcernSummary; onPress: () => void }) {
+/** One concern, as the queues show it. Also Home's Concerns today screen (2026-10-18). */
+export function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; concern: ConcernSummary; onPress: () => void }) {
+  const viewing = actionLabel.startsWith("View");
   const { colors, fonts, type } = useTheme();
   const completed = !concern.reopened && (concern.status === "RESOLVED" || concern.status === "CLOSED");
   const inProgress = !concern.reopened && concern.status === "IN_PROGRESS";
@@ -482,9 +482,9 @@ function ConcernCard({ actionLabel, concern, onPress }: { actionLabel: string; c
             <Text style={{ color: statusColor, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 15 }}>{statusLabel}</Text>
           </View>
         </View>
-        <Text style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} numberOfLines={1}>{concern.title}</Text>
+        <FitText style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]} numberOfLines={1}>{concern.title}</FitText>
         <ConcernMetaRow concern={concern} />
-        <ActionButton icon={actionLabel === "View" ? Eye : Clock3} label={actionLabel} onPress={onPress} variant={actionLabel === "View" ? "primary" : "secondary"} />
+        <ActionButton icon={viewing ? Eye : Clock3} label={actionLabel} onPress={onPress} variant={viewing ? "primary" : "secondary"} />
       </View>
     </Card>
   );
@@ -529,7 +529,7 @@ function HistoryModal({
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Property history</Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Resolved concerns</Text>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Resolved concerns</ModalTitle>
             </View>
             <IconButton accessibilityLabel="Close property history" filled icon={X} onPress={() => dismiss()} />
           </View>

@@ -1,3 +1,4 @@
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -22,6 +23,8 @@ import {
 import { useListPropertyManagersQuery } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 const NO_PERSON_ILLUSTRATION = require("../../../assets/empty-states/No-Person_512x512.png");
 
@@ -174,11 +177,11 @@ function ContactRow({
       </View>
 
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
-          {contact.name?.trim() || "Unnamed"}
-        </Text>
+        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+          {cardName(contact.name?.trim() || "Unnamed")}
+        </FitText>
         <Text style={[type.caption, { color: colors.muted }]}>
-          {contact.phone || "No phone on record"}
+          {contact.phone ? formatIndianPhone(contact.phone) : "No phone on record"}
         </Text>
       </View>
 
@@ -276,11 +279,11 @@ function ManagerPickerSheet({
               <MaterialCommunityIcons color={colors.ink} name="account-outline" size={28} />
             </View>
             <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-              <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+              <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
                 {manager.managerFullName?.trim() || "Unnamed manager"}
-              </Text>
+              </FitText>
               <Text style={[type.caption, { color: colors.muted }]}>
-                {manager.managerPhone || "No phone on record"}
+                {manager.managerPhone ? formatIndianPhone(manager.managerPhone) : "No phone on record"}
               </Text>
             </View>
             <Plus color={colors.primary} size={18} strokeWidth={2.4} />

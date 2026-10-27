@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { Modal, Text, View } from "react-native";
 import { X } from "lucide-react-native";
@@ -10,6 +11,7 @@ import type {
 } from "@/store/services/tenancy-api";
 import { DIALOG_MAX_WIDTH, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 export type RequestBlock = {
   message: string;
@@ -158,7 +160,7 @@ export function RequestBlockedModal({
             <StatusIcon size={40} tone="warning" />
             <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>REQUEST BLOCKED</Text>
-              <Text
+              <ModalTitle
                 style={{
                   color: colors.ink,
                   fontFamily: fonts.display,
@@ -167,7 +169,7 @@ export function RequestBlockedModal({
                 }}
               >
                 {block.title}
-              </Text>
+              </ModalTitle>
             </View>
             <AnimatedPressable
               accessibilityLabel="Close"
@@ -241,7 +243,7 @@ function ModalButton({
         paddingHorizontal: spacing.sm,
       }}
     >
-      <Text
+      <FitText
         numberOfLines={1}
         style={{
           color: secondary ? colors.ink : colors.onPrimary,
@@ -250,7 +252,7 @@ function ModalButton({
         }}
       >
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }

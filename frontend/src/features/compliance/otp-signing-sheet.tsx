@@ -32,6 +32,7 @@ export function OtpSigningSheet({
     <OtpCodeSheet
       busy={busy}
       busyLabel="Signing…"
+      confirmLabel="Verify and sign"
       message={`We sent a six-digit code to the number ending ${sentTo}. Entering it records your agreement to the terms you just read.`}
       onClose={onClose}
       onResend={onResend}

@@ -1,8 +1,8 @@
-import { ScrollView, Text, View } from "react-native";
+import { ModalTitle } from "@/components/modal-title";
+import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { FileDown, X } from "lucide-react-native";
+import { FileDown, Mail, MapPin, Phone, X, type LucideIcon } from "lucide-react-native";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
-import Svg, { Path, Rect } from "react-native-svg";
 
 import { formatDate } from "@/features/owner/bill-views";
 import { ActionButton, IconButton, humanizeToken } from "@/features/owner/owner-ui";
@@ -10,9 +10,9 @@ import { formatIndianPhone } from "@/features/owner/phone-display";
 import { billTitle, type BillingCycle } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const RECEIPT_NAVY = "#0C1734";
-const RECEIPT_GOLD = "#B68418";
 const RECEIPT_HEADER = "#E6F1FF";
 const RECEIPT_LABEL = "#F0F6FF";
 const RECEIPT_BORDER = "#C9DCF2";
@@ -110,27 +110,14 @@ export function BillReceiptDocument({
         <ReceiptBrandMark />
 
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 17, lineHeight: 21 }}>
+          <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 17, lineHeight: 21 }}>
             {property?.name ?? "Tenancy bill"}
-          </Text>
-          {address ? (
-            <Text numberOfLines={3} style={[type.caption, { color: colors.inkSoft, fontSize: 9, lineHeight: 13 }]}>
-              {address}
-            </Text>
-          ) : null}
-          {contact.phone ? (
-            <Text style={[type.caption, { color: colors.inkSoft, fontSize: 9, lineHeight: 13 }]}>
-              {formatIndianPhone(contact.phone)}
-            </Text>
-          ) : null}
-          {contact.email ? (
-            <Text numberOfLines={1} style={[type.caption, { color: colors.inkSoft, fontSize: 9, lineHeight: 13 }]}>
-              {contact.email}
-            </Text>
-          ) : null}
+          </FitText>
+          {/* Each line under its own icon, the icons on the name's left edge (user, 2026-10-18). */}
+          {address ? <ReceiptContactLine icon={MapPin} lines={3} text={address} /> : null}
+          {contact.phone ? <ReceiptContactLine icon={Phone} text={formatIndianPhone(contact.phone)} /> : null}
+          {contact.email ? <ReceiptContactLine icon={Mail} lines={1} text={contact.email} /> : null}
         </View>
-
-        <ReceiptMotto />
       </View>
 
       <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 23, lineHeight: 30, textAlign: "center" }}>
@@ -182,19 +169,18 @@ function ReceiptDetailTable({ rows, title }: { rows: ReceiptDetail[]; title: str
       {rows.map((row) => (
         <View key={row.label} style={{ borderTopColor: RECEIPT_BORDER, borderTopWidth: 1, flexDirection: "row", minHeight: 34 }}>
           <View style={{ backgroundColor: RECEIPT_LABEL, justifyContent: "center", paddingHorizontal: 7, paddingVertical: 6, width: "42%" }}>
-            <Text numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.sans, fontSize: 9, lineHeight: 12 }}>
+            <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.sans, fontSize: 9, lineHeight: 12 }}>
               {row.label}
-            </Text>
+            </FitText>
           </View>
           <View style={{ borderLeftColor: RECEIPT_BORDER, borderLeftWidth: 1, flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: 7, paddingVertical: 6 }}>
-            <Text
-              adjustsFontSizeToFit
+            <FitText
               minimumFontScale={0.65}
               numberOfLines={row.label === "Email" ? 2 : 1}
               style={{ color: RECEIPT_NAVY, fontFamily: row.code ? fonts.mono : fonts.sansSemiBold, fontSize: row.code ? 8 : 9, lineHeight: 12 }}
             >
               {row.value}
-            </Text>
+            </FitText>
           </View>
         </View>
       ))}
@@ -230,61 +216,41 @@ function DocRow({
   return (
     <View style={{ backgroundColor: head ? RECEIPT_HEADER : "#FFFFFF", borderTopColor: RECEIPT_BORDER, borderTopWidth: head ? 0 : 1, flexDirection: "row", minHeight: strong ? 54 : 38 }}>
       <View style={{ borderRightColor: RECEIPT_BORDER, borderRightWidth: head ? 1 : 0, flex: 2, justifyContent: "center", paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
-        <Text numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 14 : head ? 13 : 11, lineHeight: strong ? 19 : 16 }}>
+        <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 14 : head ? 13 : 11, lineHeight: strong ? 19 : 16 }}>
           {label}
-        </Text>
+        </FitText>
       </View>
       <View style={{ flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
-        <Text
-          adjustsFontSizeToFit
+        <FitText
           minimumFontScale={0.65}
           numberOfLines={1}
           style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 20 : head ? 13 : 11, lineHeight: strong ? 25 : 16, textAlign: amountRight ? "right" : "left" }}
         >
           {amount}
-        </Text>
+        </FitText>
       </View>
     </View>
   );
 }
 
+const RECEIPT_LOGO = require("../../../assets/icons/brand/logo-light-trimmed.png");
+
+/** The Khatiyan logo, the real image (user, 2026-10-18). A receipt is paper, so always the light one. */
 function ReceiptBrandMark() {
-  const { fonts } = useTheme();
-  return (
-    <View style={{ alignItems: "center", width: 62 }}>
-      <Svg accessible={false} height={46} width={58} viewBox="0 0 72 58">
-        <Path d="M8 25 36 5l28 20" fill="none" stroke={RECEIPT_GOLD} strokeLinecap="square" strokeWidth={6} />
-        <Path d="M13 31 36 13l23 18v20H13Z" fill="none" stroke={RECEIPT_NAVY} strokeLinejoin="round" strokeWidth={5} />
-        <Rect fill={RECEIPT_GOLD} height={9} width={9} x={25} y={31} />
-        <Rect fill={RECEIPT_GOLD} height={9} width={9} x={38} y={31} />
-        <Path d="M6 54h60" stroke={RECEIPT_NAVY} strokeLinecap="round" strokeWidth={2.5} />
-      </Svg>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
-        numberOfLines={1}
-        style={{
-          color: RECEIPT_NAVY,
-          fontFamily: fonts.sansBold,
-          fontSize: 5,
-          letterSpacing: 0.35,
-          textAlign: "center",
-          width: "100%",
-        }}
-      >
-        COMFORT LIVES HERE
-      </Text>
-    </View>
-  );
+  return <Image accessibilityLabel="Khatiyan" resizeMode="contain" source={RECEIPT_LOGO} style={{ height: 62, width: 62 }} />;
 }
 
-function ReceiptMotto() {
-  const { fonts } = useTheme();
+/** One contact line under the property name: its icon, then the text, wrapped lines kept clear of the icon. */
+function ReceiptContactLine({ icon: Icon, lines, text }: { icon: LucideIcon; lines?: number; text: string }) {
+  const { colors, type } = useTheme();
   return (
-    <View style={{ alignItems: "center", flexShrink: 0, gap: 2 }}>
-      <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.sansSemiBold, fontSize: 6.5, letterSpacing: 2 }}>SAFE SPACES</Text>
-      <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.sansSemiBold, fontSize: 6.5, letterSpacing: 2 }}>HAPPIER DAYS</Text>
-      <View style={{ backgroundColor: RECEIPT_GOLD, height: 1.5, marginTop: 2, width: 28 }} />
+    <View style={{ alignItems: "flex-start", flexDirection: "row", gap: 4, marginTop: 2 }}>
+      <View style={{ height: 13, justifyContent: "center" }}>
+        <Icon color={RECEIPT_NAVY} size={9} strokeWidth={2.2} />
+      </View>
+      <FitText numberOfLines={lines} style={[type.caption, { color: colors.inkSoft, flex: 1, fontSize: 9, lineHeight: 13 }]}>
+        {text}
+      </FitText>
     </View>
   );
 }
@@ -371,9 +337,9 @@ export function BillReceiptSheet({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Receipt{propertyName ? ` · ${propertyName}` : ""}
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
                 {cycle.referenceCode}
-              </Text>
+              </ModalTitle>
             </View>
             {/* Filled, like every other close in the app. A bare glyph beside
                 the reference code read as punctuation after it rather than as

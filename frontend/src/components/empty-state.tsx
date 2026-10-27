@@ -25,7 +25,8 @@ type EmptyStateProps = {
   artworkTextGap?: number;
   icon?: ComponentType<LucideProps>;
   title: string;
-  description: string;
+  /** Legacy helper copy is accepted for callers, but empty states now show only their title. */
+  description?: string;
   action?: ReactNode;
   /**
    * Sits in the middle of the space the list would have filled. Off for empties
@@ -46,8 +47,8 @@ type EmptyStateProps = {
  * "Property required") sitting directly above a title that said the same thing
  * in more words.
  */
-export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spacing.sm, compact, description, icon: Icon, title }: EmptyStateProps) {
-  const { colors, fonts, type } = useTheme();
+export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spacing.sm, compact, icon: Icon, title }: EmptyStateProps) {
+  const { colors, fonts } = useTheme();
 
   // Roughly what is left below a header, filter row and section heading.
   const minHeight = compact ? undefined : Math.round(Dimensions.get("window").height * 0.46);
@@ -92,9 +93,6 @@ export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spac
             accounts" wraps on a phone, which is where this showed. */}
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, textAlign: "center" }}>
           {title}
-        </Text>
-        <Text style={[type.description, { color: colors.muted, maxWidth: 320, textAlign: "center" }]}>
-          {description}
         </Text>
       </View>
 

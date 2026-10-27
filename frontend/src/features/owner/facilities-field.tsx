@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useState, type ComponentType } from "react";
 import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
@@ -36,6 +37,7 @@ import { FacilityOverviewGrid } from "@/features/property/facility-overview-grid
 import { PROPERTY_FACILITIES, type PropertyFacility } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const FACILITY_ICONS: Record<PropertyFacility, ComponentType<LucideProps>> = {
   AIR_CONDITIONING: AirVent,
@@ -301,9 +303,9 @@ function FacilitiesPickerModal({
               <Text style={[type.eyebrow, { color: colors.accent }]}>
                 Amenities
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.3 }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.3 }}>
                 Select facilities
-              </Text>
+              </ModalTitle>
             </View>
             <AnimatedPressable accessibilityLabel="Close" accessibilityRole="button" onPress={() => dismiss()}>
               <X color={colors.muted} size={24} strokeWidth={2.4} />
@@ -467,9 +469,9 @@ function FacilityTile({
       {/* No corner badge. A filled blue disc was a second, louder answer to a
           question the tile's own fill and border already answer. */}
       <Icon color={active ? colors.ink : colors.muted} size={24} strokeWidth={2} />
-      <Text numberOfLines={2} style={[type.caption, { color: active ? colors.ink : colors.muted, fontWeight: "700", textAlign: "center" }]}>
+      <FitText numberOfLines={2} style={[type.caption, { color: active ? colors.ink : colors.muted, fontWeight: "700", textAlign: "center" }]}>
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }

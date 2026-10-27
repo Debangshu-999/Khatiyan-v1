@@ -8,9 +8,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import com.khatiyan.c_shared.valkey.FallbackCache;
 import com.khatiyan.d_modules.chat.model.ChatMessage;
 import com.khatiyan.d_modules.chat.model.ChatReadState;
 import com.khatiyan.d_modules.chat.model.ChatThread;
@@ -65,7 +65,8 @@ public class ChatNotifier {
     private final ChatAccessService chatAccessService;
     private final NotificationModule notificationModule;
     private final PropertyModule propertyModule;
-    private final StringRedisTemplate valkeyTemplate;
+    /** Valkey while it is up, memory while it is not (2026-10-18). */
+    private final FallbackCache valkeyTemplate;
 
     public ChatNotifier(
             ChatThreadMemberRepository chatThreadMemberRepository,
@@ -73,7 +74,7 @@ public class ChatNotifier {
             ChatAccessService chatAccessService,
             NotificationModule notificationModule,
             PropertyModule propertyModule,
-            StringRedisTemplate valkeyTemplate) {
+            FallbackCache valkeyTemplate) {
         this.chatThreadMemberRepository = chatThreadMemberRepository;
         this.chatReadStateRepository = chatReadStateRepository;
         this.chatAccessService = chatAccessService;
@@ -159,9 +160,7 @@ public class ChatNotifier {
         // setIfAbsent is the whole cooldown: the first caller writes the key and
         // wins, everyone else within the TTL sees it already there. No read-then-
         // write race, because it is one atomic operation.
-        Boolean claimed = valkeyTemplate.opsForValue()
-                .setIfAbsent(cooldownKey(thread.getId(), recipientUserId), "1", PUSH_COOLDOWN);
-        return Boolean.TRUE.equals(claimed);
+        return valkeyTemplate.setIfAbsent(cooldownKey(thread.getId(), recipientUserId), "1", PUSH_COOLDOWN);
     }
 
     private void push(ChatThread thread, UUID recipientUserId, String title, PropertyResponse property) {

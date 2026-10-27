@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
@@ -15,8 +17,26 @@ import com.khatiyan.d_modules.lead.model.VisitStatus;
 @Repository
 public interface VisitRepository extends JpaRepository<Visit, UUID> {
 
+    /** Today only: no query per visitor, and no historical no-show that only the prospect can resolve. */
+    @Query("""
+            SELECT COALESCE(SUM(CASE WHEN visit.slotEndMinute > :minute THEN 1 ELSE 0 END), 0) AS arrivalsToday,
+                   COALESCE(SUM(CASE WHEN visit.slotEndMinute <= :minute THEN 1 ELSE 0 END), 0) AS attendanceOverdue
+            FROM Visit visit WHERE visit.propertyId = :propertyId AND visit.visitDate = :today
+              AND visit.enquiryId IS NOT NULL
+              AND visit.status = com.khatiyan.d_modules.lead.model.VisitStatus.SCHEDULED
+            """)
+    AttentionCounts countAttention(UUID propertyId, LocalDate today, int minute);
+
+    interface AttentionCounts {
+        long getArrivalsToday();
+        long getAttendanceOverdue();
+    }
+
     /** A lead's visits, newest first. A handful at most: one per enquiry the person raised, plus cancelled ones. */
     List<Visit> findByLeadIdOrderByCreatedAtDesc(UUID leadId);
+
+    /** The visits of several leads, newest first, in one read. */
+    List<Visit> findByLeadIdInOrderByCreatedAtDesc(java.util.Collection<UUID> leadIds);
 
     /** A property's visits in one state that were booked from an enquiry. */
     List<Visit> findByPropertyIdAndStatusAndEnquiryIdIsNotNull(UUID propertyId, VisitStatus status);
@@ -51,6 +71,36 @@ public interface VisitRepository extends JpaRepository<Visit, UUID> {
             ORDER BY visit.visitDate, visit.slotStartMinute
             """)
     List<Visit> findForVisitsScreen(UUID propertyId, LocalDate today);
+
+    /**
+     * Past visit dates and cancellations, including records whose enquiry has
+     * ended. {@code filter} narrows it by status (user, 2026-10-19): ALL,
+     * VISITED, NO_VISIT (a past visit nobody checked in) or CANCELLED.
+     */
+    @Query("""
+            SELECT visit FROM Visit visit
+            WHERE visit.propertyId = :propertyId
+              AND (visit.visitDate < :today
+                   OR visit.status = com.khatiyan.d_modules.lead.model.VisitStatus.CANCELLED)
+              AND (:filter = 'ALL'
+                   OR (:filter = 'VISITED' AND visit.status = com.khatiyan.d_modules.lead.model.VisitStatus.VISITED)
+                   OR (:filter = 'CANCELLED' AND visit.status = com.khatiyan.d_modules.lead.model.VisitStatus.CANCELLED)
+                   OR (:filter = 'NO_VISIT'
+                       AND visit.status <> com.khatiyan.d_modules.lead.model.VisitStatus.VISITED
+                       AND visit.status <> com.khatiyan.d_modules.lead.model.VisitStatus.CANCELLED))
+            ORDER BY visit.visitDate DESC, visit.slotStartMinute DESC, visit.id DESC
+            """)
+    Page<Visit> findPropertyHistory(UUID propertyId, LocalDate today, String filter, Pageable pageable);
+
+    /** The signed-in prospect's own history, never another visitor's records. */
+    @Query("""
+            SELECT visit FROM Visit visit
+            WHERE visit.prospectUserId = :prospectUserId
+              AND (visit.visitDate < :today
+                   OR visit.status = com.khatiyan.d_modules.lead.model.VisitStatus.CANCELLED)
+            ORDER BY visit.visitDate DESC, visit.slotStartMinute DESC, visit.id DESC
+            """)
+    Page<Visit> findProspectHistory(UUID prospectUserId, LocalDate today, Pageable pageable);
 
     /** Visits still scheduled whose day has passed: the night's sweep marks them No visit. */
     @Query("""
@@ -106,6 +156,12 @@ public interface VisitRepository extends JpaRepository<Visit, UUID> {
 
     /** Whether a lead ever had a visit in this state. Used to name why it closed. */
     boolean existsByLeadIdAndStatus(UUID leadId, VisitStatus status);
+
+    /** The lead's most recently cancelled visit, to tell who cancelled it. */
+    java.util.Optional<Visit> findFirstByLeadIdAndStatusOrderByCancelledAtDesc(UUID leadId, VisitStatus status);
+
+    /** The first visit of a lead in one state. The first attended one is when it became an advanced lead. */
+    java.util.Optional<Visit> findFirstByLeadIdAndStatusOrderByCheckedInAtAsc(UUID leadId, VisitStatus status);
 
     /** How many places one slot on one date has taken. */
     @Query("""

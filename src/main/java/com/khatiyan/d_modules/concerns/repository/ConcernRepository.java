@@ -233,6 +233,21 @@ public interface ConcernRepository extends JpaRepository<Concern, UUID> {
     long countByPropertyIdAndCreatedAtAfter(UUID propertyId, Instant fromInstant);
 
     /**
+     * What that count counts, newest first: Home's Concerns today screen
+     * (2026-10-18). Photos come in the same query: read one concern at a time
+     * they were a query per concern.
+     */
+    @Query("""
+        SELECT DISTINCT c
+        FROM Concern c
+        LEFT JOIN FETCH c.photos
+        WHERE c.propertyId = :propertyId
+          AND c.createdAt > :fromInstant
+        ORDER BY c.createdAt DESC
+    """)
+    List<Concern> findRaisedSinceWithPhotos(UUID propertyId, Instant fromInstant);
+
+    /**
      * Open, still-unassigned concerns for a property older than a cutoff.
      * Used for "unattended for more than 24h".
      */

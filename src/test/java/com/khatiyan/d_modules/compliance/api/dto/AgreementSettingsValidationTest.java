@@ -39,6 +39,24 @@ class AgreementSettingsValidationTest {
         }
     }
 
+    @Test
+    void previewCannotOfferATermLongerThanOnboardingAccepts() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            var validator = factory.getValidator();
+            for (Integer months : new Integer[] { 0, 12, 24 }) {
+                var query = new AgreementPreviewQuery(java.util.UUID.randomUUID(), null, null, null,
+                        null, months, null, null, null, false);
+                assertThat(validator.validate(query)).anySatisfy(violation ->
+                        assertThat(violation.getPropertyPath().toString()).isEqualTo("validityMonths"));
+            }
+            for (Integer months : new Integer[] { null, 1, 11 }) {
+                var query = new AgreementPreviewQuery(java.util.UUID.randomUUID(), null, null, null,
+                        null, months, null, null, null, false);
+                assertThat(validator.validate(query)).isEmpty();
+            }
+        }
+    }
+
     private UpdatePropertyAgreementSettingsRequest request(Integer months) {
         return new UpdatePropertyAgreementSettingsRequest(new AgreementTemplate(Set.of(), List.of(), List.of(), months, ""));
     }

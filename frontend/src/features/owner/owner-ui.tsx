@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Animated, Easing, Modal, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
@@ -86,6 +87,7 @@ export function IconButton({
   return (
     <AnimatedPressable
       accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
       accessibilityState={{ disabled: Boolean(disabled) }}
       disabled={disabled}
       onPress={disabled ? undefined : onPress}
@@ -95,6 +97,7 @@ export function IconButton({
         borderColor: bordered ? colors.border : "transparent",
         borderRadius: bordered ? 14 : 18,
         borderWidth: bordered ? 1 : 0,
+        flexShrink: 0,
         height: bordered ? 48 : 36,
         justifyContent: "center",
         opacity: disabled ? 0.5 : 1,
@@ -113,6 +116,7 @@ export function ActionButton({
   icon: Icon,
   label,
   onPress,
+  trailingIcon: TrailingIcon,
   variant = "primary",
 }: {
   borderColor?: string;
@@ -122,14 +126,21 @@ export function ActionButton({
   icon?: ComponentType<LucideProps>;
   label: string;
   onPress: () => void;
+  /** After the label: an arrow on a button that moves to the next step. */
+  trailingIcon?: ComponentType<LucideProps>;
   /**
    * "danger" is the outlined red used inline, where a destructive control sits
    * among others and must not shout. "dangerFilled" is for a confirmation
    * dialog, where it is the answer to a question already asked and the weight
    * is the point. "dangerQuiet" has red content on a white surface with a
-   * neutral border for quieter inline destructive actions. "primaryQuiet" is
-   * the same in blue: a grey border and blue text, for a second action that
-   * should read as a link to more (user, 2026-10-04).
+   * neutral border for quieter inline destructive actions.
+   *
+   * <p>Every other white button is blue: a blue border and a blue label
+   * (user, 2026-10-17: "App wide for buttons that are white and are not
+   * delete/remove related buttons use the blue border and color"). That is
+   * "secondary", "outline", "primaryQuiet" and "successQuiet" alike, which
+   * keep their names so no screen has to change. "neutral" is the grey one
+   * they used to be, for a white button that removes or discards something.
    */
   variant?:
     | "primary"
@@ -140,34 +151,29 @@ export function ActionButton({
     | "outline"
     | "dangerFilled"
     | "success"
-    | "successQuiet";
+    | "successQuiet"
+    | "neutral";
 }) {
   const { colors, fonts } = useTheme();
   const primary = variant === "primary";
   const dangerFilled = variant === "dangerFilled";
   // Green, for an action that starts something good (choosing a meal plan).
   const success = variant === "success";
-  // Green text on white, the quiet counterpart of dangerQuiet.
-  const successQuiet = variant === "successQuiet";
   const danger = variant === "danger";
   const dangerQuiet = variant === "dangerQuiet";
-  // Blue text on white, the quiet counterpart of primary.
-  const primaryQuiet = variant === "primaryQuiet";
-  const neutral = variant === "secondary";
-  // Outlined: no fill at all and a full-strength ink border, matching the
-  // outlined-container/ink-glyph treatment used for icons. "secondary" sits on
-  // a surface fill with a soft border, which disappears on a card of the same
-  // colour and reads as a tinted block rather than a button.
-  const outline = variant === "outline";
+  // White with a blue border and a blue label: every white button that does
+  // not remove something (user, 2026-10-17).
+  const blueOnWhite =
+    variant === "secondary" || variant === "outline" || variant === "primaryQuiet" || variant === "successQuiet";
+  // The grey white button, kept for one that removes or discards something.
+  const neutral = variant === "neutral";
   const foreground = disabled
     ? colors.muted
     : dangerFilled || success
       ? "#FFFFFF"
       : danger || dangerQuiet
         ? colors.danger
-        : successQuiet
-          ? colors.successText
-        : neutral || outline
+        : neutral
           ? colors.ink
           : primary
             ? colors.onPrimary
@@ -183,9 +189,7 @@ export function ActionButton({
         ? colors.jade
       : primary
         ? colors.primary
-        : outline
-        ? "transparent"
-        : danger || dangerQuiet || neutral || successQuiet || primaryQuiet
+        : danger || dangerQuiet || neutral || blueOnWhite
           ? colors.surface
           : colors.primarySoft;
   return (
@@ -213,9 +217,9 @@ export function ActionButton({
           ? colors.borderStrong
           : danger || dangerFilled
             ? colors.danger
-            : outline
-              ? colors.ink
-              : neutral || dangerQuiet || successQuiet || primaryQuiet
+            : blueOnWhite
+              ? colors.primary
+              : neutral || dangerQuiet
                 ? colors.borderStrong
                 : "transparent"),
         borderCurve: "continuous",
@@ -254,6 +258,7 @@ export function ActionButton({
       >
         {label}
       </Text>
+      {TrailingIcon ? <TrailingIcon color={foreground} size={compact ? 15 : 17} strokeWidth={2.4} style={{ flexShrink: 0 }} /> : null}
     </AnimatedPressable>
   );
 }
@@ -279,11 +284,14 @@ export function RequiredMark({ required }: { required?: boolean }) {
 
 export function FormInput({
   autoCapitalize = "sentences",
+  borderOnContainer = false,
   error,
   icon: Icon,
+  inputStyle,
   keyboardType,
   label,
   labelAccessory,
+  labelStyle,
   maxLength,
   multiline,
   noPaste,
@@ -296,6 +304,8 @@ export function FormInput({
   disabled,
 }: {
   autoCapitalize?: "characters" | "none" | "sentences" | "words";
+  /** Keeps a multiline field's outline on its frame, clear of native input clipping. */
+  borderOnContainer?: boolean;
   /**
    * Hides the long-press copy and paste menu, for a confirmation field that
    * only means something when typed (2026-09-29). A keyboard's own clipboard
@@ -320,10 +330,13 @@ export function FormInput({
    * margin instead of each one starting wherever its icon ended.
    */
   icon?: ComponentType<LucideProps>;
+  /** Optional visual overrides for this field only; other inputs keep their defaults. */
+  inputStyle?: TextStyle;
   keyboardType?: "decimal-pad" | "number-pad" | "phone-pad";
   label: string;
   /** Beside the label, e.g. a "Verified" pill on a locked field. */
   labelAccessory?: ReactNode;
+  labelStyle?: TextStyle;
   maxLength?: number;
   multiline?: boolean;
   onChangeText: (value: string) => void;
@@ -370,7 +383,7 @@ export function FormInput({
   const labelRow = (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
       {Icon ? <Icon color={labelColor} size={15} strokeWidth={2.2} /> : null}
-      <Text style={[type.label, { color: labelColor }]}>
+      <Text style={[type.label, { color: labelColor }, labelStyle, error ? { color: colors.danger } : null]}>
         {label}
         <RequiredMark required={required} />
       </Text>
@@ -417,7 +430,7 @@ export function FormInput({
             onFocus={() => setFocused(true)}
             placeholder={placeholder}
             placeholderTextColor={colors.kicker}
-            style={{
+            style={[{
               color: colors.ink,
               flex: 1,
               fontFamily: fonts.sansMedium,
@@ -426,7 +439,7 @@ export function FormInput({
               paddingHorizontal: spacing.xs,
               paddingVertical: 0,
               textAlignVertical: "center",
-            }}
+            }, inputStyle]}
             value={value}
           />
         </View>
@@ -435,10 +448,22 @@ export function FormInput({
     );
   }
 
-  return (
-    <View style={{ gap: 6 }}>
-      {labelRow}
-      <AppTextInput
+  const fieldStyle: TextStyle = {
+    backgroundColor: disabled ? colors.surfaceSunken : colors.surface,
+    borderColor,
+    borderCurve: "continuous",
+    borderRadius: radius,
+    borderWidth: 1.5,
+    color: colors.ink,
+    fontFamily: fonts.sansMedium,
+    fontSize: 15,
+    minHeight: multiline ? 104 : 50,
+    paddingHorizontal: spacing.md,
+    paddingVertical: multiline ? spacing.sm : 0,
+    textAlignVertical: multiline ? "top" : "center",
+    ...inputStyle,
+  };
+  const input = <AppTextInput
         contextMenuHidden={noPaste}
         editable={!disabled}
         autoCapitalize={autoCapitalize}
@@ -451,22 +476,27 @@ export function FormInput({
         onFocus={() => setFocused(true)}
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
-        style={{
-          backgroundColor: disabled ? colors.surfaceSunken : colors.surface,
-          borderColor,
-          borderCurve: "continuous",
-          borderRadius: radius,
-          borderWidth: 1.5,
-          color: colors.ink,
-          fontFamily: fonts.sansMedium,
-          fontSize: 15,
-          minHeight: multiline ? 104 : 50,
-          paddingHorizontal: spacing.md,
-          paddingVertical: multiline ? spacing.sm : 0,
-          textAlignVertical: multiline ? "top" : "center",
-        }}
+        underlineColorAndroid={borderOnContainer ? "transparent" : undefined}
+        style={[fieldStyle, borderOnContainer ? {
+          backgroundColor: "transparent",
+          borderWidth: 0,
+          minHeight: typeof fieldStyle.minHeight === "number" ? Math.max(0, fieldStyle.minHeight - 2 * (fieldStyle.borderWidth ?? 0)) : fieldStyle.minHeight,
+        } : undefined]}
         value={value}
-      />
+      />;
+  return (
+    <View style={{ gap: 6 }}>
+      {labelRow}
+      {borderOnContainer ? <View style={{
+        backgroundColor: fieldStyle.backgroundColor,
+        borderColor: fieldStyle.borderColor,
+        borderCurve: fieldStyle.borderCurve,
+        borderRadius: fieldStyle.borderRadius,
+        borderWidth: fieldStyle.borderWidth,
+        minHeight: fieldStyle.minHeight,
+        minWidth: 0,
+        overflow: "hidden",
+      }}>{input}</View> : input}
       {errorText}
     </View>
   );
@@ -664,9 +694,9 @@ export function ConfirmDialog({
             width: "100%",
           }}
         >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
+          <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {title}
-          </Text>
+          </ModalTitle>
           <Text style={[type.modalDescription, { color: colors.muted }]}>
             {message}
           </Text>

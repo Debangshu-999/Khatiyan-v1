@@ -148,8 +148,7 @@ export function AlignedFieldRow({
       </View>
       <View style={{ width: 1 }} />
       <View style={{ flex: 1, minWidth: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
-        <Text
-          adjustsFontSizeToFit
+        <FitText
           minimumFontScale={0.85}
           numberOfLines={1}
           selectable
@@ -160,7 +159,7 @@ export function AlignedFieldRow({
           }}
         >
           {value}
-        </Text>
+        </FitText>
       </View>
     </View>
   );
@@ -173,7 +172,7 @@ function FieldLabel({ icon: Icon, text }: { icon?: ComponentType<LucideProps>; t
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 5, minWidth: 0 }}>
       {Icon ? <Icon color={colors.muted} size={13} strokeWidth={2.2} /> : null}
-      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>{text}</Text>
+      <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>{text}</FitText>
     </View>
   );
 }
@@ -227,7 +226,7 @@ export function ReadonlyField({
       <FieldLabel icon={icon} text={label} />
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 24 }}>
         {prefix}
-        <Text
+        <FitText
           numberOfLines={valueLines}
           style={{
             color: valueColor,
@@ -243,7 +242,7 @@ export function ReadonlyField({
           }}
         >
           {value}
-        </Text>
+        </FitText>
         {status ? (
           <Text
             style={[
@@ -274,3 +273,4 @@ export function ReadonlyField({
   );
 }
 import { CircleHelp } from "lucide-react-native";
+import { FitText } from "@/components/fit-text";

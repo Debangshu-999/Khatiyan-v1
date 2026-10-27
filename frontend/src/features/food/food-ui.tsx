@@ -15,6 +15,7 @@ import {
   type FoodProfileCategory,
   type FoodQuantityUnit,
 } from "@/store/services/food-api";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The shared vocabulary of the food module.
@@ -496,7 +497,7 @@ export function DayStrip({
               width: contained ? 112 : undefined,
             }}
           >
-            <Text
+            <FitText
               numberOfLines={1}
               style={{
                 color: active ? colors.onTabSelected : colors.ink,
@@ -505,9 +506,9 @@ export function DayStrip({
               }}
             >
               {DAY_LABEL[day]}
-            </Text>
+            </FitText>
             {showDates ? (
-              <Text
+              <FitText
                 numberOfLines={1}
                 style={{
                   color: active ? colors.onTabSelected : colors.muted,
@@ -517,7 +518,7 @@ export function DayStrip({
                 }}
               >
                 {shortDate(date)}
-              </Text>
+              </FitText>
             ) : null}
           </AnimatedPressable>
         );

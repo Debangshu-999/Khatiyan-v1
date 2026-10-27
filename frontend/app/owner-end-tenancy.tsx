@@ -205,6 +205,8 @@ export default function OwnerEndTenancyScreen() {
   const [earlyExitInstrument, setEarlyExitInstrument] = useState<ExitChargeInstrument | null>(null);
   // The instrument being confirmed, held aside until the actor agrees to it.
   const [pendingInstrument, setPendingInstrument] = useState<ExitChargeInstrument | null>(null);
+  // Ending a stay cannot be undone, so the footer asks first (user, 2026-10-18).
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
   const [instrumentPreviewOpen, setInstrumentPreviewOpen] = useState(false);
   const [collectedVia, setCollectedVia] = useState<ExitCollectionMethod>("CASH");
   // Only the ways this property takes money (2026-09-28), the same list as
@@ -484,7 +486,10 @@ export default function OwnerEndTenancyScreen() {
 
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
-      <ScreenScrollView safeAreaEdges={["top"]} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
+      {/* No pull-to-refresh (user, 2026-10-18): at the top of the page it took
+          a downward swipe on the status carousel, so the cards would not move
+          until the page was scrolled. */}
+      <ScreenScrollView safeAreaEdges={["top"]} refreshable={false} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
         <ScreenHeader
           title="End"
           italicTail="tenancy."
@@ -966,10 +971,29 @@ export default function OwnerEndTenancyScreen() {
           <ActionButton
             disabled={endState.isLoading || Boolean(blockingMessage)}
             label={endState.isLoading ? "Ending..." : "End tenancy"}
-            onPress={() => void end()}
+            onPress={() => setConfirmEndOpen(true)}
             variant="dangerFilled"
           />
         </PinnedFooter>
+      ) : null}
+
+      {confirmEndOpen && tenancy ? (
+        <ConfirmDialog
+          bullets={[
+            "The stay ends now and the bed is free for someone else.",
+            "The charges and the deposit decision on this screen are recorded as they are.",
+          ]}
+          confirmLabel="End tenancy"
+          destructive
+          footnote="This cannot be undone."
+          message={`${tenancy.tenantName?.trim() || "This tenant"}'s stay ends now.`}
+          onCancel={() => setConfirmEndOpen(false)}
+          onConfirm={() => {
+            setConfirmEndOpen(false);
+            void end();
+          }}
+          title="End this tenancy?"
+        />
       ) : null}
 
       {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
@@ -1826,7 +1850,7 @@ function ExitChoiceRow<T extends string>({
                   <View style={{ backgroundColor: colors.primary, borderRadius: 999, height: 10, width: 10 }} />
                 ) : null}
               </View>
-              <Text
+              <FitText
                 numberOfLines={2}
                 style={[
                   type.bodyStrong,
@@ -1834,7 +1858,7 @@ function ExitChoiceRow<T extends string>({
                 ]}
               >
                 {option.label}
-              </Text>
+              </FitText>
             </AnimatedPressable>
           );
         })}
@@ -1944,3 +1968,4 @@ function formatDate(value: string) {
 }
 import { CircleHelp } from "lucide-react-native";
 import { InfoModal } from "@/components/info-modal";
+import { FitText } from "@/components/fit-text";

@@ -26,6 +26,19 @@ public record PropertyPaymentDetailsResponse(
     List<ManualPaymentMethod> acceptedMethods,
     boolean cashOtpRequired,
     /**
+     * Whether booking tokens are paid to the bill details above (2026-10-11).
+     * True until the owner gives tokens details of their own, which are the
+     * seven fields that follow and are all null while this is true.
+     */
+    boolean tokenUsesBillDetails,
+    String tokenUpiVpa,
+    String tokenPayeeName,
+    String tokenUpiPhone,
+    String tokenUpiQrImageUrl,
+    String tokenBankAccountNumber,
+    String tokenBankIfsc,
+    String tokenBankAccountHolder,
+    /**
      * The row's version (2026-09-29), sent back as If-Match on save. 0 before
      * the first save, when there is no row yet.
      */
@@ -38,7 +51,8 @@ public record PropertyPaymentDetailsResponse(
             PropertyPaymentDetails defaults = PropertyPaymentDetails.empty(null);
             return new PropertyPaymentDetailsResponse(
                     null, null, null, null, null, null, null, false,
-                    defaults.acceptedMethods(), defaults.isCashOtpRequired(), 0L);
+                    defaults.acceptedMethods(), defaults.isCashOtpRequired(),
+                    true, null, null, null, null, null, null, null, 0L);
         }
         return new PropertyPaymentDetailsResponse(
                 details.getUpiVpa(),
@@ -51,6 +65,14 @@ public record PropertyPaymentDetailsResponse(
                 details.canAcceptUpi(),
                 details.acceptedMethods(),
                 details.isCashOtpRequired(),
+                details.isTokenUsesBillDetails(),
+                details.getTokenUpiVpa(),
+                details.getTokenPayeeName(),
+                details.getTokenUpiPhone(),
+                details.getTokenUpiQrImageUrl(),
+                details.getTokenBankAccountNumber(),
+                details.getTokenBankIfsc(),
+                details.getTokenBankAccountHolder(),
                 details.getVersion());
     }
 }

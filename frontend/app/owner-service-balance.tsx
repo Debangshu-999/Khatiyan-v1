@@ -262,8 +262,7 @@ function OwnerServiceBalanceContent() {
             <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12, letterSpacing: 0.5 }}>
               AVAILABLE BALANCE
             </Text>
-            <Text
-              adjustsFontSizeToFit
+            <FitText
               minimumFontScale={0.55}
               numberOfLines={1}
               style={{
@@ -276,7 +275,7 @@ function OwnerServiceBalanceContent() {
               }}
             >
               <Text style={{ letterSpacing: 3 }}>₹</Text>{formatMoneyPaise(balance?.availablePaise ?? 0).replace("₹", "")}
-            </Text>
+            </FitText>
           </View>
         </LinearGradient>
         <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderWidth: 1, borderRadius: 18, padding: 14, gap: 10 }}>
@@ -470,12 +469,12 @@ function SummaryTile({
         <Icon color={color} size={22} strokeWidth={2.1} />
       </View>
       <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-        <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
+        <FitText minimumFontScale={0.8} numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
           {label}
-        </Text>
-        <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>
+        </FitText>
+        <FitText minimumFontScale={0.8} numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>
           {value}
-        </Text>
+        </FitText>
       </View>
     </View>
   );
@@ -564,9 +563,9 @@ function EntryRow({ entry }: { entry: ServiceBalanceEntry }) {
       </View>
 
       <View style={{ flex: 1, gap: 2 }}>
-        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14.5 }}>
+        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14.5 }}>
           {entryTitle(entry)}
-        </Text>
+        </FitText>
         <Text style={[type.caption, { color: colors.muted }]}>{formatEntryDate(entry.createdAt)}</Text>
       </View>
 
@@ -655,7 +654,7 @@ function QuickAmount({
         paddingHorizontal: spacing.sm,
       }}
     >
-      <Text
+      <FitText
         numberOfLines={1}
         style={{
           color: selected ? colors.danger : colors.muted,
@@ -666,8 +665,9 @@ function QuickAmount({
         }}
       >
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }
 import { CircleHelp } from "lucide-react-native";
+import { FitText } from "@/components/fit-text";

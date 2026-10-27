@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import { Modal, Text, View } from "react-native";
@@ -119,7 +120,7 @@ export function NotificationOptInPrompt() {
               <BellRing color={colors.ink} size={29} strokeWidth={1.8} />
             </View>
             <View style={{ flex: 1, gap: spacing.xs }}>
-              <Text
+              <ModalTitle
                 style={{
                   color: colors.ink,
                   fontFamily: fonts.display,
@@ -127,7 +128,7 @@ export function NotificationOptInPrompt() {
                 }}
               >
                 Enable alerts
-              </Text>
+              </ModalTitle>
               <Text style={[type.modalDescription, { color: colors.muted }]}>
                 Get bill, concern, notice and tenancy updates on this device.
               </Text>

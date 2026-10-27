@@ -34,5 +34,6 @@ public record MyEnquiryItemResponse(
         // moments the screen needs for the pass and for running late (2026-10-04).
         MyEnquiryVisitView visit,
         // Sent back as If-Match with "Changed your mind?".
-        long version) {
+        long version,
+        PostVisitBookingEligibility bookingEligibility) {
 }

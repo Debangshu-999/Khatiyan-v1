@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
@@ -44,6 +45,7 @@ import {
   type FoodItem,
   type FoodQuantityUnit,
 } from "@/store/services/food-api";
+import { FitText } from "@/components/fit-text";
 
 const UNITS: FoodQuantityUnit[] = ["PIECE", "SERVING", "GRAM", "KILOGRAM", "MILLILITRE", "LITRE"];
 
@@ -357,9 +359,9 @@ function ItemStatusFilterDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Filter by status
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
           <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
@@ -532,9 +534,9 @@ function ClampedDescription({
 
   return (
     <View>
-      <Text numberOfLines={lines} style={style}>
+      <FitText numberOfLines={lines} style={style}>
         {text}
-      </Text>
+      </FitText>
 
       {/* Zero opacity and absolutely positioned, so it measures without taking
           part in the layout. Half a line of tolerance absorbs the rounding
@@ -599,7 +601,7 @@ function FoodItemDetailDialog({ item, onClose }: { item: FoodItem; onClose: () =
         >
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, padding: spacing.lg }}>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>{item.name}</Text>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>{item.name}</ModalTitle>
             </View>
             <AnimatedPressable
               accessibilityLabel="Close"

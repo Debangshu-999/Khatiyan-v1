@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
@@ -92,7 +93,7 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
                 </SkeletonBoundary>
               ) : pass.data ? (
                 <View style={{ alignItems: "center", gap: spacing.md }}>
-                  <Text
+                  <ModalTitle
                     style={{
                       color: colors.ink,
                       fontFamily: fonts.display,
@@ -102,7 +103,7 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
                     }}
                   >
                     {pass.data.propertyName}
-                  </Text>
+                  </ModalTitle>
                   <View
                     style={{
                       alignItems: "center",

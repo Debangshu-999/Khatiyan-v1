@@ -1,3 +1,5 @@
+import { ModalTitle } from "@/components/modal-title";
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { CenterModal } from "@/components/center-modal";
 import type { ComponentType, PropsWithChildren, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -74,6 +76,8 @@ import { StatusPill } from "@/components/status-pill";
 import { ActionButton, FormInput, NoticeBar } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 type PinModalMode = "change" | "forgot";
 type PinFlowStep = "details" | "otp" | "pin";
@@ -383,11 +387,11 @@ function ProfileCard({
             the name, photo and email are all edited on the profile screen,
             where they are the subject rather than a header. */}
         <View style={{ flex: 1, gap: 2 }}>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 19 }}>
-            {fullName || "Add your name"}
-          </Text>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 19 }}>
+            {cardName(fullName || "Add your name")}
+          </FitText>
           <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]}>
-            {phone}
+            {formatIndianPhone(phone)}
           </Text>
         </View>
       </View>
@@ -401,9 +405,9 @@ function ProfileCard({
           {emailLoading ? (
             <Skeleton height={14} width="58%" />
           ) : (
-            <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
+            <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
               {email ?? "Not added"}
-            </Text>
+            </FitText>
           )}
         </View>
       </View>
@@ -556,12 +560,12 @@ function PinVerificationModal({
   // one fact, and the block cost enough height to push the tallest step off a
   // static (non-scrolling) card once the keypad was up.
   const subtitle = step === "otp"
-    ? `Enter the OTP sent to ${phone}.`
+    ? `Enter the OTP sent to ${formatIndianPhone(phone)}.`
     : step === "pin"
       ? "OTP verified. Choose and confirm a fresh PIN."
       : mode === "change"
-        ? `Enter your current PIN and a new one. We'll send an OTP to ${phone}.`
-        : `We'll send an OTP to ${phone} before you choose a fresh PIN.`;
+        ? `Enter your current PIN and a new one. We'll send an OTP to ${formatIndianPhone(phone)}.`
+        : `We'll send an OTP to ${formatIndianPhone(phone)} before you choose a fresh PIN.`;
 
   return (
     <CenterModal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={resetAndClose}>
@@ -613,7 +617,7 @@ function PinVerificationModal({
                   <Text style={[type.eyebrow, { color: colors.primary }]}>
                     PIN verification
                   </Text>
-                  <Text
+                  <ModalTitle
                     style={{
                       color: colors.ink,
                       fontFamily: fonts.display,
@@ -621,7 +625,7 @@ function PinVerificationModal({
                     }}
                   >
                     {title}
-                  </Text>
+                  </ModalTitle>
                   <Text style={[type.modalDescription, { color: colors.muted }]}>
                     {subtitle}
                   </Text>
@@ -799,7 +803,8 @@ function SecondaryButton({ busy, label, onPress }: { busy?: boolean; label: stri
       style={{
         alignItems: "center",
         backgroundColor: "transparent",
-        borderColor: colors.border,
+        // White buttons are blue-bordered, app wide (user, 2026-10-17).
+        borderColor: colors.primary,
         borderRadius: 12,
         borderWidth: 1,
         justifyContent: "center",

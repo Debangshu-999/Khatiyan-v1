@@ -1,0 +1,10 @@
+Generator: built-in image_gen tool. Transparent background enabled.
+Deliverable: property-leads-256.png, resized to exactly 256 x 256 with alpha preserved.
+
+Use case: stylized-concept.
+Asset type: Property Leads feature icon for the Khatiyan property-management app, to be delivered as a 256 x 256 transparent PNG.
+Primary request: A polished, highly readable 3D illustrated icon representing prospective tenants interested in a property. A compact cobalt-blue and white apartment building behind a white prospective-tenant contact card, with two simple blue head-and-shoulder avatar silhouettes on the card and a small golden magnifying glass partly overlapping it to convey identifying property leads.
+Style: premium friendly rounded 3D app-tool illustration, glossy blue surfaces, smooth white ceramic-like surfaces, restrained golden accent, soft studio highlights, clean dimensional forms, matching the colorful miniature 3D home-tool icon language of a property app.
+Composition: one cohesive centered icon, square canvas, entire silhouette visible with about 6 percent transparent padding, large simple shapes readable at small sizes. No extraneous decoration.
+Background: genuine fully transparent alpha; no background, no square tile, no circular background, no floor, no backdrop, no checkerboard baked in. Object self-shading only.
+Constraints: no text, no letters, no numbers, no brand logos, no watermark, no plus signs, no UI screenshot. The artwork should communicate property prospects/leads rather than a completed booking.

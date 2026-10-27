@@ -56,8 +56,10 @@ import {
   type FoodProfile,
 } from "@/store/services/food-api";
 import type { MealType } from "@/store/services/property-api";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The tenant's own food: which plan they are on, and what it feeds them.
@@ -536,9 +538,9 @@ function PlanCard({
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <FoodProfileMark category={category} name={version.hybrid ? todaysDay?.profileName ?? name : name} size={42} />
         <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
             {name}
-          </Text>
+          </FitText>
           <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12, lineHeight: 16 }}>
             {startsTomorrow
               ? `Starts ${tomorrow}`
@@ -704,10 +706,7 @@ function WeekStrip({ marked, version }: { marked: DayOfWeek; version: FoodPlanVe
             paddingHorizontal: spacing.sm,
             paddingVertical: spacing.xs + 2,
             position: "absolute",
-            shadowColor: colors.shadow,
-            shadowOffset: { height: 4, width: 0 },
-            shadowOpacity: 0.16,
-            shadowRadius: 12,
+            ...softShadow(colors.shadow, 4, 12, 0.16),
             top: rowHeight + 6,
             width: cardWidth,
           }}
@@ -718,9 +717,9 @@ function WeekStrip({ marked, version }: { marked: DayOfWeek; version: FoodPlanVe
             size={28}
           />
           <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
-            <Text numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
+            <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
               {shownEntry.profileName}
-            </Text>
+            </FitText>
             {shownEntry.profileCategory ? (
               <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
                 {FOOD_CATEGORY_LABEL[shownEntry.profileCategory]}
@@ -766,9 +765,9 @@ function HybridPlanCard({ current, onBuild }: { current: boolean; onBuild: () =>
         </View>
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
+            <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
               Hybrid plan
-            </Text>
+            </FitText>
             {current ? <FoodStatusChip icon="check-circle" label="Your plan" tone="success" /> : null}
           </View>
           <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12, lineHeight: 16 }}>
@@ -924,9 +923,9 @@ function DayPlanDropdown({
               {chosen.name}
             </MarqueeText>
           ) : (
-            <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+            <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
               Select a profile
-            </Text>
+            </FitText>
           )}
         </View>
         {/* On a grey disc, pointing up while the list is open (user, 2026-09-29). */}
@@ -1006,15 +1005,15 @@ function ProfileChoiceCard({
         <FoodProfileMark category={profile.category} name={profile.name} size={48} />
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
+            <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
               {profile.name}
-            </Text>
+            </FitText>
             {current ? <FoodStatusChip icon="check-circle" label="Your plan" tone="success" /> : null}
           </View>
           {profile.description ? (
-            <Text numberOfLines={3} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
+            <FitText numberOfLines={3} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
               {profile.description}
-            </Text>
+            </FitText>
           ) : (
             <NoDescription />
           )}
@@ -1101,9 +1100,9 @@ function UpcomingMealCard({ profileId }: { profileId: string }) {
         <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 999, height: 36, justifyContent: "center", width: 36 }}>
           <MaterialCommunityIcons color={colors.primary} name="calendar-month-outline" size={21} />
         </View>
-        <Text numberOfLines={1} style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13.5 }}>
+        <FitText numberOfLines={1} style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13.5 }}>
           {dayLabel}
-        </Text>
+        </FitText>
         {upcoming ? (
           <View style={{ backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
             <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 11.5 }}>
@@ -1283,13 +1282,13 @@ function WeeklyMenu({ oldPlan, version }: { oldPlan: boolean; version: FoodPlanV
           }}
         >
           <FoodProfileMark category={dayPlan.profileCategory ?? undefined} name={dayPlan.profileName} size={22} />
-          <Text numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>
             {dayPlan.profileName}
-          </Text>
+          </FitText>
           {oldPlan ? (
-            <Text numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
+            <FitText numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
               · Old plan until tonight
-            </Text>
+            </FitText>
           ) : null}
         </View>
       ) : null}

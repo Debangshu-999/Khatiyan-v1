@@ -1,8 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { CalendarClock, Plus, Repeat2, Undo2, Wallet, X } from "lucide-react-native";
 
@@ -33,6 +32,7 @@ import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
 import { isUnchanged } from "@/features/forms/unchanged";
 import { useFormErrors } from "@/features/forms/use-form-errors";
+import { ModeRow } from "@/features/enquiry/handler-mode-sheet";
 import { ExpenseCategoryPicker } from "@/features/owner/expense-category-picker";
 import { ActionButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
 import { MonthSelector } from "@/components/month-selector";
@@ -53,12 +53,14 @@ import {
   useSetDefaultBudgetMutation,
   useUpdateRecurringExpenseMutation,
   type Expense,
+  type ExpenseBudgetOverview,
   type ExpenseBudgetTrendPoint,
   type ExpenseEntryType,
   type RecurringExpense,
 } from "@/store/services/expense-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const NO_EXPENSE_ILLUSTRATION = require("../assets/empty-states/No-Expense_512x512.png");
 
@@ -115,17 +117,6 @@ export default function OwnerExpensesScreen() {
   return (
     <>
       <ScreenScrollView
-        background={
-          <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-            <LinearGradient
-              colors={[colors.primarySoft, colors.surface]}
-              end={{ x: 0.5, y: 1 }}
-              locations={[0, 1]}
-              start={{ x: 0.5, y: 0 }}
-              style={{ height: 230 }}
-            />
-          </View>
-        }
         contentContainerStyle={{ paddingTop: spacing.xs }}
         safeAreaEdges={["top", "bottom"]}
         surface={colors.surface}
@@ -344,9 +335,9 @@ function CategoryBreakdown({ loading, totalSpentPaise, totals }: { loading: bool
             {totals.map((item) => (
               <View key={item.categoryId ?? item.categoryName} style={{ gap: spacing.xs }}>
                 <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={1}>
+                  <FitText style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={1}>
                     {item.categoryName}
-                  </Text>
+                  </FitText>
                   <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13, fontVariant: ["tabular-nums"], }}>
                     {formatMoneyPaise(item.amountPaise)}
                   </Text>
@@ -395,21 +386,21 @@ function BudgetTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
       <View style={{ gap: spacing.md }}>
         <View style={{ alignItems: "flex-start", columnGap: spacing.sm, flexDirection: "row", justifyContent: "space-between" }}>
           <View style={{ flexShrink: 1, gap: 2 }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
+            <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
               Savings by month
-            </Text>
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+            </FitText>
+            <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
               {monthShort(points[0]?.month)} – {monthShort(latest?.month)}
-            </Text>
+            </FitText>
           </View>
           {hasBudget && latest ? (
             <View style={{ alignItems: "flex-end", gap: 2 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Latest
               </Text>
-              <Text numberOfLines={1} style={{ color: latest.savingsPaise >= 0 ? colors.jade : colors.danger, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], }}>
+              <FitText numberOfLines={1} style={{ color: latest.savingsPaise >= 0 ? colors.jade : colors.danger, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], }}>
                 {formatMoneyPaise(latest.savingsPaise)}
-              </Text>
+              </FitText>
             </View>
           ) : null}
         </View>
@@ -466,12 +457,12 @@ function StatusValueTile({ color, hint, label, value }: { color: string; hint?: 
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
-      <Text style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
+      <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
         {label}
-      </Text>
-      <Text adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={1} style={{ color, fontFamily: fonts.display, fontSize: 19, fontVariant: ["tabular-nums"], letterSpacing: -0.5, lineHeight: 23 }}>
+      </FitText>
+      <FitText minimumFontScale={0.6} numberOfLines={1} style={{ color, fontFamily: fonts.display, fontSize: 19, fontVariant: ["tabular-nums"], letterSpacing: -0.5, lineHeight: 23 }}>
         {value}
-      </Text>
+      </FitText>
       {hint ? (
         <Text style={[type.description, { color: colors.muted }]}>
           {hint}
@@ -509,9 +500,9 @@ function ChartLegend({ color, label, line = false }: { color: string; label: str
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
       <View style={line ? { backgroundColor: color, height: 2, width: 14 } : { backgroundColor: color, borderRadius: 3, height: 10, width: 10 }} />
-      <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+      <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
         {label}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -607,12 +598,12 @@ function RaisedTrendChart({ points }: { points: ExpenseBudgetTrendPoint[] }) {
     <Card>
       <View style={{ gap: spacing.md }}>
         <View style={{ alignItems: "center", columnGap: spacing.sm, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing.xs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]} numberOfLines={1}>
+          <FitText style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]} numberOfLines={1}>
             Raised per month
-          </Text>
-          <Text numberOfLines={1} style={{ color: colors.warningText, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], }}>
+          </FitText>
+          <FitText numberOfLines={1} style={{ color: colors.warningText, fontFamily: fonts.display, fontSize: 18, fontVariant: ["tabular-nums"], }}>
             {formatMoneyPaise(totalRaised)}
-          </Text>
+          </FitText>
         </View>
         <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={{ height }}>
           {width > 0 ? (
@@ -653,12 +644,12 @@ function ExpenseRow({
     <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, opacity: expense.reversed ? 0.6 : 1, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+          <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
             {expense.paidTo}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+          </FitText>
+          <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {expense.categoryName} · {formatDate(expense.incurredDate)}
-          </Text>
+          </FitText>
         </View>
         <MoneyText color={negative ? colors.danger : colors.ink} paise={expense.amountPaise} weight="700" />
       </View>
@@ -706,9 +697,9 @@ function ExpenseRow({
                 Reversed {formatDate(reversal.incurredDate)}
               </Text>
               {reversal.description ? (
-                <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>
+                <FitText style={[type.description, { color: colors.muted }]} numberOfLines={2}>
                   {reversal.description}
-                </Text>
+                </FitText>
               ) : null}
             </View>
             <MoneyText color={colors.danger} paise={reversal.amountPaise} weight="700" />
@@ -746,9 +737,9 @@ function ToolBox({ icon: Icon, label, onPress }: { icon: typeof Plus; label: str
       style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: 16, borderWidth: 1, flex: 1, gap: spacing.xs, justifyContent: "center", minHeight: 96, paddingHorizontal: spacing.xs, paddingVertical: spacing.md }}
     >
       <Icon color={colors.primary} size={30} strokeWidth={2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, textAlign: "center" }} numberOfLines={2}>
+      <FitText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, textAlign: "center" }} numberOfLines={2}>
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }
@@ -821,24 +812,58 @@ function AddExpenseSheet({ categories, month, onClose, propertyId }: { categorie
   );
 }
 
-function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: { defaultMonthlyBudgetPaise: number | null; version: number }; month: string; onClose: () => void; propertyId: string }) {
+/**
+ * The recurring monthly budget (user, 2026-10-18): a fixed amount, and, when
+ * switched on, this month's received income, all of it or a set part. The
+ * part never adds more than the month received. The total below is the sum.
+ */
+function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: ExpenseBudgetOverview; month: string; onClose: () => void; propertyId: string }) {
   const toast = useToast();
+  const { colors, fonts, type } = useTheme();
   const [amount, setAmount] = useState(budget.defaultMonthlyBudgetPaise != null ? String(Math.round(budget.defaultMonthlyBudgetPaise / 100)) : "");
-  const form = useFormErrors<"amount">();
+  const [useIncome, setUseIncome] = useState(budget.incomeMode !== "NONE");
+  const [incomeMode, setIncomeMode] = useState<"FULL" | "PART">(budget.incomeMode === "PART" ? "PART" : "FULL");
+  const [part, setPart] = useState(budget.incomePartPaise != null ? String(Math.round(budget.incomePartPaise / 100)) : "");
+  const form = useFormErrors<"amount" | "part">();
   const [setDefaultBudget, state] = useSetDefaultBudgetMutation();
-  const initialAmount = budget.defaultMonthlyBudgetPaise;
+
+  const monthName = new Intl.DateTimeFormat("en-IN", { month: "long", timeZone: "UTC" }).format(new Date(`${month.slice(0, 7)}-01T00:00:00Z`));
+  const thisMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()).slice(0, 7) === month.slice(0, 7);
+  const received = budget.incomeReceivedPaise ?? 0;
+  const fixedPaise = rupeesToPaise(amount) ?? 0;
+  const partPaise = rupeesToPaise(part);
+  const fromIncome = !useIncome ? 0 : incomeMode === "FULL" ? received : Math.min(partPaise ?? 0, received);
+  const chosenMode = useIncome ? incomeMode : "NONE";
+  /** The part may not be more than the income received (user, 2026-10-18). Null when it is fine. */
+  function partProblem(value: number | null) {
+    if (value == null || value <= 0) return "Enter how much of the income to add.";
+    if (value > received) return `Enter no more than ${formatMoneyPaise(received)}, the income received ${thisMonth ? "so far this month" : `in ${monthName}`}.`;
+    return null;
+  }
 
   async function submit() {
     const amountPaise = rupeesToPaise(amount);
-    if (!form.validate(amountPaise == null ? { amount: "Enter a valid amount." } : {}) || amountPaise == null) {
+    const errors: Partial<Record<"amount" | "part", string>> = {};
+    if (amountPaise == null) errors.amount = "Enter a valid amount.";
+    const tooMuch = chosenMode === "PART" ? partProblem(partPaise) : null;
+    if (tooMuch) errors.part = tooMuch;
+    if (!form.validate(errors) || amountPaise == null) {
       return;
     }
-    if (amountPaise === initialAmount) {
+    const sameShare = chosenMode === budget.incomeMode && (chosenMode !== "PART" || partPaise === budget.incomePartPaise);
+    if (amountPaise === budget.defaultMonthlyBudgetPaise && sameShare) {
       toast.warning("No changes have been made.");
       return;
     }
     try {
-      await setDefaultBudget({ amountPaise, month, propertyId, version: budget.version }).unwrap();
+      await setDefaultBudget({
+        amountPaise,
+        incomeMode: chosenMode,
+        incomePartPaise: chosenMode === "PART" ? partPaise : null,
+        month,
+        propertyId,
+        version: budget.version,
+      }).unwrap();
       onClose();
       toast.success("Monthly budget updated.");
     } catch (caught) {
@@ -848,11 +873,74 @@ function SetBudgetSheet({ budget, month, onClose, propertyId }: { budget: { defa
 
   return (
     <Sheet onClose={onClose} title="Monthly budget">
-      <BodyNote>This is the recurring monthly budget. It carries forward every month. A change applies from this month on, and earlier months keep the budget they had.</BodyNote>
-      <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Monthly budget" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
+      <BodyNote>The budget repeats every month. A change applies from this month on.</BodyNote>
+      <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Fixed amount" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
+
+      <View style={{ borderColor: colors.border, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, padding: spacing.md }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+          <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+            <Text style={[type.body, { color: colors.ink, fontFamily: fonts.sansBold }]}>Add this month&apos;s income</Text>
+            <Text style={[type.caption, { color: colors.muted }]}>
+              {`Received ${thisMonth ? "so far " : ""}in ${monthName}: ${formatMoneyPaise(received)}`}
+            </Text>
+          </View>
+          <Switch
+            accessibilityLabel="Add this month's income"
+            onValueChange={(next) => { setUseIncome(next); form.clearField("part"); }}
+            thumbColor={colors.surface}
+            trackColor={{ false: colors.borderStrong, true: colors.primary }}
+            value={useIncome}
+          />
+        </View>
+        {useIncome ? (
+          <>
+            <ModeRow description="All income received each month" disabled={state.isLoading} label="Full income" onPress={() => { setIncomeMode("FULL"); form.clearField("part"); }} selected={incomeMode === "FULL"} />
+            <ModeRow description="Up to an amount you set" disabled={state.isLoading} label="Part of income" onPress={() => setIncomeMode("PART")} selected={incomeMode === "PART"} />
+            {incomeMode === "PART" ? (
+              <>
+                <FormInput error={form.errors.part} keyboardType="decimal-pad" label="Income amount" onChangeText={(next) => {
+                  setPart(next);
+                  // Said as it is typed: more than was received is refused here, not saved and quietly capped.
+                  const typed = rupeesToPaise(next);
+                  if (typed != null && typed > received) {
+                    form.validate({ ...form.errors, part: partProblem(typed) ?? undefined });
+                  } else {
+                    form.clearField("part");
+                  }
+                }} placeholder="0" prefix="₹" value={part} />
+                {form.errors.part ? null : (
+                  <Text style={[type.caption, { color: colors.muted }]}>{`Up to ${formatMoneyPaise(received)}, the income received ${thisMonth ? "so far" : `in ${monthName}`}.`}</Text>
+                )}
+              </>
+            ) : null}
+          </>
+        ) : null}
+      </View>
+
+      {/* The sum, line by line, so the total is never a surprise. */}
+      <View style={{ backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.xs }}>
+        <BudgetSumLine label="Fixed amount" paise={fixedPaise} />
+        {useIncome ? <BudgetSumLine label="From income" paise={fromIncome} /> : null}
+        {budget.raisedThisMonthPaise > 0 ? <BudgetSumLine label="Raised this month" paise={budget.raisedThisMonthPaise} /> : null}
+        <View style={{ backgroundColor: colors.border, height: 1, marginVertical: spacing.xxs }} />
+        <BudgetSumLine label={`Budget for ${monthName}`} paise={fixedPaise + fromIncome + budget.raisedThisMonthPaise} total />
+      </View>
+
       <ActionButton disabled={state.isLoading || form.blocked} label={state.isLoading ? "Saving" : "Save budget"} onPress={() => void submit()} />
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </Sheet>
+  );
+}
+
+function BudgetSumLine({ label, paise, total = false }: { label: string; paise: number; total?: boolean }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between", paddingVertical: 6 }}>
+      <Text style={[total ? type.body : type.caption, { color: total ? colors.ink : colors.muted, flex: 1, fontFamily: total ? fonts.sansBold : undefined }]}>
+        {label}
+      </Text>
+      <Text style={[total ? type.body : type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>{formatMoneyPaise(paise)}</Text>
+    </View>
   );
 }
 
@@ -967,9 +1055,9 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: Expen
           {items.map((item) => (
             <View key={item.id} style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+                <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
                   {item.paidTo}
-                </Text>
+                </FitText>
                 {/* Three segments and a status pill competing for one row: the
                     last one ("projected monthly") was the one that got clipped.
                     Scrolls rather than ellipsises, per the app's overflow rule. */}

@@ -14,9 +14,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.concurrency.RequiresVersion;
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.lead.api.dto.BookedVisitResponse;
 import com.khatiyan.d_modules.lead.api.dto.CheckInVisitRequest;
@@ -60,6 +62,21 @@ public class LeadVisitController {
     public PropertyVisitsResponse propertyVisits(
             @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID propertyId) {
         return visitDayService.propertyVisits(user.userId(), propertyId);
+    }
+
+    @GetMapping("/properties/{propertyId}/visits/history")
+    public PageResponse<VisitCardResponse> propertyHistory(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID propertyId,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "12") int size,
+            @RequestParam(defaultValue = "ALL") String status) {
+        return visitDayService.propertyHistory(user.userId(), propertyId, page, size, status);
+    }
+
+    @GetMapping("/visits/mine/history")
+    public PageResponse<MyVisitResponse> myHistory(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "12") int size) {
+        return visitDayService.myHistory(user.userId(), page, size);
     }
 
     /** The visitor's own visits, at any property: My visits. */
@@ -153,6 +170,20 @@ public class LeadVisitController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(leadVisitService.schedule(user.userId(), enquiryId, request));
+    }
+
+    /**
+     * Books a visit straight from the property profile, with no enquiry
+     * (user, 2026-10-17). Called once the person has agreed what contact to share.
+     */
+    @PostMapping("/properties/{propertyId}/direct-visits")
+    public ResponseEntity<EnquiryChatActionsResponse> scheduleDirect(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId,
+            @Valid @RequestBody ScheduleVisitRequest request) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(leadVisitService.scheduleDirect(user.userId(), propertyId, request));
     }
 
     /** Cancels a visit, from either side. The person is back at Enquired and may book again. */

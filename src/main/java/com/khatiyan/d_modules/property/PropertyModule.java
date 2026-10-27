@@ -144,6 +144,11 @@ public class PropertyModule {
         return roomMoldService.listPublicTypes(propertyId);
     }
 
+    /** Each room type's photos by the type's id, in the owner's order. One query for the property. */
+    public Map<UUID, List<String>> roomTypeImageUrls(UUID propertyId) {
+        return roomMoldService.imageUrlsByType(propertyId);
+    }
+
     public void ensureCanManageProperty(UUID actorUserId, UUID propertyId) {
         propertyManagerService.ensureCanManageProperty(actorUserId, propertyId);
     }
@@ -154,6 +159,15 @@ public class PropertyModule {
 
     public List<UUID> findActiveManagerUserIds(UUID propertyId) {
         return propertyManagerService.findActiveManagerUserIds(propertyId);
+    }
+
+    /**
+     * The active managers who hold one resource at MANAGE, in id order. Two
+     * reads whatever the number of managers. The owner is not in the list.
+     */
+    public List<UUID> findActiveManagerUserIdsWhoManage(UUID propertyId, ManagerResource resource) {
+        return managerAccessPolicy.managersWhoManage(
+                propertyId, resource, propertyManagerService.findActiveManagerUserIds(propertyId));
     }
 
     // Manager employment is owned here (on the property_managers row); the staff
@@ -295,6 +309,16 @@ public class PropertyModule {
 
     public void reserveRoomSlot(UUID propertyId, UUID roomId) {
         roomService.reserveSlot(propertyId, roomId);
+    }
+
+    /** Internal callers acquire this before locking any tenancy/departure/request. */
+    public void lockRoomInventory(UUID propertyId) {
+        roomService.lockInventory(propertyId);
+    }
+
+    /** Locked DTO read; does not expose property entities across the boundary. */
+    public RoomResponse roomInventoryForUpdate(UUID propertyId, UUID roomId) {
+        return roomService.inventoryRoom(propertyId, roomId);
     }
 
     /** Releases a bed held for a room change that executed or can no longer run. */

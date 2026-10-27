@@ -64,6 +64,18 @@ public enum ManagerResource {
      */
     CHATS,
 
+    /**
+     * Booking requests after a visit: seeing them, and answering the ones
+     * that are yours to handle.
+     *
+     * <p>Off until the owner grants it, and <b>granted from the Bookings
+     * access list, not the permission screen</b>, in the same way as
+     * {@link #CHATS}: it writes this ordinary grant at MANAGE. Who answers a
+     * request is a second question, decided by the booking module among the
+     * managers who hold this.
+     */
+    BOOKINGS,
+
     // --- Tools ---
     // VACANCY_FINDER controls whether the tool APPEARS, not what it can read.
     // It has no API of its own — it composes the rooms, tenancies and

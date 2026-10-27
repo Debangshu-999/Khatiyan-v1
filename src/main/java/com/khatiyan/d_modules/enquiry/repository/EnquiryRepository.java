@@ -17,10 +17,15 @@ import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Repository;
 
 import com.khatiyan.d_modules.enquiry.model.Enquiry;
+import com.khatiyan.d_modules.enquiry.model.EnquiryEndReason;
 import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
 
 @Repository
 public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
+
+    /** Each enquiry's origin and nothing else, for reads that only need to tell them apart (2026-10-19). */
+    @org.springframework.data.jpa.repository.Query("SELECT e.id, e.origin FROM Enquiry e WHERE e.id IN :ids")
+    java.util.List<Object[]> findOrigins(@org.springframework.data.repository.query.Param("ids") java.util.Collection<UUID> ids);
 
     /**
      * The owner's list for the active property, newest first.
@@ -34,6 +39,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             FROM Enquiry enquiry
             WHERE enquiry.propertyId = :propertyId
               AND enquiry.createdAt >= :shownFrom
+              AND enquiry.origin = com.khatiyan.d_modules.enquiry.model.EnquiryOrigin.ENQUIRY
             ORDER BY enquiry.createdAt DESC
             """)
     List<Enquiry> findVisibleForProperty(UUID propertyId, Instant shownFrom);
@@ -43,6 +49,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             SELECT enquiry.id
             FROM Enquiry enquiry
             WHERE enquiry.sentiment = com.khatiyan.d_modules.enquiry.model.EnquirySentiment.NOT_INTERESTED
+              AND enquiry.bookingVisitId IS NULL
               AND enquiry.endedAt IS NULL
               AND enquiry.sentimentSetAt <= :cutoff
               AND enquiry.expiresAt > :now
@@ -55,6 +62,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             FROM Enquiry enquiry
             WHERE enquiry.enquirerUserId = :enquirerUserId
               AND enquiry.createdAt >= :shownFrom
+              AND enquiry.origin = com.khatiyan.d_modules.enquiry.model.EnquiryOrigin.ENQUIRY
             ORDER BY enquiry.createdAt DESC
             """)
     List<Enquiry> findVisibleForEnquirer(UUID enquirerUserId, Instant shownFrom);
@@ -102,6 +110,36 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             """)
     long countAwaitingAnswer(UUID propertyId, Instant now);
 
+    /** Pending calls are their own action, not also counted as a request to make another call. */
+    @Query("""
+            SELECT COUNT(enquiry) AS awaiting,
+                   COALESCE(SUM(CASE WHEN enquiry.handlerUserId IS NULL THEN 1 ELSE 0 END), 0) AS unassigned
+            FROM Enquiry enquiry WHERE enquiry.propertyId = :propertyId AND enquiry.endedAt IS NULL
+              AND enquiry.origin = com.khatiyan.d_modules.enquiry.model.EnquiryOrigin.ENQUIRY
+              AND enquiry.status = com.khatiyan.d_modules.enquiry.model.EnquiryStatus.NEW
+              AND enquiry.expiresAt > :now
+              AND NOT EXISTS (SELECT response.id FROM EnquiryResponse response WHERE response.enquiryId = enquiry.id
+                  AND response.channel = com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel.CALL_BACK
+                  AND response.outcome = com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome.OPEN)
+            """)
+    AttentionCounts countAttention(UUID propertyId, Instant now);
+
+    @Query("""
+            SELECT COUNT(DISTINCT enquiry.id) FROM Enquiry enquiry, EnquiryResponse response
+            WHERE enquiry.propertyId = :propertyId AND response.enquiryId = enquiry.id
+              AND enquiry.origin = com.khatiyan.d_modules.enquiry.model.EnquiryOrigin.ENQUIRY
+              AND enquiry.endedAt IS NULL AND enquiry.expiresAt > :now
+              AND enquiry.status <> com.khatiyan.d_modules.enquiry.model.EnquiryStatus.EXPIRED
+              AND response.channel = com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel.CALL_BACK
+              AND response.outcome = com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome.OPEN
+            """)
+    long countCallsToRecord(UUID propertyId, Instant now);
+
+    interface AttentionCounts {
+        long getAwaiting();
+        long getUnassigned();
+    }
+
     /**
      * Enquiries past their date whose chat is still open, answered or not. Ids
      * only: the sweep closes each in its own transaction and reads it again
@@ -140,6 +178,9 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
               AND enquiry.expiresAt > :now
             """)
     boolean existsLiveAmong(Collection<UUID> enquiryIds, Instant now);
+
+    /** Whether any of these ended for this reason. */
+    boolean existsByIdInAndEndReason(Collection<UUID> enquiryIds, EnquiryEndReason endReason);
 
     /** Whether any of these enquiries is still waiting on an answer, inside its window. */
     @Query("""
@@ -182,6 +223,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             FROM Enquiry enquiry
             WHERE enquiry.propertyId = :propertyId
               AND enquiry.createdAt >= :shownFrom
+              AND enquiry.origin = com.khatiyan.d_modules.enquiry.model.EnquiryOrigin.ENQUIRY
             ORDER BY enquiry.createdAt DESC
             """)
     Page<Enquiry> findVisiblePageForProperty(UUID propertyId, Instant shownFrom, Pageable pageable);
@@ -193,6 +235,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
             WHERE enquiry.propertyId = :propertyId
               AND enquiry.handlerUserId = :handlerUserId
               AND enquiry.createdAt >= :shownFrom
+              AND enquiry.origin = com.khatiyan.d_modules.enquiry.model.EnquiryOrigin.ENQUIRY
             ORDER BY enquiry.createdAt DESC
             """)
     Page<Enquiry> findVisiblePageForHandler(

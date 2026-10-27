@@ -102,6 +102,19 @@ export type PropertyPaymentDetails = {
   acceptedMethods: ManualPaymentMethod[];
   cashOtpRequired: boolean;
   /**
+   * Whether booking tokens are paid to the bill details above (2026-10-11).
+   * True until the owner gives tokens details of their own: the seven fields
+   * under this, all null while it is true.
+   */
+  tokenUsesBillDetails: boolean;
+  tokenUpiVpa: string | null;
+  tokenPayeeName: string | null;
+  tokenUpiPhone: string | null;
+  tokenUpiQrImageUrl: string | null;
+  tokenBankAccountNumber: string | null;
+  tokenBankIfsc: string | null;
+  tokenBankAccountHolder: string | null;
+  /**
    * The row's version (2026-09-29). Sent back as If-Match when a screen acts
    * on it, so a record someone else changed since is refused, not overwritten.
    */
@@ -300,6 +313,15 @@ export const paymentIntentApi = api.injectEndpoints({
         bankAccountHolder: string | null;
         acceptedMethods: ManualPaymentMethod[];
         cashOtpRequired: boolean;
+        /** Tokens paid to the bill details. False sends the token's own, replaced whole. */
+        tokenUsesBillDetails?: boolean;
+        tokenUpiVpa?: string | null;
+        tokenPayeeName?: string | null;
+        tokenUpiPhone?: string | null;
+        tokenUpiQrImageUrl?: string | null;
+        tokenBankAccountNumber?: string | null;
+        tokenBankIfsc?: string | null;
+        tokenBankAccountHolder?: string | null;
         /** The setup's version as loaded, 0 before its first save. */
         version: number;
       }
@@ -312,7 +334,7 @@ export const paymentIntentApi = api.injectEndpoints({
       }),
       // PaymentIntent too: turning UPI on or off changes whether every tenant on
       // the property is offered a Pay button at all.
-      invalidatesTags: ["PaymentDetails", "PaymentIntent"],
+      invalidatesTags: ["PaymentDetails", "PaymentIntent", "Booking"],
     }),
   }),
   // Fast Refresh re-runs this module on every edit, so injectEndpoints sees

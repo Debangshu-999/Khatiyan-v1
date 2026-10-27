@@ -48,6 +48,23 @@ public class IncomeService {
         return IncomeResponse.from(income, false);
     }
 
+    /**
+     * Income another module records for the owner: money the property has
+     * received and keeps, which did not come through a bill. A booking token
+     * kept or adjusted against rent is the first (2026-10-10). It sits in the
+     * same ledger as income the owner enters, so the P&L, its export and its
+     * trend count it with no code of their own, and the owner can reverse it.
+     *
+     * <p>For a module that has already established the facts. No person is
+     * recorded as having entered it.
+     */
+    @Transactional
+    public void recordSystemIncome(UUID propertyId, String source, String receivedFrom, long amountPaise,
+            java.time.LocalDate receivedDate, String description) {
+        incomeRepository.save(IncomeEntry.manual(
+                propertyId, source, receivedFrom, amountPaise, receivedDate, description, null));
+    }
+
     @Transactional
     public IncomeResponse reverse(UUID actorUserId, UUID propertyId, UUID incomeId, ReverseIncomeRequest request) {
         financeAccessPolicy.ensureCanUseExpenses(actorUserId, propertyId);

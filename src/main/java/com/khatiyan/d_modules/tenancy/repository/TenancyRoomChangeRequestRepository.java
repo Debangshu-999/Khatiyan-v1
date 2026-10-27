@@ -21,6 +21,9 @@ import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
  */
 public interface TenancyRoomChangeRequestRepository extends JpaRepository<TenancyRoomChangeRequest, UUID> {
 
+    @Query("SELECT r.propertyId FROM TenancyRoomChangeRequest r WHERE r.id = :requestId")
+    Optional<UUID> findPropertyIdById(UUID requestId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT request FROM TenancyRoomChangeRequest request WHERE request.id = :requestId")
     Optional<TenancyRoomChangeRequest> findByIdForUpdate(UUID requestId);

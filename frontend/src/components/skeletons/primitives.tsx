@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Animated, Easing, View, type DimensionValue } from "react-native";
 
+import { useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -46,6 +47,7 @@ export function Skeleton({ height = 14, radius = 8, width = "100%" }: { height?:
 
 /** The card every ghost is drawn inside — the app's real card, in one place. */
 function SkeletonSurface({ children, padding = spacing.md }: { children: ReactNode; padding?: number }) {
+  const softShadow = useSoftShadow();
   const { colors } = useTheme();
   return (
     <View
@@ -58,10 +60,7 @@ function SkeletonSurface({ children, padding = spacing.md }: { children: ReactNo
         elevation: 2,
         flex: 1,
         padding,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
+        ...softShadow(colors.shadow, 2, 6),
       }}
     >
       {children}

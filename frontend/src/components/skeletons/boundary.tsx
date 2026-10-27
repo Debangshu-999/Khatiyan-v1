@@ -3,6 +3,7 @@ import { Image, StyleSheet, Text, View, type ImageProps, type TextProps, type Di
 import type { LucideProps } from "lucide-react-native";
 
 import { Skeleton } from "./primitives";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Whether the subtree is standing in for content that has not arrived.
@@ -65,6 +66,14 @@ export function GhostText({
   const isSkeleton = useIsSkeleton();
 
   if (!isSkeleton) {
+    // A one-line card text shrinks to fit before it is cut (user, 2026-10-28).
+    if (rest.numberOfLines === 1) {
+      return (
+        <FitText style={style} {...rest}>
+          {children}
+        </FitText>
+      );
+    }
     return (
       <Text style={style} {...rest}>
         {children}

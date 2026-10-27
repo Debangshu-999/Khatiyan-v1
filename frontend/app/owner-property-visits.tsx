@@ -674,7 +674,7 @@ function VisitSlotsEditor({
                 {canEdit ? (
                   <View style={{ flexDirection: "row", gap: spacing.xs }}>
                     {changed ? (
-                      <ActionButton disabled={busy} label="Discard" onPress={() => discard(day)} variant="secondary" />
+                      <ActionButton disabled={busy} label="Discard" onPress={() => discard(day)} variant="neutral" />
                     ) : null}
                     <ActionButton
                       disabled={busy}

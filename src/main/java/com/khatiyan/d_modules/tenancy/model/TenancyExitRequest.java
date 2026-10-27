@@ -428,6 +428,11 @@ public class TenancyExitRequest extends BaseEntity {
      * approval, and strictly before the tenant is due to leave.
      */
     public boolean withdrawalWindowOpen(LocalDate today) {
+        return withdrawalWindowOpen(today, Instant.now());
+    }
+
+    /** Explicit clock for inventory reads/claims; preserves the existing elapsed-day rule. */
+    public boolean withdrawalWindowOpen(LocalDate today, Instant now) {
         if (status != TenancyExitRequestStatus.APPROVED || decidedAt == null) {
             return false;
         }
@@ -435,7 +440,7 @@ public class TenancyExitRequest extends BaseEntity {
             return false;
         }
 
-        Duration sinceApproval = Duration.between(decidedAt, Instant.now());
+        Duration sinceApproval = Duration.between(decidedAt, now);
         return sinceApproval.toDays() < WITHDRAWAL_WINDOW_DAYS;
     }
 

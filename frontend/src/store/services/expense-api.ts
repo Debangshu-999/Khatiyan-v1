@@ -68,7 +68,18 @@ export type ExpenseBudgetOverview = {
    * on it, so a record someone else changed since is refused, not overwritten.
    */
   version: number;
+  /** How much of the month's received income joins the fixed amount (2026-10-18). */
+  incomeMode: BudgetIncomeMode;
+  /** For PART: the amount of income added, never more than the month receives. */
+  incomePartPaise: number | null;
+  /** Money received this month: bills collected plus manual income. */
+  incomeReceivedPaise: number;
+  /** What the income share adds this month. In effectiveBudgetPaise already. */
+  fromIncomePaise: number;
 };
+
+/** None, all of the month's received income, or a set part of it. */
+export type BudgetIncomeMode = "NONE" | "FULL" | "PART";
 
 export type ExpenseBudgetTrendPoint = {
   month: string;
@@ -159,8 +170,21 @@ export const expenseApi = api.injectEndpoints({
       query: ({ propertyId, month }) => ({ url: `${base(propertyId)}/expense-budget`, params: { month } }),
       providesTags: ["Expense"],
     }),
-    setDefaultBudget: builder.mutation<ExpenseBudgetOverview, { propertyId: string; month: string; amountPaise: number; version: number }>({
-      query: ({ propertyId, month, amountPaise, version }) => ({ body: { amountPaise }, headers: ifMatch(version), method: "PUT", url: `${base(propertyId)}/expense-budget`, params: { month } }),
+    setDefaultBudget: builder.mutation<ExpenseBudgetOverview, {
+      propertyId: string;
+      month: string;
+      amountPaise: number;
+      incomeMode: BudgetIncomeMode;
+      incomePartPaise: number | null;
+      version: number;
+    }>({
+      query: ({ propertyId, month, amountPaise, incomeMode, incomePartPaise, version }) => ({
+        body: { amountPaise, incomeMode, incomePartPaise: incomeMode === "PART" ? incomePartPaise : null },
+        headers: ifMatch(version),
+        method: "PUT",
+        url: `${base(propertyId)}/expense-budget`,
+        params: { month },
+      }),
       invalidatesTags: ["Expense"],
     }),
     raiseBudget: builder.mutation<ExpenseBudgetOverview, { propertyId: string; month: string; amountPaise: number; reason?: string }>({

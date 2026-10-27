@@ -125,6 +125,12 @@ export const concernApi = api.injectEndpoints({
       query: (propertyId) => `/api/v1/properties/${propertyId}/concerns/available`,
       providesTags: ["Concern"],
     }),
+    /** The concerns raised today, the ones Home's Concerns tile counts (2026-10-18). */
+    listPropertyConcernsRaisedToday: builder.query<ConcernSummary[], string>({
+      query: (propertyId) => `/api/v1/properties/${propertyId}/concerns/raised-today`,
+      providesTags: ["Concern"],
+    }),
+
     listPropertyConcernHistory: builder.query<Page<ConcernSummary>, { propertyId: string; page?: number; size?: number }>({
       query: ({ page = 0, propertyId, size = 20 }) => ({ params: { page, size }, url: `/api/v1/properties/${propertyId}/concerns/history` }),
       providesTags: ["Concern"],
@@ -187,6 +193,7 @@ export const concernApi = api.injectEndpoints({
 });
 
 export const {
+  useListPropertyConcernsRaisedTodayQuery,
   useAssignConcernMutation,
   useCreateConcernMutation,
   useListMyConcernHistoryQuery,

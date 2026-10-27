@@ -8,6 +8,7 @@ import { messageStamp } from "@/features/chat/chat-time";
 import type { ChatMessage } from "@/store/services/chat-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * How much of the row one bubble may take.
@@ -280,12 +281,12 @@ export function MessageBubble({
               }}
             >
               <FileText color={colors.inkSoft} size={18} strokeWidth={2.2} />
-              <Text
+              <FitText
                 numberOfLines={1}
                 style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sans, fontSize: 13 }}
               >
                 {attachment.fileName ?? "Document"}
-              </Text>
+              </FitText>
             </Pressable>
           ))}
 
@@ -337,7 +338,7 @@ export function MessageBubble({
 
             {/* No delivery word. The stamp is the confirmation: a message that
                 failed to send never gets one. */}
-            <Text
+            <FitText
               numberOfLines={1}
               style={{
                 color: mine ? MINE_STAMP : colors.kicker,
@@ -349,7 +350,7 @@ export function MessageBubble({
               }}
             >
               {pending ? "Sending" : `${messageStamp(message.sentAt)}${message.edited ? " · Edited" : ""}`}
-            </Text>
+            </FitText>
           </View>
         </View>
 

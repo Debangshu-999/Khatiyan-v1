@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   AppState,
   Image,
@@ -30,6 +30,7 @@ import {
 } from "@/store/services/payment-intent-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 type UpiAppKey = "GOOGLE_PAY" | "PHONEPE" | "PAYTM" | "BHIM";
 
@@ -214,7 +215,7 @@ export function PayBillSheet({
 
           {/* Only offer a choice when the property accepts multiple methods. */}
           {tabs.length > 1 ? (
-            <PaymentMethodDropdown methods={tabs} onChange={setTab} value={tab} />
+            <PaymentMethodDropdown onChange={setTab} options={payMethodOptions(tabs)} value={tab} />
           ) : null}
 
           <View style={{ gap: spacing.md }}>
@@ -251,7 +252,8 @@ export function PayBillSheet({
   );
 }
 
-function UpiTab({
+export function UpiTab({
+  action,
   busy,
   hasPayLink,
   onCopy,
@@ -260,6 +262,11 @@ function UpiTab({
   payee,
   selectedUpiApp,
 }: {
+  /**
+   * Takes the place of Scan and pay, where the sheet has no link to fire but
+   * still has a next step: a booking token's "Submit payment proof".
+   */
+  action?: ReactNode;
   busy: boolean;
   hasPayLink: boolean;
   onCopy: (value: string, what: string) => void;
@@ -300,7 +307,7 @@ function UpiTab({
 
       {/* Hidden without an address: there is no link to fire, and a button that
           cannot do anything is worse than no button. */}
-      {hasPayLink ? (
+      {action ? action : hasPayLink ? (
         <View style={{ gap: spacing.sm }}>
           <UpiAppSelector onSelect={onSelectUpiApp} selected={selectedUpiApp} />
           <ActionButton
@@ -374,7 +381,7 @@ function UpiAppSelector({
                 source={app.logo}
                 style={{ borderRadius: 10, height: 38, width: 38 }}
               />
-              <Text
+              <FitText
                 numberOfLines={1}
                 style={{
                   color: active ? colors.primary : colors.inkSoft,
@@ -384,7 +391,7 @@ function UpiAppSelector({
                 }}
               >
                 {app.label}
-              </Text>
+              </FitText>
               {active ? (
                 <View
                   style={{
@@ -410,7 +417,7 @@ function UpiAppSelector({
   );
 }
 
-function BankTab({
+export function BankTab({
   onCopy,
   payee,
   referenceCode,
@@ -473,9 +480,9 @@ function CopyRow({
       {Icon ? <Icon color={colors.muted} size={16} strokeWidth={2.2} /> : null}
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
-        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.mono, fontSize: 14 }}>
+        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.mono, fontSize: 14 }}>
           {value}
-        </Text>
+        </FitText>
       </View>
       <AnimatedPressable
         accessibilityLabel={`Copy ${label.toLowerCase()}`}
@@ -489,25 +496,43 @@ function CopyRow({
   );
 }
 
-function PaymentMethodDropdown({
-  methods,
+/** One line of the method picker: a way to pay, or a place to pay, with its mark. */
+export type PayOption<Value extends string> = {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  value: Value;
+};
+
+/** The picker's lines for the ways a property takes money, named and marked as they are everywhere else. */
+export function payMethodOptions<Method extends TenderMethod>(methods: readonly Method[]): PayOption<Method>[] {
+  return methods.map((value) => ({ icon: METHOD_ICON[value], label: METHOD_LABEL[value], value }));
+}
+
+/**
+ * The pay sheet's picker, opening in place. It lists options and not methods
+ * (2026-10-11), so a booking token's sheet can add "Paid at desk" to the ways
+ * a property takes money.
+ */
+export function PaymentMethodDropdown<Value extends string>({
   onChange,
+  options,
   value,
 }: {
-  methods: TenderMethod[];
-  onChange: (method: TenderMethod) => void;
-  value: TenderMethod;
+  onChange: (value: Value) => void;
+  options: PayOption<Value>[];
+  value: Value;
 }) {
   const { colors, fonts } = useTheme();
   const [open, setOpen] = useState(false);
+  const current = options.find((option) => option.value === value) ?? options[0];
 
   return (
     <View style={{ gap: spacing.xs }}>
       <AnimatedPressable
-        accessibilityLabel={`Payment method: ${METHOD_LABEL[value]}`}
+        accessibilityLabel={`Payment method: ${current.label}`}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        onPress={() => setOpen((current) => !current)}
+        onPress={() => setOpen((shown) => !shown)}
         style={{
           alignItems: "center",
           backgroundColor: colors.surfaceRaised,
@@ -521,24 +546,24 @@ function PaymentMethodDropdown({
           paddingHorizontal: spacing.md,
         }}
       >
-        <MaterialCommunityIcons color={colors.primary} name={METHOD_ICON[value]} size={20} />
+        <MaterialCommunityIcons color={colors.primary} name={current.icon} size={20} />
         <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
-          {METHOD_LABEL[value]}
+          {current.label}
         </Text>
         <ChevronDown color={colors.muted} size={18} style={{ transform: [{ rotate: open ? "180deg" : "0deg" }] }} />
       </AnimatedPressable>
       {open ? (
         <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.sm, borderWidth: 1, padding: spacing.xs }}>
-          {methods.map((method) => (
+          {options.map((option) => (
             <PickerOptionRow
-              icon={<MaterialCommunityIcons color={method === value ? colors.primary : colors.inkSoft} name={METHOD_ICON[method]} size={20} />}
-              key={method}
-              label={METHOD_LABEL[method]}
+              icon={<MaterialCommunityIcons color={option.value === value ? colors.primary : colors.inkSoft} name={option.icon} size={20} />}
+              key={option.value}
+              label={option.label}
               onPress={() => {
-                onChange(method);
+                onChange(option.value);
                 setOpen(false);
               }}
-              selected={method === value}
+              selected={option.value === value}
             />
           ))}
         </View>
@@ -550,10 +575,21 @@ function PaymentMethodDropdown({
 /**
  * A way to pay that happens at the property's desk: card, cheque or cash. Just
  * the instruction, and for cash the code step when the property wants one.
+ *
+ * <p>UPI too, for a booking token paid at the desk (2026-10-11). A bill has no
+ * such thing: its UPI is the QR and the link.
  */
-function DeskTab({ message, method, note }: { message: string; method: "CASH" | "CARD" | "CHEQUE"; note?: string }) {
+export function DeskTab({ message, method, note, title: named }: {
+  message: string;
+  method: "CASH" | "CARD" | "CHEQUE" | "UPI";
+  note?: string;
+  /** In place of the method's own heading, where the card stands for the desk and not for one way of paying at it. */
+  title?: string;
+}) {
   const { colors, fonts, type } = useTheme();
-  const title = method === "CARD" ? "Card at the desk" : method === "CHEQUE" ? "Cheque at the desk" : "Cash at the desk";
+  const title = named ?? (method === "CARD" ? "Card at the desk" : method === "CHEQUE" ? "Cheque at the desk" : method === "UPI" ? "UPI at the desk" : "Cash at the desk");
+  // A card and a UPI payment are both made at something on the desk. Cash and a cheque are handed across it.
+  const atReader = method === "CARD" || method === "UPI";
   return (
     <View
       style={{
@@ -566,9 +602,9 @@ function DeskTab({ message, method, note }: { message: string; method: "CASH" | 
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <Image
-          accessibilityLabel={method === "CARD" ? "Person paying at a card reader" : "Person handing payment to another person"}
+          accessibilityLabel={atReader ? "Person paying at a card reader" : "Person handing payment to another person"}
           resizeMode="contain"
-          source={method === "CARD"
+          source={atReader
             ? require("../../../assets/images/workspace/payment-card-swiper.png")
             : require("../../../assets/images/workspace/payment-cash-handover.png")}
           style={{ height: 100, width: 125 }}

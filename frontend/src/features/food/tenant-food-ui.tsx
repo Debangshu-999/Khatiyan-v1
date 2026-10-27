@@ -4,6 +4,7 @@ import { FoodItemThumb, MealGlyph } from "@/features/food/food-ui";
 import type { MealType } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /** The shared meal icon in the tenant screens' blue. */
 export function TenantMealIcon({ meal, size = 22 }: { meal: MealType; size?: number }) {
@@ -36,12 +37,12 @@ export function TenantMenuItemRow({
       }}
     >
       <FoodItemThumb imageUrl={imageUrl} size={46} />
-      <Text numberOfLines={2} style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13.5, lineHeight: 18 }}>
+      <FitText numberOfLines={2} style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13.5, lineHeight: 18 }}>
         {name}
-      </Text>
-      <Text numberOfLines={2} style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 11.5, lineHeight: 16, maxWidth: "39%", textAlign: "right" }}>
+      </FitText>
+      <FitText numberOfLines={2} style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 11.5, lineHeight: 16, maxWidth: "39%", textAlign: "right" }}>
         {quantity} /person
-      </Text>
+      </FitText>
     </View>
   );
 }

@@ -56,6 +56,9 @@ class BillingModuleTest {
     @Mock
     private com.khatiyan.d_modules.billing.service.CashPaymentConfirmationService cashPaymentConfirmationService;
 
+    @Mock
+    private com.khatiyan.d_modules.billing.service.PropertyPaymentDetailsService propertyPaymentDetailsService;
+
     private BillingModule billingModule;
     private BillingCycleResponse billingCycleResponse;
     private BillingCycleLineItemResponse lineItemResponse;
@@ -69,7 +72,8 @@ class BillingModuleTest {
                 depositManagerService,
                 exitSettlementService,
                 paymentIntentService,
-                cashPaymentConfirmationService);
+                cashPaymentConfirmationService,
+                propertyPaymentDetailsService);
         billingCycleResponse = billingCycleResponse();
         lineItemResponse = lineItemResponse();
         depositAccountResponse = depositAccountResponse();

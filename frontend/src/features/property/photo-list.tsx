@@ -5,6 +5,7 @@ import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The photo list, shared by registration and edit-property.
@@ -195,9 +196,9 @@ export function PhotoRow({
       {/* No "Cover photo" line: the filled star on the picture already says it,
           and a label repeating a mark right beside it is the same fact twice. */}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={2} style={{ color: muted ? colors.kicker : colors.ink, fontWeight: "700" }}>
+        <FitText numberOfLines={2} style={{ color: muted ? colors.kicker : colors.ink, fontWeight: "700" }}>
           {title}
-        </Text>
+        </FitText>
       </View>
 
       {/* Tighter than the row gap: these are actions on the same photo, and

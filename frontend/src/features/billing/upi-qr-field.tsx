@@ -44,6 +44,7 @@ export function UpiQrField({
   error,
   onChange,
   required,
+  readOnly = false,
   url,
 }: {
   disabled?: boolean;
@@ -51,6 +52,8 @@ export function UpiQrField({
   error?: string;
   /** Marks the label, the same way a required input does. */
   required?: boolean;
+  /** Display inherited billing QR details without upload or removal controls. */
+  readOnly?: boolean;
   /** The stored URL, or "" once cleared. Never a device URI. */
   onChange: (value: string) => void;
   url: string;
@@ -147,7 +150,7 @@ export function UpiQrField({
           {/* Inside the frame, bottom right, on its own disc so it stays visible
               over a white QR. A caption and a separate row under the image only
               pushed the form down for a control that belongs to the image. */}
-          {url && !uploading ? (
+          {url && !uploading && !readOnly ? (
             <AnimatedPressable
               accessibilityLabel="Remove QR code"
               accessibilityRole="button"
@@ -172,7 +175,7 @@ export function UpiQrField({
           ) : null}
         </View>
 
-        {url ? null : (
+        {url || readOnly ? null : (
           <ActionButton
             disabled={busy}
             icon={ImagePlus}

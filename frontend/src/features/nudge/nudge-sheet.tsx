@@ -21,6 +21,7 @@ import {
 } from "@/store/services/nudge-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { cardName } from "@/lib/person-name";
 
 // The cooldown label counts down without asking the server. Half a minute is
 // fine for a three-hour timer and keeps the sheet from re-rendering constantly.
@@ -178,7 +179,7 @@ function CandidateRow({
             numberOfLines={1}
             style={[type.display, { color: colors.ink, fontSize: 17, lineHeight: 22 }]}
           >
-            {candidate.tenantName ?? "Unnamed tenant"}
+            {cardName(candidate.tenantName ?? "Unnamed tenant")}
           </GhostText>
           {/* The name is who the owner is looking for, the room is how they
               confirm it. Under, not above. */}

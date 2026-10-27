@@ -60,8 +60,10 @@ import {
   type ChatMessage,
 } from "@/store/services/chat-api";
 import { useGetEnquiryChatActionsQuery } from "@/store/services/enquiry-chat-api";
+import { softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * One conversation.
@@ -377,10 +379,7 @@ export default function ChatThreadScreen() {
           paddingBottom: spacing.md,
           paddingHorizontal: spacing.md,
           paddingTop: spacing.xs,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 3, width: 0 },
-          shadowOpacity: 1,
-          shadowRadius: 8,
+          ...softShadow(colors.shadow, 3, 8),
           zIndex: 2,
         }}
       >
@@ -432,12 +431,12 @@ export default function ChatThreadScreen() {
 
         <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: 6, minWidth: 0 }}>
-            <Text
+            <FitText
               numberOfLines={1}
               style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.3 }}
             >
               {title}
-            </Text>
+            </FitText>
             {thread?.pendingAgreement ? (
               <AlertTriangle
                 accessibilityLabel="Agreement not signed yet"
@@ -455,9 +454,9 @@ export default function ChatThreadScreen() {
             // Caps and tracked out, the app's eyebrow voice. At caption size it
             // competed with the name for the same reading; as a kicker it reads
             // as a label ON the name instead of a second line of equal weight.
-            <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
+            <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
               {params.subtitle}
-            </Text>
+            </FitText>
           ) : null}
         </View>
       </View>
@@ -622,7 +621,11 @@ export default function ChatThreadScreen() {
             }}
           >
             <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
-              {enquiryId ? "Conversation has ended" : "This conversation is closed. You can still read it."}
+              {enquiryId
+                ? "Conversation has ended"
+                : thread?.origin === "BOOKING"
+                  ? "This booking has ended. You can still read the chat."
+                  : "This conversation is closed. You can still read it."}
             </Text>
           </View>
         ) : (
@@ -642,9 +645,9 @@ export default function ChatThreadScreen() {
               }}
             >
               <Pencil color={colors.primary} size={14} strokeWidth={2.4} />
-              <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
+              <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
                 Editing message
-              </Text>
+              </FitText>
               <AnimatedPressable
                 accessibilityLabel="Cancel editing"
                 accessibilityRole="button"

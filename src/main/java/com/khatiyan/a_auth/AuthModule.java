@@ -152,6 +152,20 @@ public class AuthModule {
         authService.completeCashPaymentConfirmation(phone, otp);
     }
 
+    /**
+     * Sends a code that confirms a booking token was handed over in cash,
+     * returning the masked destination. The phone is the account's own,
+     * resolved by the caller and never taken from a request.
+     */
+    public String startBookingTokenCashConfirmation(String phone, String requestIpAddress, String detail) {
+        return authService.startBookingTokenCashConfirmation(phone, requestIpAddress, detail);
+    }
+
+    /** Verifies and spends a booking-token cash code sent to {@code phone}. */
+    public void completeBookingTokenCashConfirmation(String phone, String otp) {
+        authService.completeBookingTokenCashConfirmation(phone, otp);
+    }
+
     public void markActiveTenant(UUID userId) {
         authService.markActiveTenant(userId);
     }

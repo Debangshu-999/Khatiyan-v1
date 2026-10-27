@@ -1,6 +1,7 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, ScrollView, Text, View, type DimensionValue, type GestureResponderEvent, type PanResponderGestureState } from "react-native";
+import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView as GestureScrollView } from "react-native-gesture-handler";
+import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, View, type DimensionValue, type GestureResponderEvent, type PanResponderGestureState, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, X } from "lucide-react-native";
 
@@ -9,6 +10,12 @@ import { useLeavableSurface } from "@/components/leave-on-stale";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
+const RAISED_CLOSE_SHADOW = {
+  boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 6, spreadDistance: 1, color: "rgba(15, 23, 42, 0.28)" }],
+  // Keep the close circle visible on Android versions predating native box shadows.
+  ...(Platform.OS === "android" && Number(Platform.Version) < 28 ? { elevation: 5 } : {}),
+} satisfies ViewStyle;
+
 // The standard bottom sheet: grabber handle, title, close button, safe-area
 // padding and keyboard avoidance. Custom layouts use BottomSheetModal with the
 // same motion.
@@ -16,15 +23,16 @@ export function SheetShell({
   animated = true,
   belowTitle,
   children,
-  dismissOnDrag = false,
+  closeButtonVariant = "raised",
+  dismissOnDrag = true,
+  showClose = true,
   onBack,
   onClose,
   onEndReached,
   title,
 }: {
   /**
-   * The hand-run entrance and the fading backdrop, without the drag. This is
-   * the default motion for every sheet using this shared shell.
+   * The hand-run entrance and the fading backdrop, shared by every sheet.
    *
    * <p>
    * Split out of {@link dismissOnDrag}, which used to be the only way to get
@@ -45,11 +53,21 @@ export function SheetShell({
   belowTitle?: ReactNode;
   children: ReactNode;
   /**
-   * Opt in to a grabber you can actually drag the sheet down by.
-   *
-   * <p>Off by default because dragging fights the keyboard and the scroll inside
-   * a form. Sheets that are read, not filled in, want this; a sheet that only
-   * wants the entrance uses the default animation.
+   * Raised is a white circle with a shadow, and it is what every sheet built
+   * on this shell shows unless it asks otherwise (user, 2026-10-11: the cross
+   * on the tenant's Cancel booking sheet, "use that for all bottom up modals
+   * using that cross UI"). It began on that one sheet. Sheets with a close of
+   * their own, or none, are not built on this button and are unchanged.
+   */
+  closeButtonVariant?: "circle" | "plain" | "raised";
+  /**
+   * False for a sheet with no cross, closed by sliding it down or the device's
+   * back (user, 2026-10-19, on the enquiry sheet). Needs dismissOnDrag.
+   */
+  showClose?: boolean;
+  /**
+   * Dragging is on by default. The head is always draggable; the body only
+   * starts a downward dismissal at its scroll top with the keyboard hidden.
    */
   dismissOnDrag?: boolean;
   /**
@@ -147,7 +165,7 @@ export function SheetShell({
   // resolving — and loses, which is a sheet that appears to snap into place
   // rather than slide. Both consumers of this value, a transform and an
   // opacity, are native-driver safe.
-  const offset = useRef(new Animated.Value(runsOwnAnimation ? travel : 0)).current;
+  const offset = useMemo(() => new Animated.Value(runsOwnAnimation ? travel : 0), [nativeDriven, runsOwnAnimation, travel]);
   const closing = useRef(false);
 
   useEffect(() => {
@@ -161,6 +179,7 @@ export function SheetShell({
       toValue: 0,
       useNativeDriver: nativeDriven,
     }).start();
+    return () => offset.stopAnimation();
   }, [nativeDriven, runsOwnAnimation, offset]);
 
   const dismiss = useCallback(() => {
@@ -213,7 +232,7 @@ export function SheetShell({
    * of its overloads even though it is exactly what the API is documented to
    * take.
    */
-  const scrollRef = useRef<React.ComponentRef<typeof ScrollView> | null>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof GestureScrollView> | null>(null);
   const historyViewportHeight = useRef(0);
   const historyContentHeight = useRef(0);
 
@@ -244,8 +263,8 @@ export function SheetShell({
     [offset],
   );
 
-  const drag = useRef(
-    PanResponder.create({
+  const drag = useMemo(
+    () => PanResponder.create({
       // Claimed on touch DOWN as well as on movement. Waiting for a move alone
       // left the first few pixels of every drag unowned, and on a target this
       // shallow that is most of the gesture.
@@ -253,7 +272,8 @@ export function SheetShell({
       onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dy) > 3,
       ...dragBehaviour,
     }),
-  ).current;
+    [dragBehaviour],
+  );
 
   /**
    * The same drag, from anywhere on the sheet's body.
@@ -306,7 +326,7 @@ export function SheetShell({
           // Read once, at the start. Mid-drag the offset is whatever the
           // ScrollView last reported, and a sheet that began its travel should
           // finish it rather than stop because a stale number came back.
-          startedAtTop.current = scrollTop.current <= 0;
+          startedAtTop.current = scrollTop.current <= 0 && !Keyboard.isVisible();
         })
         .onUpdate((event) => {
           if (!startedAtTop.current) {
@@ -328,6 +348,36 @@ export function SheetShell({
         })
         .runOnJS(true),
     [dismissOnDrag, offset],
+  );
+
+  /**
+   * A sheet whose body carries its own centred heading passes no title.
+   *
+   * <p>Nothing then holds a row open above the body: the close floats at the
+   * sheet's corner and the body starts under the grabber (user, 2026-10-11, on
+   * the Confirm booking sheet: "reduce the gap above the tick icon"). The empty
+   * title used to keep a 32pt row and its margin there for the cross alone.
+   */
+  const untitled = title === "" && !onBack && !belowTitle;
+  const closeInside = showClose;
+  const closeButton = (
+    <AnimatedPressable
+      accessibilityLabel="Close"
+      accessibilityRole="button"
+      hitSlop={8}
+      onPress={dismiss}
+      style={{
+        alignItems: "center",
+        backgroundColor: closeButtonVariant === "raised" ? "#FFFFFF" : closeButtonVariant === "plain" ? "transparent" : colors.surfaceSunken,
+        borderRadius: 999,
+        height: 32,
+        justifyContent: "center",
+        width: 32,
+        ...(closeButtonVariant === "raised" ? RAISED_CLOSE_SHADOW : {}),
+      }}
+    >
+      <X color={closeButtonVariant === "raised" ? "rgba(0, 0, 0, 0.6)" : closeButtonVariant === "plain" ? colors.muted : colors.ink} size={closeButtonVariant === "raised" ? 18 : closeButtonVariant === "circle" ? 16 : 21} strokeWidth={2.4} />
+    </AnimatedPressable>
   );
 
   return (
@@ -357,6 +407,7 @@ export function SheetShell({
         }}
       />
 
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardAvoidingView
         // Android drives itself from the measured inset below; handing it
         // "padding" too would apply the lift twice.
@@ -390,7 +441,7 @@ export function SheetShell({
             <View style={{ alignItems: "center", marginTop: -spacing.xs, paddingBottom: spacing.xs, paddingTop: spacing.xs }}>
               <View style={{ backgroundColor: colors.borderStrong, borderRadius: 999, height: 4, marginBottom: spacing.sm, width: 36 }} />
             </View>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: belowTitle ? spacing.xs : spacing.md }}>
+            {untitled ? null : <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: belowTitle ? spacing.xs : spacing.md }}>
               {onBack ? (
                 <AnimatedPressable
                   accessibilityLabel="Back"
@@ -409,31 +460,17 @@ export function SheetShell({
                   <ArrowLeft color={colors.ink} size={16} strokeWidth={2.4} />
                 </AnimatedPressable>
               ) : null}
-              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
+              <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} >
                 {title}
-              </Text>
-              <AnimatedPressable
-                accessibilityLabel="Close"
-                accessibilityRole="button"
-                hitSlop={8}
-                onPress={dismiss}
-                style={{
-                  alignItems: "center",
-                  backgroundColor: colors.surfaceSunken,
-                  borderRadius: 999,
-                  height: 32,
-                  justifyContent: "center",
-                  width: 32,
-                }}
-              >
-                <X color={colors.ink} size={16} strokeWidth={2.4} />
-              </AnimatedPressable>
-            </View>
+              </ModalTitle>
+              {closeInside ? closeButton : null}
+            </View>}
             {belowTitle ? <View style={{ marginBottom: spacing.md }}>{belowTitle}</View> : null}
           </View>
           <GestureDetector gesture={bodyGesture}>
-            <ScrollView
+            <GestureScrollView
               ref={scrollRef}
+              disallowInterruption={false}
               // No overscroll. Left on, the ScrollView swallows the first part
               // of a downward drag at the top as a rubber-band, which is
               // exactly the movement the sheet needs to see to know it is being
@@ -459,10 +496,15 @@ export function SheetShell({
               showsVerticalScrollIndicator={false}
             >
               {children}
-            </ScrollView>
+            </GestureScrollView>
           </GestureDetector>
+          {/* A child of the sheet itself, not of its 16pt head: on Android a view
+              hanging out of its parent's bounds is drawn but cannot be touched.
+              Last, so it sits over the body. */}
+          {untitled && closeInside ? <View style={{ position: "absolute", right: spacing.lg, top: spacing.sm + spacing.xs }}>{closeButton}</View> : null}
         </Animated.View>
       </KeyboardAvoidingView>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

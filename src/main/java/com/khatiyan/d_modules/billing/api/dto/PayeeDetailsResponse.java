@@ -41,6 +41,35 @@ public record PayeeDetailsResponse(
      * Only the halves the owner has ticked (2026-09-28). An unticked method's
      * details are kept on the property but never sent to a tenant.
      */
+    /**
+     * Where a booking token is paid: the bill details where tokens share
+     * them, the token's own otherwise. Null when there is neither a UPI route
+     * nor a bank account to pay a token to.
+     */
+    public static PayeeDetailsResponse forToken(PropertyPaymentDetails details) {
+        if (details == null) {
+            return null;
+        }
+        if (details.isTokenUsesBillDetails()) {
+            return from(details);
+        }
+        var methods = details.tokenMethods();
+        boolean upi = methods.contains(com.khatiyan.d_modules.billing.model.ManualPaymentMethod.UPI);
+        boolean bank = methods.contains(com.khatiyan.d_modules.billing.model.ManualPaymentMethod.BANK_TRANSFER);
+        if (!upi && !bank) {
+            return null;
+        }
+        return new PayeeDetailsResponse(
+                upi ? details.getTokenPayeeName() : details.getTokenBankAccountHolder(),
+                upi ? details.getTokenUpiVpa() : null,
+                upi ? details.getTokenUpiPhone() : null,
+                upi ? details.getTokenUpiQrImageUrl() : null,
+                bank ? details.getTokenBankAccountNumber() : null,
+                bank ? details.getTokenBankIfsc() : null,
+                bank ? details.getTokenBankAccountHolder() : null,
+                bank);
+    }
+
     public static PayeeDetailsResponse from(PropertyPaymentDetails details) {
         if (details == null || (!details.offersUpi() && !details.offersBankTransfer())) {
             return null;

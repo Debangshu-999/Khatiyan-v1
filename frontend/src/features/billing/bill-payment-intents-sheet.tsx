@@ -11,6 +11,7 @@ import {
 } from "@/store/services/payment-intent-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Every payment attempt made on one bill, and the way to finish an open one.
@@ -245,7 +246,7 @@ function AttemptStatusPill({ label, tone }: { label: string; tone: AttemptTone }
       }}
     >
       <View style={{ backgroundColor: palette.dot, borderRadius: 999, height: 8, width: 8 }} />
-      <Text
+      <FitText
         numberOfLines={1}
         style={{
           color: palette.text,
@@ -256,7 +257,7 @@ function AttemptStatusPill({ label, tone }: { label: string; tone: AttemptTone }
         }}
       >
         {label}
-      </Text>
+      </FitText>
     </View>
   );
 }

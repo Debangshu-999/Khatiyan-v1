@@ -10,6 +10,7 @@ import { AppTextInput } from "@/components/app-text-input";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
+import { DirectVisitFlow } from "@/features/discovery/components/direct-booking-flows";
 import { EnquiryConsentModal } from "@/features/discovery/components/enquiry-consent-modal";
 import {
   ENQUIRY_MESSAGE_MAX_LENGTH,
@@ -20,8 +21,10 @@ import {
   type EnquiryChannelConsents,
   type EnquiryReceipt,
 } from "@/store/services/enquiry-api";
+import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The enquire button on a property profile, and everything behind it.
@@ -45,6 +48,7 @@ export function EnquireAction({
 }) {
   const { colors, fonts, type } = useTheme();
   const [enquiring, setEnquiring] = useState(false);
+  const [visiting, setVisiting] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [reopenRefusal, setReopenRefusal] = useState<string | null>(null);
   const [changeMind, changeMindState] = useChangeEnquiryMindMutation();
@@ -52,6 +56,8 @@ export function EnquireAction({
 
   const myEnquiryQuery = useGetMyEnquiryForPropertyQuery(propertyId);
   const myEnquiry = myEnquiryQuery.data;
+  // Someone who stays here books no visit here (user, 2026-10-17). The server refuses it too.
+  const staysHere = useGetMyActiveTenancyQuery().data?.tenancy?.propertyId === propertyId;
 
   // Not property-scoped: the grant is a standing decision, so this is the same
   // answer on every profile and the same one account settings edits.
@@ -103,7 +109,7 @@ export function EnquireAction({
   return (
     <View style={{ gap: spacing.xs }}>
       {profileCard ? (
-        <ProfileActionRow enabled={canEnquire} onEnquire={startEnquiry} />
+        <ProfileActionRow enabled={canEnquire} onEnquire={startEnquiry} onScheduleVisit={staysHere ? null : () => setVisiting(true)} />
       ) : canEnquire ? (
         <ActionButton icon={MessageSquare} label="Enquire about this property" onPress={startEnquiry} />
       ) : (
@@ -137,6 +143,9 @@ export function EnquireAction({
       {enquiring ? (
         <EnquireFlow onDone={() => setEnquiring(false)} propertyId={propertyId} propertyName={propertyName} />
       ) : null}
+
+      {/* A visit booked straight from the profile, with no enquiry (user, 2026-10-17). */}
+      {visiting ? <DirectVisitFlow onDone={() => setVisiting(false)} propertyId={propertyId} /> : null}
 
       {/* The same question as My enquiries' "Changed your mind?". */}
       {reopening && myEnquiry?.reopenableEnquiryId ? (
@@ -222,11 +231,11 @@ export function EnquireFlow({
  * Enquire, and Schedule Visit beside it. They live here together so a viewer
  * who manages the place, who gets no Enquire, gets no Schedule Visit either.
  *
- * <p>Schedule Visit is a placeholder until visit booking exists: it says so
- * rather than doing nothing on a tap.
+ * <p>Schedule Visit books a visit straight from the profile, with no enquiry
+ * (user, 2026-10-17). It is offered whether or not they have enquired: the
+ * server puts the visit on their live enquiry when there is one.
  */
-function ProfileActionRow({ enabled, onEnquire }: { enabled: boolean; onEnquire: () => void }) {
-  const toast = useToast();
+function ProfileActionRow({ enabled, onEnquire, onScheduleVisit }: { enabled: boolean; onEnquire: () => void; onScheduleVisit: (() => void) | null }) {
   return (
     <View style={{ flexDirection: "row", gap: spacing.sm }}>
       <GreyActionButton
@@ -236,11 +245,7 @@ function ProfileActionRow({ enabled, onEnquire }: { enabled: boolean; onEnquire:
         label={enabled ? "Enquire" : "Enquiry sent"}
         onPress={onEnquire}
       />
-      <GreyActionButton
-        icon={CalendarDays}
-        label="Schedule Visit"
-        onPress={() => toast.show("Visit scheduling is coming soon.", "info")}
-      />
+      {onScheduleVisit ? <GreyActionButton icon={CalendarDays} label="Schedule Visit" onPress={onScheduleVisit} /> : null}
     </View>
   );
 }
@@ -282,9 +287,9 @@ function GreyActionButton({
       }}
     >
       <Icon color={ink} size={18} strokeWidth={2.2} />
-      <Text numberOfLines={1} style={{ color: ink, fontFamily: fonts.sansBold, fontSize: 14.5 }}>
+      <FitText numberOfLines={1} style={{ color: ink, fontFamily: fonts.sansBold, fontSize: 14.5 }}>
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }

@@ -57,8 +57,10 @@ import { clearActiveAccount, setActiveAccount } from "@/store/slices/account-sli
 import { clearSession, setSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { spacing } from "@/theme/spacing";
-import { EnquiriesIcon, PropertyVisitsIcon } from "@/features/property/property-control-icons";
+import { BookingsIcon, EnquiriesIcon, PropertyVisitsIcon } from "@/features/property/property-control-icons";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 /** The pencil beside the profile name, and the spacer that balances it. */
 const NAME_EDIT_SLOT = 15;
@@ -345,7 +347,7 @@ export default function AccountScreen() {
               sits after the name without being part of what is centred. */}
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, justifyContent: "center" }}>
             <View style={{ width: NAME_EDIT_SLOT }} />
-            <Text
+            <FitText
               numberOfLines={1}
               style={{
                 color: colors.ink,
@@ -354,8 +356,8 @@ export default function AccountScreen() {
                 textAlign: "center",
               }}
             >
-              {displayName}
-            </Text>
+              {cardName(displayName)}
+            </FitText>
             <AnimatedPressable
               accessibilityLabel="Edit name"
               accessibilityRole="button"
@@ -587,6 +589,9 @@ export default function AccountScreen() {
           {/* Their visits, with the pass on the day, under the Property
               screen's own Visiting Hours mark (user, 2026-10-04). */}
           <LinkRow icon={PropertyVisitsIcon} label="My visits" onPress={() => router.push("/my-visits")} />
+          {/* Last, as it comes last: an enquiry, then a visit, then a booking
+              (user, 2026-10-10). Under the Bookings tool's own mark. */}
+          <LinkRow icon={BookingsIcon} label="My bookings" onPress={() => router.push("/my-bookings")} />
         </View>
       )}
 
@@ -661,15 +666,15 @@ export default function AccountScreen() {
                       padding: spacing.md,
                     }}
                   >
-                    <Text
+                    <FitText
                       numberOfLines={1}
                       style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15 }}
                     >
                       {property.name}
-                    </Text>
-                    <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+                    </FitText>
+                    <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
                       {[property.state, "India"].filter(Boolean).join(", ")}
-                    </Text>
+                    </FitText>
                   </View>
                 </View>
               ))}
@@ -1101,8 +1106,7 @@ function ReadonlyField({
             <Skeleton height={16} width="68%" />
           </View>
         ) : (
-          <Text
-            adjustsFontSizeToFit={compact}
+          <FitText
             minimumFontScale={0.78}
             numberOfLines={1}
             style={{
@@ -1113,7 +1117,7 @@ function ReadonlyField({
             }}
           >
             {value}
-          </Text>
+          </FitText>
         )}
         {onEdit ? (
           <AnimatedPressable
@@ -1396,8 +1400,7 @@ function CompletionField({ compact, complete, loading }: { compact?: boolean; co
           <Skeleton height={16} width="70%" />
         </View>
       ) : (
-        <Text
-          adjustsFontSizeToFit={compact}
+        <FitText
           minimumFontScale={0.78}
           numberOfLines={1}
           style={{
@@ -1408,7 +1411,7 @@ function CompletionField({ compact, complete, loading }: { compact?: boolean; co
           }}
         >
           {complete ? "Complete" : "Incomplete"}
-        </Text>
+        </FitText>
       )}
     </View>
   );

@@ -3,16 +3,19 @@ package com.khatiyan.a_auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -29,17 +32,18 @@ import com.khatiyan.a_auth.model.OtpDeliveryChannel;
 import com.khatiyan.a_auth.model.OtpPurpose;
 import com.khatiyan.a_auth.model.OtpRequest;
 import com.khatiyan.a_auth.repository.OtpRepository;
+import com.khatiyan.c_shared.exception.ServiceUnavailableException;
 import com.khatiyan.c_shared.exception.TooManyRequestsException;
+import com.khatiyan.c_shared.valkey.ValkeyHealth;
 
 /**
- * One limiter per request: Valkey while it is up, the database only when not.
+ * Valkey alone limits and holds codes, and while it is down codes are paused
+ * (2026-10-18).
  *
- * <p>Both used to run on every send. The database counted rows each time for
- * limits Valkey had already applied, and the per-device limit existed ONLY in
- * the database check — so any change that moved the database off the active
- * path would quietly have taken per-device limiting with it. Valkey now
- * carries all three rules, the database carries the same three as a fallback,
- * and these tests hold each side to them.
+ * <p>Until then the database answered the same three rules as a fallback. It
+ * kept its own count, so when Valkey came back a code sent during the outage
+ * could not be checked, and wrong tries made against the database were
+ * forgotten. Pausing is simpler and leaves nothing to reconcile.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -58,7 +62,8 @@ class OtpServiceRateLimitTest {
     @BeforeEach
     void setUp() {
         when(passwordEncoder.encode(anyString())).thenReturn("hash");
-        otpService = new OtpService(otpRepository, valkeyOtpStore, otpDeliveryService, passwordEncoder);
+        otpService = new OtpService(otpRepository, valkeyOtpStore, otpDeliveryService, passwordEncoder,
+                new ValkeyHealth(List::of, System::nanoTime));
     }
 
     private void issue(String ip) {
@@ -185,66 +190,40 @@ class OtpServiceRateLimitTest {
         verify(valkeyOtpStore, never()).incrementIpRequestCount(any(), any());
     }
 
-    // ---- Valkey down: the database answers the same three -------------------
+    // ---- Valkey down: codes are paused (2026-10-18) -------------------------
 
     @Test
-    void whenValkeyIsDownTheDatabaseEnforcesTheCooldown() {
+    void whenValkeyIsDownACodeIsNotSentAndThePersonIsToldToTryAgainShortly() {
         valkeyIsDown();
-        OtpRequest tenSecondsAgo = mock(OtpRequest.class);
-        when(tenSecondsAgo.getCreatedAt()).thenReturn(Instant.now().minusSeconds(10));
-        when(otpRepository.findFirstByPhoneAndPurposeOrderByCreatedAtDesc(PHONE, OtpPurpose.CASH_PAYMENT))
-                .thenReturn(Optional.of(tenSecondsAgo));
 
         assertThatThrownBy(() -> issue(IP))
-                .isInstanceOfSatisfying(TooManyRequestsException.class,
-                        refused -> assertThat(refused.retryAfterSeconds()).isBetween(1L, 20L));
+                .isInstanceOf(ServiceUnavailableException.class)
+                .hasMessage("Codes can't be sent right now. Try again in a few minutes.");
         verifyNothingSent();
+        verify(otpRepository, never()).save(any());
     }
 
     @Test
-    void whenValkeyIsDownTheDatabaseEnforcesThePerNumberLimit() {
+    void afterAFailureCodesStayPausedWithoutAskingValkeyAgain() {
         valkeyIsDown();
-        when(otpRepository.countByPhoneAndCreatedAtAfter(eq(PHONE), any())).thenReturn(3L);
+        assertThatThrownBy(() -> issue(IP)).isInstanceOf(ServiceUnavailableException.class);
 
-        assertThatThrownBy(() -> issue(IP)).isInstanceOf(TooManyRequestsException.class);
-        verifyNothingSent();
-    }
+        assertThatThrownBy(() -> issue(IP)).isInstanceOf(ServiceUnavailableException.class);
 
-    /** The hour's budget holds in the fallback too, with the short window still open. */
-    @Test
-    void whenValkeyIsDownTheDatabaseEnforcesTheHourlyLimit() {
-        valkeyIsDown();
-        // Two in the last ten minutes, five in the last hour.
-        when(otpRepository.countByPhoneAndCreatedAtAfter(eq(PHONE),
-                argThat(since -> since.isAfter(Instant.now().minus(Duration.ofMinutes(30))))))
-                .thenReturn(2L);
-        when(otpRepository.countByPhoneAndCreatedAtAfter(eq(PHONE),
-                argThat(since -> since.isBefore(Instant.now().minus(Duration.ofMinutes(30))))))
-                .thenReturn(5L);
-
-        assertThatThrownBy(() -> issue(IP)).isInstanceOf(TooManyRequestsException.class);
-        verifyNothingSent();
+        verify(valkeyOtpStore, times(1)).startResendCooldown(anyString(), any(), any());
     }
 
     @Test
-    void whenValkeyIsDownTheDatabaseEnforcesThePerDeviceLimit() {
-        valkeyIsDown();
-        when(otpRepository.countByRequestIpAddressAndCreatedAtAfter(eq(IP), any())).thenReturn(20L);
+    void whenValkeyIsDownACodeIsNotCheckedForAnyPurpose() {
+        when(valkeyOtpStore.findOtp(anyString(), any())).thenThrow(new QueryTimeoutException("Valkey unreachable"));
 
-        assertThatThrownBy(() -> issue(IP))
-                .isInstanceOf(TooManyRequestsException.class)
-                .hasMessageContaining("device");
-        verifyNothingSent();
-    }
-
-    @Test
-    void whenValkeyIsDownACodeWithinTheLimitsIsStillSent() {
-        valkeyIsDown();
-        when(otpRepository.findFirstByPhoneAndPurposeOrderByCreatedAtDesc(PHONE, OtpPurpose.CASH_PAYMENT))
-                .thenReturn(Optional.empty());
-
-        issue(IP);
-
-        verify(otpDeliveryService).deliverOtp(eq(PHONE), any(), anyString(), eq(OtpPurpose.CASH_PAYMENT), any(), any());
+        for (OtpPurpose purpose : OtpPurpose.values()) {
+            assertThatThrownBy(() -> otpService.verifyAndConsumeOTP(PHONE, purpose, "123456"))
+                    .isInstanceOf(ServiceUnavailableException.class)
+                    .hasMessage("Codes can't be checked right now. Try again in a few minutes.");
+            assertThatThrownBy(() -> otpService.verifyOTPWithoutConsuming(PHONE, purpose, "123456"))
+                    .isInstanceOf(ServiceUnavailableException.class);
+        }
+        verify(otpRepository, never()).findLatestUsable(anyString(), any(), any(), anyInt());
     }
 }

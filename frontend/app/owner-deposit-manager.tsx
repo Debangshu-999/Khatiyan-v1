@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, BackHandler, Text, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { AlertTriangle, CalendarDays, ChevronRight, ChevronUp, Clock, History, Landmark, Minus, Plus, UserRound, Wallet } from "lucide-react-native";
@@ -45,6 +44,8 @@ import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { DepositHistoryArtwork } from "@/features/billing/deposit-account-ui";
 import { DepositCorrectionModal as CorrectionModal, type CorrectionMode } from "@/features/billing/deposit-correction-modal";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 // Pending exit still holds its deposit: it settles when the stay is ended.
 const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_NOTICE", "PENDING_EXIT"];
@@ -188,21 +189,14 @@ export default function OwnerDepositManagerScreen() {
 
   return (
     <ScreenScrollView
-      background={
-        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-          <LinearGradient
-            colors={[selectedTenancy ? colors.surface : "#F1F7FF", colors.surface]}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={{ height: 420 }}
-          />
-        </View>
-      }
       contentContainerStyle={{ paddingTop: spacing.xs }}
       surface={colors.surface}
     >
       {selectedTenancy ? (
-        <DepositAccountHeader canManage={canManageDeposits} tenantName={selectedTenancy?.tenantName ?? null} />
+        <DepositAccountHeader
+          canManage={canManageDeposits}
+          tenantName={selectedTenancy?.tenantName ?? null}
+        />
       ) : (
         <ScreenHeader
           badge={!canManageDeposits ? <ViewOnlyChip /> : null}
@@ -312,9 +306,9 @@ export default function OwnerDepositManagerScreen() {
                   {formatMoneyPaise(deposit.currentBalancePaise)}
                 </Text>
                 {" must be refunded to "}
-                <Text style={{ color: colors.ink, fontFamily: fonts.sansBold }}>
-                  {selectedTenancy.tenantName?.trim() || "the tenant"}
-                </Text>
+                <FitText style={{ color: colors.ink, fontFamily: fonts.sansBold }}>
+                  {cardName(selectedTenancy.tenantName?.trim() || "the tenant")}
+                </FitText>
                 . Transferring the funds to the tenant is solely your responsibility. Khatiyan will then close this
                 deposit account and the ledger is final.
               </>
@@ -402,12 +396,12 @@ function TenancyPicker({
           <Path d="M62 65 C111 43 150 53 190 29 V65 Z" fill={colors.primary} opacity={0.08} />
         </Svg>
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
-          <Text
+          <FitText
             numberOfLines={2}
             style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, letterSpacing: -0.3, lineHeight: 23 }}
           >
             {title}
-          </Text>
+          </FitText>
           <Text style={[type.description, { color: colors.muted }]}>
             {subtitle}
           </Text>
@@ -486,11 +480,11 @@ function TenancyOptionRow({
           <UserRound color={colors.primary} size={28} strokeWidth={1.8} />
           <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-              <Text
+              <FitText
                 style={[type.bodyStrong, { color: colors.ink, flex: 1, fontFamily: fonts.displaySoft, fontSize: 16, lineHeight: 22, minWidth: 0 }]}
               >
-                {tenancy.tenantName ?? "Unnamed tenant"}
-              </Text>
+                {cardName(tenancy.tenantName ?? "Unnamed tenant")}
+              </FitText>
               <View style={{ alignItems: "center", backgroundColor: "#EFF6FF", borderRadius: radii.pill, flexDirection: "row", gap: 4, paddingHorizontal: 8, paddingVertical: 5 }}>
                   <CalendarDays color={colors.primary} size={12} strokeWidth={2} />
                   <Text style={{ color: colors.primary, fontFamily: fonts.sansSemiBold, fontSize: 11, lineHeight: 15 }}>

@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useState } from "react";
 import { Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -370,9 +371,9 @@ export default function OwnerTenancyAgreementScreen() {
                 paddingVertical: spacing.md,
               }}
             >
-              <Text style={{ color: colors.text, flex: 1, fontFamily: fonts.display, fontSize: 18 }}>
+              <ModalTitle style={{ color: colors.text, flex: 1, fontFamily: fonts.display, fontSize: 18 }}>
                 Agreement preview
-              </Text>
+              </ModalTitle>
               <AnimatedPressable
                 accessibilityLabel="Close preview"
                 accessibilityRole="button"

@@ -107,6 +107,14 @@ public class BillCycleController {
         return billingModule.listPropertyCycles(user.userId(), propertyId, query, month);
     }
 
+    /** The bills paid today, the ones Home's Payments tile counts (2026-10-18). */
+    @GetMapping("/properties/{propertyId}/cycles/paid-today")
+    public List<BillingCycleResponse> listPropertyCyclesPaidToday(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return billingModule.listPropertyCyclesPaidToday(user.userId(), propertyId);
+    }
+
     @GetMapping("/properties/{propertyId}/upcoming-cycles")
     public PageResponse<UpcomingBillingCycleResponse> listUpcomingPropertyCycles(
             @AuthenticationPrincipal UserPrincipal user,

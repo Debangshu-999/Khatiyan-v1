@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Modal, ScrollView, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -6,8 +7,10 @@ import { ChevronRight, X, Lock } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import type { PropertyBoardItem } from "@/store/services/notice-api";
+import { useSoftShadow } from "@/theme/shadows";
 import { DIALOG_MAX_WIDTH, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 export const PROPERTY_BOARD_ARTWORK = require("../../../assets/images/workspace/property-board.jpg");
 
@@ -63,6 +66,7 @@ export function selectPropertyBoardPreviewItems(
 }
 
 export function PropertyBoardHero() {
+  const softShadow = useSoftShadow();
   const { colors, type } = useTheme();
 
   return (
@@ -94,10 +98,7 @@ export function PropertyBoardHero() {
           borderWidth: 1,
           elevation: 2,
           overflow: "hidden",
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 4, width: 0 },
-          shadowOpacity: 0.65,
-          shadowRadius: 10,
+          ...softShadow(colors.shadow, 4, 10, 0.65),
         }}
       >
         <Image
@@ -189,7 +190,7 @@ export function PropertyBoardCategoryCard({
             }}
           >
             <View style={{ flex: 1, gap: spacing.xs }}>
-              <Text
+              <FitText
                 numberOfLines={2}
                 style={{
                   color: colors.ink,
@@ -199,13 +200,13 @@ export function PropertyBoardCategoryCard({
                 }}
               >
                 {item.title}
-              </Text>
-              <Text
+              </FitText>
+              <FitText
                 numberOfLines={2}
                 style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}
               >
                 {item.body}
-              </Text>
+              </FitText>
             </View>
             <ChevronRight color={colors.muted} size={15} strokeWidth={2} />
           </AnimatedPressable>
@@ -260,14 +261,13 @@ export function PropertyBoardHomeCard({
         </View>
         <View>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Text
-              adjustsFontSizeToFit
+            <FitText
               minimumFontScale={0.8}
               numberOfLines={1}
               style={[type.display, { color: colors.ink, flex: 1, fontSize: 22, lineHeight: 27 }]}
             >
               Property Board
-            </Text>
+            </FitText>
             <View
               style={{
                 alignItems: "center",
@@ -313,7 +313,7 @@ export function PropertyBoardHomeCard({
               }}
             >
               <View style={{ flex: 1, gap: 2 }}>
-                <Text
+                <FitText
                   numberOfLines={1}
                   style={{
                     color: colors.ink,
@@ -323,13 +323,13 @@ export function PropertyBoardHomeCard({
                   }}
                 >
                   {item.title}
-                </Text>
-                <Text
+                </FitText>
+                <FitText
                   numberOfLines={1}
                   style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}
                 >
                   {item.body}
-                </Text>
+                </FitText>
               </View>
             </AnimatedPressable>
           ))}
@@ -474,7 +474,7 @@ export function PropertyBoardItemModal({
               showsVerticalScrollIndicator={false}
               style={{ flexShrink: 1 }}
             >
-              <Text
+              <ModalTitle
                 style={{
                   color: colors.ink,
                   fontFamily: fonts.displaySoft,
@@ -484,7 +484,7 @@ export function PropertyBoardItemModal({
                 }}
               >
                 {item.title}
-              </Text>
+              </ModalTitle>
               <Text
                 style={{
                   color: colors.inkSoft,

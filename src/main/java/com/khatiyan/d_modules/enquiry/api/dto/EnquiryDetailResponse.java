@@ -99,5 +99,8 @@ public record EnquiryDetailResponse(
     // expiry, or its expiry by a duplicate request. Empty while it is live.
     List<EnquiryEndingView> endings,
         /** The row's version (2026-09-29): sent back as If-Match when a screen acts on it. */
-        long version
+        long version,
+        PostVisitBookingEligibility bookingEligibility,
+        // The person keeps walking away (2026-10-17): duplicate or potential spam, with why. Null for most.
+        EnquiryRepeatMark repeatMark
 ) {}

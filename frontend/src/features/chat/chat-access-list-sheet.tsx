@@ -19,6 +19,7 @@ import {
 } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const NO_PERSON_ILLUSTRATION = require("../../../assets/empty-states/No-Person_512x512.png");
 
@@ -210,9 +211,9 @@ function ManagerAccessRow({
       </View>
 
       <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 14 }}>
+        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 14 }}>
           {manager.managerFullName}
-        </Text>
+        </FitText>
         <Text style={[type.caption, { color: colors.muted }]}>
           {formatIndianPhone(manager.managerPhone)}
         </Text>

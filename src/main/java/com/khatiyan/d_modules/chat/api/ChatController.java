@@ -83,6 +83,13 @@ public class ChatController {
     }
 
     /** Who the + button offers, with any existing thread already resolved. */
+    /** Bookings: the booking conversations the reader handles (user, 2026-10-27). */
+    @GetMapping("/properties/{propertyId}/threads/bookings")
+    public List<ChatThreadResponse> bookingSection(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID propertyId) {
+        return chatService.listBookingSection(user.userId(), propertyId);
+    }
+
     @GetMapping("/properties/{propertyId}/contacts")
     public List<ChatContactResponse> contacts(
             @AuthenticationPrincipal UserPrincipal user,

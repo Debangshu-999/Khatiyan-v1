@@ -14,6 +14,7 @@ import { NUDGE_REFETCH_OPTIONS, useListSentNudgesQuery, type Nudge } from "@/sto
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
@@ -120,9 +121,9 @@ function SentNudgeCard({ nudge }: { nudge: Nudge }) {
             two facts you scan a sent list for, and neither belongs buried in
             the eyebrow with the addressee. */}
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-          <Text style={[type.caption, { color: colors.kicker, flex: 1 }]} numberOfLines={1}>
+          <FitText style={[type.caption, { color: colors.kicker, flex: 1 }]} numberOfLines={1}>
             {nudge.sentByViewer ? "Sent by you" : `Sent by ${nudge.senderName ?? "a manager"}`}
-          </Text>
+          </FitText>
           <Text style={[type.caption, { color: colors.kicker }]}>
             {formatWhen(nudge.sentAt)}
           </Text>

@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import { Modal, Text, View } from "react-native";
@@ -57,6 +58,7 @@ import {
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const NOTICE_EMPTY_ILLUSTRATION = require("../assets/empty-states/No-Notice_512x512.png");
 
@@ -605,12 +607,12 @@ function BoardCard({
 
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, gap: 3 }}>
-          <Text numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
+          <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
             {title}
-          </Text>
-          <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
+          </FitText>
+          <FitText numberOfLines={2} style={[type.description, { color: colors.muted }]}>
             {subtitle}
-          </Text>
+          </FitText>
         </View>
         {/* Only where there is somewhere to go. A chevron on a card that does
             not open is an arrow pointing at nothing. */}
@@ -722,9 +724,9 @@ function PriorityFilterDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Filter by priority
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 

@@ -4,6 +4,7 @@ import { Paperclip } from "lucide-react-native";
 
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /** Three lines of body at the 22px line height `type.body` uses. */
 const BODY_PREVIEW_HEIGHT = 66;
@@ -38,9 +39,9 @@ export function NoticeCardBody({
 
   const content = (
     <>
-      <Text numberOfLines={2} style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
+      <FitText numberOfLines={2} style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
         {title}
-      </Text>
+      </FitText>
 
       <View style={{ height: BODY_PREVIEW_HEIGHT, overflow: "hidden" }}>
         <Text style={[type.description, { color: colors.muted }]}>{body}</Text>

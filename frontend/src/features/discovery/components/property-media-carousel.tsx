@@ -104,9 +104,6 @@ export function PropertyMediaCarousel({ imageUrls, propertyName }: PropertyMedia
             <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 15 }}>
               No property photos yet
             </Text>
-            <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted, textAlign: "center" }}>
-              Photos will appear here after the property adds them.
-            </Text>
           </View>
         )}
       </View>

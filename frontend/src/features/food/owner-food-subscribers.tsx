@@ -1,3 +1,4 @@
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { Text, View } from "react-native";
 
 import { EmptyState } from "@/components/empty-state";
@@ -7,6 +8,8 @@ import { DAY_LABEL, FoodStatusChip, foodIcon } from "@/features/food/food-ui";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import type { FoodSubscriber } from "@/store/services/food-api";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 /** Subscribers for one profile, opened from that profile's count. */
 export function FoodProfileSubscribersSheet({
@@ -52,12 +55,12 @@ export function FoodProfileSubscribersSheet({
               }}
             >
               <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-                <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
-                  {person.tenantName}
-                </Text>
-                <Text numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
-                  {person.tenantPhone}
-                </Text>
+                <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+                  {cardName(person.tenantName)}
+                </FitText>
+                <FitText numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
+                  {formatIndianPhone(person.tenantPhone)}
+                </FitText>
                 {/* A mixed week (user, 2026-09-29): the only tag here, with the
                     days this tenant eats this profile. */}
                 {person.hybrid ? (
@@ -69,9 +72,9 @@ export function FoodProfileSubscribersSheet({
                   </View>
                 ) : null}
               </View>
-              <Text numberOfLines={1} style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 12.5 }}>
+              <FitText numberOfLines={1} style={{ color: colors.inkSoft, fontFamily: fonts.sansMedium, fontSize: 12.5 }}>
                 {person.roomNumber ? `Room ${person.roomNumber}` : "No room"}
-              </Text>
+              </FitText>
             </View>
           ))}
         </View>

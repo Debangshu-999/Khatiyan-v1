@@ -18,6 +18,12 @@ import type { ManagerResource } from "@/store/services/property-api";
  * API enforces anything would be theatre.
  */
 export const ROUTE_GATES: Record<string, { label: string; resource: ManagerResource }> = {
+  "/owner-bookings": { label: "Bookings", resource: "BOOKINGS" },
+  "/owner-booking-detail": { label: "Bookings", resource: "BOOKINGS" },
+  "/owner-booking-history": { label: "Bookings", resource: "BOOKINGS" },
+  "/owner-booking-tokens": { label: "Bookings", resource: "BOOKINGS" },
+  "/owner-booking-confirmed": { label: "Bookings", resource: "BOOKINGS" },
+  "/owner-booking-payment-setup": { label: "Booking payment setup", resource: "BOOKINGS" },
   "/owner-billing": { label: "Billing", resource: "BILLING_CYCLES" },
   "/owner-board": { label: "Property board", resource: "PROPERTY_BOARD" },
   "/owner-deposit-history": { label: "Deposits", resource: "DEPOSITS" },

@@ -12,6 +12,7 @@ import com.khatiyan.c_shared.exception.ValidationException;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
@@ -31,6 +32,7 @@ import lombok.NoArgsConstructor;
  * than importing this entity directly.
  */
 @Entity
+@EntityListeners(com.khatiyan.a_auth.service.UserAuthCacheListener.class)
 @Table(name = "users", schema = "auth")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

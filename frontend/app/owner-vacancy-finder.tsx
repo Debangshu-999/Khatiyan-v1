@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { AirVent, BedDouble, Building2, CalendarClock, Check, ChevronDown, Filter, IndianRupee, RotateCcw, Search } from "lucide-react-native";
 
 import { PropertyIcon } from "@/components/property-icon";
@@ -29,6 +28,7 @@ import {
 import { useListPropertyRoomChangeRequestsQuery, useListPropertyTenanciesQuery, type TenancySummary } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const NO_BEDS_ILLUSTRATION = require("../assets/empty-states/No-Beds_512x512.png");
 
@@ -243,17 +243,6 @@ export default function OwnerVacancyFinderScreen() {
 
   return (
     <ScreenScrollView
-      background={
-        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-          <LinearGradient
-            colors={[colors.primarySoft, colors.surface]}
-            end={{ x: 0.5, y: 1 }}
-            locations={[0, 1]}
-            start={{ x: 0.5, y: 0 }}
-            style={{ height: 230 }}
-          />
-        </View>
-      }
       contentContainerStyle={{ gap: spacing.md, paddingTop: spacing.xs }}
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
@@ -450,12 +439,12 @@ function RoomResultCard({
           </View>
 
           <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+            <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
               Room {room.roomNumber}
-            </Text>
-            <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+            </FitText>
+            <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
               {humanizeToken(room.roomType)} room
-            </Text>
+            </FitText>
           </View>
 
           <View
@@ -560,9 +549,9 @@ function OptionPicker<T extends string>({
           paddingHorizontal: spacing.md,
         }}
       >
-        <Text numberOfLines={1} style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: 15 }}>
+        <FitText numberOfLines={1} style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: 15 }}>
           {labelOf(value)}
-        </Text>
+        </FitText>
         <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
       </AnimatedPressable>
     </View>
@@ -587,9 +576,9 @@ function OptionPicker<T extends string>({
         <Text style={[type.caption, { color: colors.kicker }]}>
           {label}
         </Text>
-        <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink }]}>
+        <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink }]}>
           {labelOf(value)}
-        </Text>
+        </FitText>
       </View>
       <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
     </AnimatedPressable>
@@ -684,9 +673,9 @@ function RoomDetail({ icon: Icon, label, value }: { icon: typeof Building2; labe
         <Icon color={colors.primary} size={14} strokeWidth={2.2} />
         <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
       </View>
-      <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]}>
+      <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]}>
         {value}
-      </Text>
+      </FitText>
     </View>
   );
 }

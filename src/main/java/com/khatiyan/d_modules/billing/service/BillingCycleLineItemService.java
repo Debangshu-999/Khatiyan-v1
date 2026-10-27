@@ -485,6 +485,55 @@ public class BillingCycleLineItemService {
     private static final long MIN_BILL_AFTER_DISCOUNT_PAISE = 100;
 
     /**
+     * Takes a booking token the property already holds off a stay's first
+     * bill (user, 2026-10-10), so the tenant pays only the balance. It is a
+     * line of its own and not a discount: the owner was paid this money.
+     *
+     * <p>Called by the booking module, inside the transaction that starts the
+     * stay, which has just made the bill. Twice is the same as once.
+     *
+     * <p>The first bill never drops below its deposit, and no bill below ₹1.
+     * A token larger than the room those leave is taken off only as far as
+     * they allow.
+     *
+     * @return what was taken off the bill
+     */
+    @Transactional
+    public long applyBookingToken(UUID tenancyId, long tokenPaise, String receiptCode) {
+        if (tokenPaise <= 0) {
+            return 0;
+        }
+        BillingCycle cycle = billingCycleRepository.findByTenancyId(tenancyId).stream()
+                .filter(found -> Integer.valueOf(1).equals(found.getCycleNumber()))
+                .findFirst()
+                .orElseThrow(() -> new NotFoundException("First bill of tenancy", tenancyId));
+        List<BillingCycleLineItem> lineItems = lineItemRepository.findByBillingCycleId(cycle.getId());
+        long already = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToBookingTokenCredit())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+        if (already > 0) {
+            return already;
+        }
+        long deposit = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToBaseDeposit())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+        long room = cycle.getTotalAmountPaise() - Math.max(deposit, MIN_BILL_AFTER_DISCOUNT_PAISE);
+        long credit = Math.min(tokenPaise, Math.max(room, 0));
+        if (credit <= 0) {
+            return 0;
+        }
+        lineItemRepository.save(BillingCycleLineItem.bookingToken(
+                cycle, "Booking token received", receiptCode == null ? null : "Receipt " + receiptCode, credit,
+                nextDisplayOrder(cycle.getId())));
+        calculateCycle(cycle);
+        log.info("Booking token taken off the first bill tenancyId={} billingCycleId={} tokenPaise={} creditPaise={}",
+                tenancyId, cycle.getId(), tokenPaise, credit);
+        return credit;
+    }
+
+    /**
      * Converts a discount percentage into a money amount against the cycle's
      * current total, rounded to the nearest paise and capped at the total so a
      * discount can never exceed the payable amount.
@@ -601,7 +650,13 @@ public class BillingCycleLineItemService {
                 .mapToLong(lineItem -> lineItem.getAmountPaise())
                 .sum();
 
-        cycle.recalculateTotals(baseAmount, depositAmount, extraAmount, lateFeeAmount, discountAmount);
+        long bookingTokenCredit = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToBookingTokenCredit())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+
+        cycle.recalculateTotals(baseAmount, depositAmount, extraAmount, lateFeeAmount, discountAmount,
+                bookingTokenCredit);
     }
 
     /**

@@ -80,8 +80,37 @@ public class Visit extends BaseEntity {
     @Column(name = "property_id", nullable = false, updatable = false)
     private UUID propertyId;
 
-    @Column(name = "prospect_user_id", nullable = false, updatable = false)
+    /** The app user who visited. Null for an external visitor, who has {@link #externalProspectId}. */
+    @Column(name = "prospect_user_id", updatable = false)
     private UUID prospectUserId;
+
+    /**
+     * Someone who walked in and was recorded by the property (2026-10-19): a
+     * record in {@code lead.external_prospects}, not an account. Exactly one of
+     * this and {@link #prospectUserId} is set.
+     */
+    @Column(name = "external_prospect_id", updatable = false)
+    private UUID externalProspectId;
+
+    /** For an external visit: whether they were interested, as the property noted. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "interest", length = 10)
+    private VisitInterest interest;
+
+    /** For an external visit: the sharing they wanted (SharingType's name), if noted. */
+    @Column(name = "wanted_sharing", length = 20)
+    private String wantedSharing;
+
+    /** For an external visit: their monthly budget, if noted. */
+    @Column(name = "budget_paise")
+    private Long budgetPaise;
+
+    @Column(name = "note", length = 500)
+    private String note;
+
+    /** Why they did not like it, with an impression of DISLIKED (user, 2026-10-19). */
+    @Column(name = "disliked_reason", length = 500)
+    private String dislikedReason;
 
     @Column(name = "enquiry_id", updatable = false)
     private UUID enquiryId;
@@ -198,6 +227,14 @@ public class Visit extends BaseEntity {
     @Column(name = "moved_at")
     private Instant movedAt;
 
+    /**
+     * When the after-visit telling was settled (2026-10-18): sent, as a mail or
+     * as a push where there is no verified email, or decided against because
+     * the visit went badly or the person moved on. Settled once, never again.
+     */
+    @Column(name = "after_visit_told_at")
+    private Instant afterVisitToldAt;
+
     private Visit(
             String referenceCode, UUID leadId, UUID propertyId, UUID prospectUserId, UUID enquiryId,
             LocalDate visitDate, int slotStartMinute, int slotEndMinute,
@@ -214,6 +251,43 @@ public class Visit extends BaseEntity {
         this.bookedBy = bookedBy;
         this.bookedByUserId = bookedByUserId;
         this.status = VisitStatus.SCHEDULED;
+    }
+
+    /**
+     * A visit that happened, recorded by the property for someone who walked
+     * in (2026-10-19). Already visited, checked in and with its form filled by
+     * whoever recorded it. Its slot is the whole day: nobody booked one. Told
+     * nothing after: an external visitor has no app.
+     */
+    public static Visit recordExternal(
+            String referenceCode, UUID leadId, UUID propertyId, UUID externalProspectId, LocalDate visitDate,
+            LocalTime slotStart, LocalTime slotEnd,
+            UUID recordedByUserId, Instant at, VisitImpression impression, String dislikedReason,
+            VisitInterest interest, String wantedSharing, Long budgetPaise, String note) {
+        // The slot they came in, or the whole day when the property has no slots that day.
+        Visit visit = new Visit(referenceCode, leadId, propertyId, null, null, visitDate,
+                slotStart == null ? 0 : minuteOf(slotStart), slotEnd == null ? 1440 : minuteOf(slotEnd),
+                VisitBookedBy.HANDLER, recordedByUserId);
+        visit.externalProspectId = externalProspectId;
+        visit.status = VisitStatus.VISITED;
+        visit.checkedInAt = at;
+        visit.checkedInByUserId = recordedByUserId;
+        visit.checkInMethod = VisitCheckInMethod.OWNER;
+        visit.impression = impression;
+        visit.dislikedReason = impression == VisitImpression.DISLIKED ? dislikedReason.strip() : null;
+        visit.formCompletedAt = at;
+        visit.formCompletedByUserId = recordedByUserId;
+        visit.interest = interest;
+        visit.wantedSharing = wantedSharing;
+        visit.budgetPaise = budgetPaise;
+        visit.note = note == null || note.isBlank() ? null : note.strip();
+        // Settled at once: there is no app to tell them how to book from.
+        visit.afterVisitToldAt = at;
+        return visit;
+    }
+
+    public boolean isExternal() {
+        return externalProspectId != null;
     }
 
     public static Visit schedule(
@@ -435,6 +509,11 @@ public class Visit extends BaseEntity {
                 && remindedDayBeforeAt == null
                 && visitDate.equals(now.toLocalDate().plusDays(1))
                 && !now.toLocalTime().isBefore(DAY_BEFORE_REMINDER_AT);
+    }
+
+    /** Settles the after-visit telling, sent or not. See {@link #afterVisitToldAt}. */
+    public void markAfterVisitTold(Instant at) {
+        this.afterVisitToldAt = at;
     }
 
     public void markRemindedDayBefore(Instant at) {

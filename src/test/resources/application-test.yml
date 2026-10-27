@@ -10,8 +10,14 @@
 # class, so every job below would start firing against the throwaway database
 # the moment the context came up — generating billing cycles, expiring
 # enquiries, moving rooms. "-" is Spring's documented disabled trigger, and
-# listing them one by one is deliberate: a new job added later shows up as a
-# failing or slow harness run rather than silently running in every test.
+# listing them one by one is deliberate: a job with a cron property is switched
+# off here by name, and a test calls its worker directly.
+#
+# Two nets, not one. The harness also mocks the task scheduler
+# (IntegrationTest), which is what stops the jobs whose cron is written into
+# the annotation and cannot be switched off from here. Until 2026-10-10 this
+# block sat under a second `app:` and bound to nothing, so that mock was the
+# only net. Keep the keys directly under one `app:`, as application.yml has them.
 
 spring:
   config:
@@ -32,44 +38,56 @@ jwt:
   secret: harness-only-secret-not-used-outside-tests-0123456789abcdef
 
 app:
-  app:
-    billing:
-      cycle-activation-cron: "-"
-      late-fee-recalculation-cron: "-"
-      monthly-cycle-generation-cron: "-"
-      monthly-report-generation-cron: "-"
-      overdue-marker-cron: "-"
-    compliance:
-      agreement-expiry-cron: "-"
-    concern:
-      close-expired-resolved-cron: "-"
-      update-escalations-cron: "-"
-    enquiry:
-      expiry-cron: "-"
-      unassigned-reminder-cron: "-"
-    expense:
-      recurring-generation-cron: "-"
-    geo:
-      backfill:
-        local-place-cron: "-"
-        property-cron: "-"
-    notice:
-      archive-expired-cron: "-"
-      recurring-generation-cron: "-"
-    notification:
-      cleanup-cron: "-"
-      push-delivery-cron: "-"
-    payment:
-      deferred-transfer-cron: "-"
-      unapplied-refund-cron: "-"
-    reminder:
-      process-cron: "-"
-      scan-cron: "-"
-    salary:
-      month-open-cron: "-"
-    staff:
-      scheduled-end-cron: "-"
-    tenancy:
-      agreement-expiry-reminder-cron: "-"
-      room-change-execution-cron: "-"
-      room-change-expiry-cron: "-"
+  analytics:
+    daily-snapshot-cron: "-"
+  billing:
+    cycle-activation-cron: "-"
+    late-fee-recalculation-cron: "-"
+    monthly-cycle-generation-cron: "-"
+    monthly-report-generation-cron: "-"
+    overdue-marker-cron: "-"
+  booking:
+    expiry-cron: "-"
+    bed-notice-cron: "-"
+  # compliance.agreement-expiry-cron is deliberately NOT switched off here.
+  # AgreementAcceptanceWindow parses the same property to work out the deadline
+  # an owner is shown, and "-" is not a schedule it can parse: the context
+  # would fail to start. The mocked task scheduler keeps the job from firing.
+  concern:
+    close-expired-resolved-cron: "-"
+    update-escalations-cron: "-"
+  enquiry:
+    expiry-cron: "-"
+    unassigned-reminder-cron: "-"
+  expense:
+    recurring-generation-cron: "-"
+  geo:
+    backfill:
+      local-place-cron: "-"
+      property-cron: "-"
+  notice:
+    archive-expired-cron: "-"
+    recurring-generation-cron: "-"
+  notification:
+    cleanup-cron: "-"
+    push-delivery-cron: "-"
+  payment:
+    deferred-transfer-cron: "-"
+    unapplied-refund-cron: "-"
+  reminder:
+    process-cron: "-"
+    scan-cron: "-"
+  salary:
+    month-open-cron: "-"
+  service-balance:
+    expiry-cron: "-"
+    reconcile-cron: "-"
+    refund-cron: "-"
+  staff:
+    scheduled-end-cron: "-"
+  tenancy:
+    agreement-expiry-reminder-cron: "-"
+    future-booking-cron: "-"
+    pending-exit-cron: "-"
+    room-change-execution-cron: "-"
+    room-change-expiry-cron: "-"

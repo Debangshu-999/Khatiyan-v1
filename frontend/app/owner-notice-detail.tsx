@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
@@ -501,9 +502,9 @@ function PriorityPickerModal({
               paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Select priority
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 

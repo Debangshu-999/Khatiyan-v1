@@ -29,8 +29,10 @@ import {
   useListMyRoomChangeRequestsQuery,
 } from "@/store/services/tenancy-api";
 import { formatFloor } from "@/features/property/floor";
+import { softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const UNASSIGNED_FLOOR = "Unassigned floor";
 const CURRENT_ROOM_ERROR = "This is your current room. Select a different room.";
@@ -418,12 +420,12 @@ function SelectionGroup({
                 width: optionWidth,
               }}
             >
-              <Text
+              <FitText
                 numberOfLines={1}
                 style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}
               >
                 {option === UNASSIGNED_FLOOR ? option : formatFloor(option)}
-              </Text>
+              </FitText>
             </AnimatedPressable>
           );
         })}
@@ -472,10 +474,7 @@ function RoomSelectionGroup({
                 maxWidth: "48.5%",
                 minHeight: 94,
                 padding: spacing.md,
-                shadowColor: colors.shadow,
-                shadowOffset: { height: 3, width: 0 },
-                shadowOpacity: current ? 0 : 0.65,
-                shadowRadius: 8,
+                ...(current ? {} : softShadow(colors.shadow, 3, 8, 0.65)),
               }}
             >
               <View style={{ alignItems: "center", flexDirection: "row", flex: 1, justifyContent: "space-between" }}>

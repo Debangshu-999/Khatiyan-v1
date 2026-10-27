@@ -1,8 +1,9 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ClipboardList, FolderPlus, Pencil, Plus, X } from "lucide-react-native";
+import { ClipboardList, FolderPlus, Pencil, Plus, X, type LucideProps } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { Card } from "@/components/card";
@@ -37,6 +38,11 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const NO_CATEGORY_ILLUSTRATION = require("../assets/empty-states/No-Category_512x512.png");
+
+/** White on the filled red button; the disabled state follows the button's muted foreground. */
+function CategoryDeleteIcon(props: LucideProps) {
+  return <Trash2 {...props} inheritColor />;
+}
 
 export default function OwnerBoardScreen() {
   const router = useGuardedRouter();
@@ -110,7 +116,7 @@ export default function OwnerBoardScreen() {
                     <ActionButton disabled={!canManageBoard} icon={Pencil} label="Edit category" onPress={() => setCategoryModal({ category })} variant="secondary" />
                     <ActionButton
                       disabled={!canManageBoard}
-                      icon={Trash2}
+                      icon={CategoryDeleteIcon}
                       label="Delete"
                       onPress={() => setPendingDelete({ id: category.id, kind: "category", label: category.name })}
                       variant="dangerFilled"
@@ -276,9 +282,9 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
       <View style={{ flex: 1, justifyContent: "flex-end", width: "100%" }}>
         <View style={{ alignSelf: "stretch", backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, paddingBottom: spacing.lg + (keyboardInset > 0 ? 0 : insets.bottom), paddingHorizontal: spacing.lg, paddingTop: spacing.lg, width: "100%" }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
+            <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {category ? "Edit category" : "New category"}
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
           <FormInput
@@ -362,9 +368,9 @@ function ItemModal({
       <View style={{ flex: 1, justifyContent: "flex-end", width: "100%" }}>
         <View style={{ alignSelf: "stretch", backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, paddingBottom: spacing.lg + (keyboardInset > 0 ? 0 : insets.bottom), paddingHorizontal: spacing.lg, paddingTop: spacing.lg, width: "100%" }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
+            <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {item ? "Edit item" : "New item"}
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
           <FormInput

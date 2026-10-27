@@ -119,6 +119,13 @@ public class BillingCycle extends BaseEntity {
     @Column(name = "discount_amount_paise", nullable = false)
     private long discountAmountPaise;
 
+    /**
+     * A booking token the property already held when the stay began, taken
+     * off this bill. Kept apart from the discount: it is money received.
+     */
+    @Column(name = "booking_token_credit_paise", nullable = false)
+    private long bookingTokenCreditPaise;
+
     @Column(name = "total_amount_paise", nullable = false)
     private long totalAmountPaise;
 
@@ -404,13 +411,26 @@ public class BillingCycle extends BaseEntity {
                 .build();
     }
 
+    /** Recalculates from the bill's charges and discount. A booking token already taken off it stays off. */
     public void recalculateTotals(
             long baseAmountPaise,
             long depositAmountPaise,
             long extraChargePaise,
             long lateFeeAmountPaise,
             long discountAmountPaise) {
+        recalculateTotals(baseAmountPaise, depositAmountPaise, extraChargePaise, lateFeeAmountPaise,
+                discountAmountPaise, this.bookingTokenCreditPaise);
+    }
+
+    public void recalculateTotals(
+            long baseAmountPaise,
+            long depositAmountPaise,
+            long extraChargePaise,
+            long lateFeeAmountPaise,
+            long discountAmountPaise,
+            long bookingTokenCreditPaise) {
         ensureNotPaidOrCancelled();
+        validateNonNegative(bookingTokenCreditPaise, "Booking token cannot be negative");
         validateNonNegative(baseAmountPaise, "Base amount cannot be negative");
         validateNonNegative(depositAmountPaise, "Deposit amount cannot be negative");
         validateNonNegative(extraChargePaise, "Extra amount cannot be negative");
@@ -418,7 +438,7 @@ public class BillingCycle extends BaseEntity {
         validateNonNegative(discountAmountPaise, "Discount amount cannot be negative");
 
         long grossAmount = baseAmountPaise + depositAmountPaise + extraChargePaise + lateFeeAmountPaise;
-        long totalAmount = grossAmount - discountAmountPaise;
+        long totalAmount = grossAmount - discountAmountPaise - bookingTokenCreditPaise;
         if (totalAmount < 0) {
             throw new ValidationException("Discount cannot be greater than payable amount");
         }
@@ -433,6 +453,7 @@ public class BillingCycle extends BaseEntity {
         this.extraChargePaise = extraChargePaise;
         this.lateFeeAmountPaise = lateFeeAmountPaise;
         this.discountAmountPaise = discountAmountPaise;
+        this.bookingTokenCreditPaise = bookingTokenCreditPaise;
         this.totalAmountPaise = totalAmount;
     }
 

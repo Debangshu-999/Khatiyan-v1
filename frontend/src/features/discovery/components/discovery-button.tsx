@@ -31,7 +31,8 @@ export function DiscoveryButton({ label, icon, onPress, muted = false, disabled 
         // Muted is white with a hairline and blue lettering, never a pale blue
         // fill: a tinted block reads as a surface rather than a button.
         backgroundColor: muted ? "transparent" : colors.primary,
-        borderColor: muted ? colors.borderStrong : "transparent",
+        // White buttons are blue-bordered, app wide (user, 2026-10-17).
+        borderColor: muted ? colors.primary : "transparent",
         borderRadius: 14,
         borderWidth: muted ? 1 : 0,
         justifyContent: "center",

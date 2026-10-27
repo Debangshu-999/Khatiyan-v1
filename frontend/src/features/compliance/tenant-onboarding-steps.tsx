@@ -26,6 +26,7 @@ import {
 import { VerificationCheckFlow } from "@/features/compliance/verification-check-flow";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 type StepKey = "agreement" | "verify" | "sign";
 
@@ -192,12 +193,12 @@ export function TenantOnboardingSteps({ propertyName }: { propertyName: string }
             close together they read as one stacked heading, so the bar keeps a
             clear gap of its own. */}
         <View style={{ gap: spacing.xl }}>
-          <Text
+          <FitText
             numberOfLines={1}
             style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
           >
             Tenancy <Text style={{ color: colors.primary }}>agreement</Text>
-          </Text>
+          </FitText>
           {renderSteps()}
         </View>
       </PinnedWizardHeader>

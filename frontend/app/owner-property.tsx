@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useState } from "react";
 import { ScrollView, Switch, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -31,6 +32,7 @@ import {
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { PropertyContactsSection } from "@/features/property/property-contacts-section";
 import {
+  BookingsIcon,
   EnquiriesIcon,
   ManageListingIcon,
   NearbyLocationsIcon,
@@ -61,10 +63,12 @@ import {
 import { spacing } from "@/theme/spacing";
 import { skipToken } from "@reduxjs/toolkit/query";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 type PropertyRoute =
   | "/owner-manage-listing"
   | "/owner-enquiries"
+  | "/owner-bookings"
   | "/owner-rooms"
   | "/owner-staff"
   | "/owner-board"
@@ -81,7 +85,7 @@ export default function OwnerPropertyScreen() {
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
   // Editing the property and its listing is PROPERTY_SETTINGS at MANAGE.
-  const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
+  const { canManage: canManageResource, isReady: permissionsReady, owner: isPropertyOwner } = usePropertyPermissions(selectedProperty?.id);
   const canManageSettings = canManageResource("PROPERTY_SETTINGS");
 
   // "Rent from" is the cheapest bed a prospective tenant could take, which is
@@ -223,6 +227,17 @@ export default function OwnerPropertyScreen() {
           ) : null}
 
           <Section title="Property workspace">
+            {permissionsReady && isPropertyOwner ? (
+              <ActionCard
+                borderRadius={12}
+                icon={BookingsIcon}
+                iconSize={58}
+                showArrow={false}
+                title="Bookings"
+                description="Review post-visit requests and set the terms and team who handle them."
+                onPress={() => open(router, "/owner-bookings")}
+              />
+            ) : null}
             <ActionCard
               borderRadius={12}
               icon={ManageListingIcon}
@@ -289,7 +304,7 @@ export default function OwnerPropertyScreen() {
             <View style={{ flex: 1, justifyContent: "flex-end" }}>
               <HelpModalClose onClose={() => dismiss()} />
               <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: spacing.lg, gap: spacing.md, maxHeight: "76%" }}>
-                <Text style={[type.display, { color: colors.ink, fontSize: 22, textAlign: "center" }]}>Facilities</Text>
+                <ModalTitle style={[type.display, { color: colors.ink, fontSize: 22, textAlign: "center" }]}>Facilities</ModalTitle>
                 <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1, width: "100%" }} contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: spacing.md }}>
                   <FacilityOverviewGrid variant="cards" collapsible={false} facilities={[...selectedProperty.facilities, ...selectedProperty.customFacilities]} />
                 </ScrollView>
@@ -416,9 +431,9 @@ export function DiscoveryListingCard({ canManage, propertyId }: { canManage: boo
           <Text style={[type.bodyStrong, { color: colors.ink }]}>
             {profile?.headline?.trim() || "No headline yet"}
           </Text>
-          <Text numberOfLines={3} style={[type.description, { color: colors.muted }]}>
+          <FitText numberOfLines={3} style={[type.description, { color: colors.muted }]}>
             {profile?.description?.trim() || "Add a short description so prospects know what makes this property worth a look."}
-          </Text>
+          </FitText>
         </View>
 
         <View style={{ flexDirection: "row" }}>

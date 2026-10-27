@@ -87,3 +87,35 @@ export function PropertyVisitsIcon(props: LucideProps) {
     <Path d="M46 37v9l7 4" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
   </Mark>;
 }
+
+/** A reserved room: calendar, bed and key, in the Enquiries/Visits vector family. */
+export function BookingsIcon(props: LucideProps) {
+  return <Mark {...props}>
+    <Rect x={4} y={9} width={43} height={43} rx={6} />
+    <Path d="M8 22H43" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
+    <Path d="M15 6V14M34 6V14" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
+    {/* The approved silhouette has no crossing rail or plus-shaped details. */}
+    <Path d="M11 29a2 2 0 0 1 4 0v8h10v-6h7a6 6 0 0 1 6 6v7h-4v-3H15v3h-4Z" fill="#FFFFFF" />
+    <Circle cx={20} cy={33} r={3} fill="#FFFFFF" />
+    {/* A white separation keeps the foreground key readable at 24pt too. */}
+    <Path d="M51 34a10 10 0 1 1-4 19L39 61h-8v-7l10-10a10 10 0 0 1 10-10Z" stroke="#FFFFFF" strokeWidth={3} strokeLinejoin="round" />
+    <Circle cx={51} cy={44} r={3.5} fill="#FFFFFF" />
+  </Mark>;
+}
+
+/** The Property Leads profile clipboard and magnifier, in the shared blue vector family. */
+export function PropertyLeadsIcon(props: LucideProps) {
+  return <Mark {...props}>
+    <Rect x={5} y={12} width={42} height={47} rx={5} />
+    <Rect x={18} y={4} width={17} height={13} rx={3} stroke="#FFFFFF" strokeWidth={2.5} />
+    <Circle cx={26.5} cy={10.5} r={2} fill="#FFFFFF" />
+    <Circle cx={25} cy={28} r={5.5} fill="#FFFFFF" />
+    <Path d="M15 42a10 10 0 0 1 20 0v1H15Z" fill="#FFFFFF" />
+    <Rect x={14} y={48} width={17} height={3} rx={1.5} fill="#FFFFFF" />
+    <Rect x={14} y={53} width={12} height={3} rx={1.5} fill="#FFFFFF" />
+    <Path d="m52 52 7 7" fill="none" stroke="currentColor" strokeWidth={7} strokeLinecap="round" />
+    <Circle cx={44} cy={43} r={13} stroke="#FFFFFF" strokeWidth={3} />
+    <Circle cx={44} cy={43} r={8.5} fill="#FFFFFF" />
+    <Path d="M39 42a5 5 0 0 1 5-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+  </Mark>;
+}

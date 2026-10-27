@@ -22,6 +22,7 @@ import { useTheme } from "@/theme/use-theme";
 import { CountTabPills } from "@/components/filter-bubbles";
 import { BillingStatusBadge } from "@/features/owner/bill-views";
 import { DepositHistoryArtwork } from "@/features/billing/deposit-account-ui";
+import { FitText } from "@/components/fit-text";
 
 const PAGE_SIZE = 10;
 
@@ -225,18 +226,18 @@ function HistoryRow({ account, onPress }: { account: DepositAccount; onPress: ()
       }}
     >
       <View style={{ flex: 1, gap: spacing.xxs }}>
-        <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+        <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
           {account.tenantName ?? `Tenancy ${shortId(account.tenancyId)}`}
-        </Text>
-        <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+        </FitText>
+        <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
           {account.tenancyReferenceCode ?? shortId(account.id)}
-        </Text>
+        </FitText>
         {/* Its own line, labelled and bold. Trailing the reference code after a
             middot, the balance read as part of the identifier — the one number
             on the row that anybody is scanning for, formatted like metadata. */}
-        <Text numberOfLines={1} style={[type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>
+        <FitText numberOfLines={1} style={[type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>
           Curr. Balance - {formatMoneyPaise(account.currentBalancePaise)}
-        </Text>
+        </FitText>
       </View>
       {/* The billing chip — soft tint, glyph, sentence case — not the app's
           caps-on-tint pill. A deposit's status is the same kind of thing as a

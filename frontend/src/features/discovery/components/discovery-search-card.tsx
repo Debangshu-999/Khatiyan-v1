@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -33,6 +34,7 @@ import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 import { DiscoveryButton } from "./discovery-button";
+import { FitText } from "@/components/fit-text";
 
 /** Matches app.ai.smart-search.max-query-chars on the server. */
 const AI_QUERY_MAX_CHARS = 300;
@@ -182,12 +184,12 @@ export function DiscoverySearchCard({
               <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
                 Smart search
               </Text>
-              <Text
+              <FitText
                 numberOfLines={2}
                 style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}
               >
                 Get smarter, more relevant results.
-              </Text>
+              </FitText>
             </View>
             <Switch
               disabled={aiBusy}
@@ -431,13 +433,13 @@ export function DiscoverySearchCard({
               >
                 <MapPin color={colors.primary} size={16} strokeWidth={2.3} />
                 <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
+                  <FitText numberOfLines={1} style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
                     {suggestion.name ?? suggestion.address ?? "Location"}
-                  </Text>
+                  </FitText>
                   {suggestion.address && suggestion.address !== suggestion.name ? (
-                    <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+                    <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
                       {suggestion.address}
-                    </Text>
+                    </FitText>
                   ) : null}
                 </View>
               </AnimatedPressable>
@@ -495,10 +497,10 @@ export function DiscoverySearchCard({
           ) : (
             <LocateFixed color={colors.kicker} size={16} strokeWidth={2.2} />
           )}
-          <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
+          <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
             {searchStatus === "searching" ? (aiOn ? "AI searching" : "Searching") : "Searched"}
             {searchLocationLabel ? ` around ${searchLocationLabel}` : ""}
-          </Text>
+          </FitText>
         </View>
       ) : null}
 
@@ -666,15 +668,15 @@ function FilterPickerButton({
         <View style={{ overflow: "hidden" }}>
           <View style={{ backgroundColor: colors.surface, height: PICKER_NOTCH_SPLIT, left: 0, position: "absolute", right: 0, top: 0 }} />
           <View style={{ backgroundColor: fill, bottom: 0, left: 0, position: "absolute", right: 0, top: PICKER_NOTCH_SPLIT }} />
-          <Text numberOfLines={1} style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 11.5, letterSpacing: 0.3, lineHeight: 16, paddingHorizontal: 5 }}>
+          <FitText numberOfLines={1} style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 11.5, letterSpacing: 0.3, lineHeight: 16, paddingHorizontal: 5 }}>
             {label}
-          </Text>
+          </FitText>
         </View>
       </View>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Text numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800" }]}>
+        <FitText numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1, fontWeight: "800" }]}>
           {value}
-        </Text>
+        </FitText>
         <ChevronDown color={colors.muted} size={16} strokeWidth={2.4} />
       </View>
     </AnimatedPressable>
@@ -740,7 +742,7 @@ function LocationFilterModal<T>({
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text
+            <ModalTitle
               style={{
                 color: colors.ink,
                 fontFamily: fonts.display,
@@ -748,7 +750,7 @@ function LocationFilterModal<T>({
               }}
             >
               {title}
-            </Text>
+            </ModalTitle>
             <AnimatedPressable accessibilityLabel="Close" onPress={() => dismiss()}>
               <X color={colors.muted} size={22} strokeWidth={2.4} />
             </AnimatedPressable>

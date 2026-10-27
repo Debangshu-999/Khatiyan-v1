@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -67,6 +68,7 @@ import com.khatiyan.d_modules.tenancy.model.TenancyRoomChangeRequestStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyExitRequestRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRoomChangeRequestRepository;
+import com.khatiyan.d_modules.tenancy.repository.BedHoldRepository;
 
 @ExtendWith(MockitoExtension.class)
 class TenancyServiceTest {
@@ -108,6 +110,8 @@ class TenancyServiceTest {
     private TenancyExitRequestRepository exitRequestRepository;
 
     private TenancyService tenancyService;
+    @Mock private BedHoldRepository bedHolds;
+    @Mock private BookingBedInventory bookingInventory;
 
     @BeforeEach
     void setUp() {
@@ -120,7 +124,11 @@ class TenancyServiceTest {
                 authModule,
                 billingModule,
                 referenceCodeGenerator,
-                new FutureVacancies(tenancyRepository, roomChangeRequestRepository, exitRequestRepository));
+                new FutureVacancies(tenancyRepository, roomChangeRequestRepository, exitRequestRepository, bedHolds),
+                bookingInventory);
+        lenient().when(tenancyRepository.findPropertyIdById(any())).thenReturn(Optional.of(PROPERTY_ID));
+        lenient().when(tenancyRepository.findByIdForUpdate(any()))
+                .thenAnswer(call -> tenancyRepository.findById(call.getArgument(0)));
     }
 
     @Test

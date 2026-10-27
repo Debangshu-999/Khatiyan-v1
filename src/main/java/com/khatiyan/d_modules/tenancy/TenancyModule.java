@@ -20,6 +20,9 @@ import com.khatiyan.d_modules.tenancy.api.dto.TenancyRoomChangeRequestResponse;
 import com.khatiyan.d_modules.tenancy.service.TenancyExitRequestService;
 import com.khatiyan.d_modules.tenancy.service.TenancyRoomChangeRequestService;
 import com.khatiyan.d_modules.tenancy.service.TenancyService;
+import com.khatiyan.d_modules.tenancy.service.BookingBedInventory;
+import com.khatiyan.d_modules.tenancy.api.dto.BookingBedHoldResponse;
+import com.khatiyan.d_modules.tenancy.api.dto.BookingFutureVacancyResponse;
 
 /**
  * Public facade for the tenancy module.
@@ -36,6 +39,7 @@ public class TenancyModule {
     private final TenancyService tenancyService;
     private final TenancyExitRequestService tenancyExitRequestService;
     private final TenancyRoomChangeRequestService tenancyRoomChangeRequestService;
+    private final BookingBedInventory bookingInventory;
 
     // TenancyExitRequestService / TenancyRoomChangeRequestService transitively
     // depend on BillingModule, which depends back on TenancyModule
@@ -45,10 +49,51 @@ public class TenancyModule {
     public TenancyModule(
             TenancyService tenancyService,
             @Lazy TenancyExitRequestService tenancyExitRequestService,
-            @Lazy TenancyRoomChangeRequestService tenancyRoomChangeRequestService) {
+            @Lazy TenancyRoomChangeRequestService tenancyRoomChangeRequestService, BookingBedInventory bookingInventory) {
         this.tenancyService = tenancyService;
         this.tenancyExitRequestService = tenancyExitRequestService;
         this.tenancyRoomChangeRequestService = tenancyRoomChangeRequestService;
+        this.bookingInventory = bookingInventory;
+    }
+
+    public List<BookingFutureVacancyResponse> bookingFutureVacancies(UUID propertyId, LocalDate minimum, LocalDate maximum) {
+        return bookingInventory.futureVacancies(propertyId, minimum, maximum);
+    }
+
+    public BookingBedHoldResponse reserveBookingBed(UUID bookingId, UUID propertyId, UUID roomId,
+            LocalDate moveInDate, UUID exitRequestId) {
+        return bookingInventory.reserve(bookingId, propertyId, roomId, moveInDate, exitRequestId);
+    }
+
+    public boolean releaseBookingBed(UUID bookingId, UUID propertyId) {
+        return bookingInventory.release(bookingId, propertyId);
+    }
+
+    /** Of these bookings, the ones whose bed is free for them now. One read for a page. */
+    public java.util.Set<UUID> bookingBedsReady(java.util.Collection<UUID> bookingIds) {
+        return bookingInventory.readyBookings(bookingIds);
+    }
+
+    public Optional<BookingBedHoldResponse> findBookingBed(UUID bookingId, UUID propertyId) {
+        return bookingInventory.find(bookingId, propertyId);
+    }
+
+    /**
+     * The bed a booking holds passes to the stay about to be created from it,
+     * in the caller's transaction. Refused while the bed is still occupied.
+     */
+    public BookingBedHoldResponse consumeBookingBed(UUID bookingId, UUID propertyId) {
+        return bookingInventory.consume(bookingId, propertyId);
+    }
+
+    /** A booking's move-in date moves to a later day. Its bed is kept. */
+    public BookingBedHoldResponse moveBookingBedDate(UUID bookingId, UUID propertyId, LocalDate moveInDate) {
+        return bookingInventory.moveDate(bookingId, propertyId, moveInDate);
+    }
+
+    /** A booking takes a bed that is free today in another room, in place of the one it held or waited for. */
+    public BookingBedHoldResponse moveBookingBed(UUID bookingId, UUID propertyId, UUID roomId) {
+        return bookingInventory.moveBed(bookingId, propertyId, roomId);
     }
 
     public Optional<TenancyResponse> findById(UUID tenancyId) {

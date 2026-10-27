@@ -3,7 +3,6 @@ package com.khatiyan.a_auth.service;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -11,7 +10,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import com.khatiyan.a_auth.model.User;
+import com.khatiyan.a_auth.model.AuthUser;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 
 import io.jsonwebtoken.JwtException;
@@ -39,16 +38,16 @@ import jakarta.servlet.http.HttpServletResponse;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final AuthService authService;
-    private final UserSessionService userSessionService;
+    /**
+     * The user and the session, from Valkey or (while it is down) memory, read
+     * from the database once per record (2026-10-18). Before this, every
+     * signed-in request read both rows and also asked Valkey about revocation.
+     */
+    private final AuthStateCache authStateCache;
 
-    public JwtAuthenticationFilter(
-            JwtService jwtService,
-            AuthService authService,
-            UserSessionService userSessionService) {
+    public JwtAuthenticationFilter(JwtService jwtService, AuthStateCache authStateCache) {
         this.jwtService = jwtService;
-        this.authService = authService;
-        this.userSessionService = userSessionService;
+        this.authStateCache = authStateCache;
     }
 
     @Override
@@ -66,21 +65,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             JwtService.ParsedToken token = jwtService.parse(authHeader.substring(7));
-            Optional<User> user = authService.findActiveUserById(token.userId());
+            AuthStateCache.Snapshot state = authStateCache.lookup(token.userId(), token.sessionId());
 
-            if (user.isEmpty()) {
+            if (state.user().isEmpty()) {
                 reject(request, TokenRejectionReason.USER_INACTIVE);
-            } else if (userSessionService.isRevoked(token.sessionId())) {
-                // Valkey, not a query — this runs on every authenticated request.
+            } else if (state.session().revoked()) {
                 reject(request, TokenRejectionReason.SESSION_REVOKED);
-            } else if (token.credentialVersion() != user.get().getCredentialVersion()) {
+            } else if (token.credentialVersion() != state.user().get().credentialVersion()) {
                 // The three cases used to be one silent fall-through: a filter
                 // that never says which, and a caller left to guess from a bare
                 // status why it was turned away.
                 reject(request, TokenRejectionReason.CREDENTIALS_STALE);
             } else {
-                authenticate(user.get(), token);
-                userSessionService.touch(token.sessionId(), Instant.now());
+                authenticate(state.user().get(), token);
+                authStateCache.seen(token.sessionId(), Instant.now(), state.session().expiresAt());
             }
         } catch (JwtException | IllegalArgumentException invalid) {
             reject(request, TokenRejectionReason.TOKEN_INVALID);
@@ -94,18 +92,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         request.setAttribute(TokenRejectionReason.ATTRIBUTE, reason);
     }
 
-    private void authenticate(User user, JwtService.ParsedToken token) {
+    private void authenticate(AuthUser user, JwtService.ParsedToken token) {
         UserPrincipal principal = new UserPrincipal(
-            user.getId(),
-            user.getPhone(),
-            user.getRole().name(),
+            user.id(),
+            user.phone(),
+            user.role().name(),
             token.sessionId()
         );
 
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
             principal,
             null,
-            List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
+            List.of(new SimpleGrantedAuthority("ROLE_" + user.role().name()))
         );
 
         SecurityContextHolder.getContext().setAuthentication(authentication);

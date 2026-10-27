@@ -3,6 +3,7 @@ import { Text, View, type ViewStyle } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { useSoftShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -93,6 +94,7 @@ export function ChoiceSection({
  * choice sections and should read as the same kind of block.
  */
 export function ChoiceCard({ children, style }: { children: ReactNode; style?: ViewStyle }) {
+  const softShadow = useSoftShadow();
   const { colors } = useTheme();
 
   return (
@@ -106,10 +108,7 @@ export function ChoiceCard({ children, style }: { children: ReactNode; style?: V
           elevation: 1,
           gap: spacing.sm,
           padding: spacing.md,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 3, width: 0 },
-          shadowOpacity: 0.28,
-          shadowRadius: 9,
+          ...softShadow(colors.shadow, 3, 9, 0.28),
         },
         style,
       ]}

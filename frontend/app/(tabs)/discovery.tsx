@@ -25,6 +25,7 @@ import {
 } from "@/features/discovery/components/property-filter-modal";
 import { PropertyListingCard } from "@/features/discovery/components/property-listing-card";
 import { PropertyProfileLayer, type PropertyProfileLayerHandle } from "@/features/discovery/components/property-profile-layer";
+import type { ProfileSource } from "@/features/analytics/use-profile-view";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -46,6 +47,7 @@ import {
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { ListingResultsSkeleton } from "@/components/skeletons/discovery/listing-results";
+import { FitText } from "@/components/fit-text";
 
 type SubmittedSearch = {
   text: string;
@@ -133,6 +135,7 @@ function NearbyMapCard({ onPress }: { onPress: () => void }) {
   return (
     <AnimatedPressable accessibilityLabel="View nearby places on map" accessibilityRole="button" onPress={onPress}>
       <ImageBackground
+        resizeMethod="resize"
         imageStyle={{ borderRadius: 20 }}
         resizeMode="cover"
         source={NEARBY_MAP_PREVIEW}
@@ -240,7 +243,10 @@ export default function DiscoveryScreen() {
   // (see PropertyProfileLayer), opened through this ref so that opening or
   // closing it never re-renders the results list underneath.
   const profileLayer = useRef<PropertyProfileLayerHandle>(null);
-  const openProfile = useCallback((propertyId: string) => profileLayer.current?.open(propertyId), []);
+  const openProfile = useCallback(
+    (propertyId: string, source: ProfileSource = "SEARCH") => profileLayer.current?.open(propertyId, source),
+    [],
+  );
 
   // Sent here with a property to show: View property on My enquiries
   // (2026-10-03). Opened once, then the parameter is cleared so coming back to
@@ -250,7 +256,7 @@ export default function DiscoveryScreen() {
     if (!openPropertyId) {
       return;
     }
-    openProfile(openPropertyId);
+    openProfile(openPropertyId, "OTHER");
     router.setParams({ openPropertyId: undefined });
   }, [openPropertyId, openProfile, router]);
 
@@ -789,9 +795,18 @@ export default function DiscoveryScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-    <View style={{ flex: 1 }}>
-    <ScreenScrollView onScroll={handleResultsScroll} safeAreaEdges={["top", "bottom"]}>
-      <DiscoveryHeader />
+    <ScreenScrollView
+      safeAreaEdges={["top", "bottom"]}
+      surface={colors.surface}
+      onScroll={handleResultsScroll}
+      scrollEventThrottle={16}
+    >
+      {/* Two words like every other screen's title, the second in the italic accent (user, 2026-10-27). */}
+      <ScreenHeader
+        italicTail="places."
+        subtitle="Properties and local services around your selected location."
+        title="Discover"
+      />
 
       <TabSwitcher active={activeTab} onChange={setActiveTab} options={tabs} />
 
@@ -928,7 +943,7 @@ export default function DiscoveryScreen() {
                 setDraftFilters(emptyPropertyFilters);
                 setSuggestionRound((round) => round + 1);
               }}
-              onView={openProfile}
+              onView={(propertyId: string) => openProfile(propertyId, "SMART_SEARCH")}
               result={aiResult}
               sort={aiSort}
               visible={aiVisible}
@@ -943,7 +958,7 @@ export default function DiscoveryScreen() {
                 {/* Sort sits beside the title (user, 2026-10-02), not on a
                     row of its own under the count. */}
                 <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                  <Text
+                  <FitText
                     numberOfLines={1}
                     style={{
                       color: colors.ink,
@@ -954,12 +969,12 @@ export default function DiscoveryScreen() {
                     }}
                   >
                     Listing Results
-                  </Text>
+                  </FitText>
                   {(propertyPage?.items.length ?? 0) > 1 ? (
                     <ListingSortButton onPress={() => setSortSheet("search")} sort={listingSort} />
                   ) : null}
                 </View>
-                <Text
+                <FitText
                   numberOfLines={2}
                   style={[type.description, { color: colors.muted }]}
                 >
@@ -970,7 +985,7 @@ export default function DiscoveryScreen() {
                         : "No listing for this location"
                       : `${exactProperties.length} listing${exactProperties.length === 1 ? "" : "s"} found${listingAreaLabel ? ` for "${listingAreaLabel}"` : ""}`
                     : "Loading listing results"}
-                </Text>
+                </FitText>
               </View>
               <View
                 style={{
@@ -982,6 +997,7 @@ export default function DiscoveryScreen() {
                 }}
               >
                 <Image
+                  resizeMethod="resize"
                   accessibilityIgnoresInvertColors
                   resizeMode="contain"
                   source={LISTING_RESULTS_ILLUSTRATION}
@@ -1001,6 +1017,7 @@ export default function DiscoveryScreen() {
                 }}
               >
                 <Image
+                  resizeMethod="resize"
                   accessibilityIgnoresInvertColors
                   resizeMode="contain"
                   source={EMPTY_SEARCH_ILLUSTRATION}
@@ -1016,9 +1033,6 @@ export default function DiscoveryScreen() {
                   }}
                 >
                   No listings found
-                </Text>
-                <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
-                  {areaLabel ? `No listings found for "${areaLabel}".` : "No listings were found for this location."}
                 </Text>
                 <AnimatedPressable
                   accessibilityRole="button"
@@ -1106,10 +1120,8 @@ export default function DiscoveryScreen() {
           {!hasActiveSearch && !showingAiResults && !aiSearching ? (
             <Card>
               {aiOn ? (
-                // The ordinary prompt pointed at the city and area inputs, which
-                // AI search hides. This one points at the box that is there.
+                // AI search keeps its own empty-state title.
                 <EmptySearchPrompt
-                  description="Describe the stay you want above, the area, your budget or a place to be near."
                   title="Tell AI what you're looking for"
                 />
               ) : (
@@ -1155,7 +1167,6 @@ export default function DiscoveryScreen() {
             <Card>
               <EmptySearchPrompt
                 artwork={NO_LOCATION_ILLUSTRATION}
-                description="Important locations appear here after you become an active tenant of a property."
                 title="No nearby locations yet"
               />
             </Card>
@@ -1164,7 +1175,6 @@ export default function DiscoveryScreen() {
       )}
 
     </ScreenScrollView>
-    </View>
     <PropertyProfileLayer ref={profileLayer} />
     </View>
   );
@@ -1247,31 +1257,15 @@ function editDistanceAtMost(a: string, b: string, max: number) {
 // Shown on the properties tab when nothing is searched (initial no-location
 // state, or after the search box is cleared). A magnifying glass sits inside a
 // soft badge with a looping "sonar ping" ring, over a large centred prompt.
-/**
- * "Discovery", with its description close under it and no artwork
- * (user, 2026-10-02). The negative bottom margin pulls the tab switcher a
- * little closer than the scroll view's section gap.
- */
-function DiscoveryHeader() {
-  return (
-    <ScreenHeader
-      style={{ marginBottom: -spacing.xs }}
-      subtitle="Properties and local services around your selected location."
-      title="Discovery"
-    />
-  );
-}
 function EmptySearchPrompt({
   artwork = EMPTY_SEARCH_ILLUSTRATION,
-  description = "Enter a city, area or place above to find properties nearby.",
   title = "Search a place to see listings",
 }: {
   /** Defaults to the search illustration; the nearby tab passes its own. */
   artwork?: ImageSourcePropType;
-  description?: string;
   title?: string;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
   const bob = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -1292,6 +1286,7 @@ function EmptySearchPrompt({
   return (
     <View style={{ alignItems: "center", gap: spacing.lg, justifyContent: "center", paddingVertical: spacing.xxl }}>
       <Animated.Image
+        resizeMethod="resize"
         accessibilityIgnoresInvertColors
         resizeMode="contain"
         source={artwork}
@@ -1308,9 +1303,6 @@ function EmptySearchPrompt({
           }}
         >
           {title}
-        </Text>
-        <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
-          {description}
         </Text>
       </View>
     </View>

@@ -211,6 +211,17 @@ public class ChatService {
     }
 
     /**
+     * Bookings: the conversations about bookings this person handles now
+     * (user, 2026-10-27). Private to them and the person who booked, like
+     * Enquiries.
+     */
+    @Transactional(readOnly = true)
+    public List<ChatThreadResponse> listBookingSection(UUID actorUserId, UUID propertyId) {
+        return describe(actorUserId, stillVisibleTo(
+                actorUserId, chatThreadRepository.findBookingSectionFor(propertyId, actorUserId)));
+    }
+
+    /**
      * A tenant's or prospect's own list: everything they are a member of, across
      * every property, newest first.
      */
@@ -450,6 +461,71 @@ public class ChatService {
                         .orElse(0L));
     }
 
+    /**
+     * The conversation about a booking made in the app, created on first open
+     * (user, 2026-10-27). Called by the booking module, which decides who may
+     * open it and who is on the property's side.
+     *
+     * <p>Every open also brings the thread up to date, so it never depends on
+     * an event having arrived: the person who booked and the property's side
+     * as given, nobody else, and read-only once the booking has ended.
+     *
+     * @param propertySideUserId whoever handles the booking now, or the owner
+     *                           while nobody does
+     */
+    @Transactional
+    public ChatThread openBookingThread(
+            UUID propertyId, UUID bookingId, UUID bookerUserId, UUID propertySideUserId, boolean ended) {
+        ChatThread thread = chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.BOOKING, bookingId)
+                .orElseGet(() -> {
+                    ChatThread opened = chatThreadRepository.save(ChatThread.forBooking(propertyId, bookingId));
+                    log.info("Chat booking thread opened bookingId={} threadId={}", bookingId, opened.getId());
+                    return opened;
+                });
+        keepBookingThreadCurrent(thread, bookerUserId, propertySideUserId, ended);
+        return thread;
+    }
+
+    /**
+     * Brings a booking's conversation, if it has one, up to date with the
+     * booking: a new handler takes the property's side with the history, and
+     * an ended booking leaves it read-only. Safe to run any number of times.
+     */
+    @Transactional
+    public void syncBookingThread(UUID bookingId, UUID bookerUserId, UUID propertySideUserId, boolean ended) {
+        chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.BOOKING, bookingId)
+                .ifPresent(thread -> keepBookingThreadCurrent(thread, bookerUserId, propertySideUserId, ended));
+    }
+
+    private void keepBookingThreadCurrent(
+            ChatThread thread, UUID bookerUserId, UUID propertySideUserId, boolean ended) {
+        Set<UUID> wanted = new HashSet<>();
+        wanted.add(bookerUserId);
+        if (propertySideUserId != null) {
+            wanted.add(propertySideUserId);
+        }
+        Set<UUID> present = new HashSet<>();
+        for (ChatThreadMember member : chatThreadMemberRepository.findByThreadId(thread.getId())) {
+            if (wanted.contains(member.getUserId())) {
+                present.add(member.getUserId());
+            } else {
+                chatThreadMemberRepository.delete(member);
+                log.info("Chat booking thread handed on threadId={} leftUserId={}",
+                        thread.getId(), member.getUserId());
+            }
+        }
+        for (UUID userId : wanted) {
+            if (!present.contains(userId)) {
+                chatThreadMemberRepository.save(ChatThreadMember.of(thread.getId(), userId));
+            }
+        }
+        if (ended && thread.isOpen()) {
+            thread.close();
+            log.info("Chat booking thread read-only with its booking threadId={} bookingId={}",
+                    thread.getId(), thread.getOriginId());
+        }
+    }
+
     @Transactional
     public void closeEnquiryThread(UUID enquiryId) {
         chatThreadRepository.findByOriginAndOriginId(ChatThreadOrigin.ENQUIRY, enquiryId).ifPresent(thread -> {
@@ -615,6 +691,7 @@ public class ChatService {
                 .filter(thread -> chatAccessService.isMember(actorUserId, thread.getId()))
                 .forEach(counted::add);
         counted.addAll(chatThreadRepository.findEnquirySectionFor(propertyId, actorUserId));
+        counted.addAll(chatThreadRepository.findBookingSectionFor(propertyId, actorUserId));
 
         List<ChatThread> visible = stillVisibleTo(actorUserId, counted);
         Map<UUID, Long> positions = readPositionsFor(actorUserId, visible);
@@ -702,7 +779,9 @@ public class ChatService {
         return threads.stream()
                 // An enquiry chat does not exist for anyone until its first
                 // text (user, 2026-10-03).
-                .filter(thread -> !(thread.getOrigin() == ChatThreadOrigin.ENQUIRY && thread.getLastMessageSeq() == null))
+                // Nor a booking chat (user, 2026-10-27): its card opens it, the list waits for a word.
+                .filter(thread -> !((thread.getOrigin() == ChatThreadOrigin.ENQUIRY
+                        || thread.getOrigin() == ChatThreadOrigin.BOOKING) && thread.getLastMessageSeq() == null))
                 .filter(thread -> !isCleared(thread, cleared.getOrDefault(thread.getId(), 0L)))
                 .toList();
     }

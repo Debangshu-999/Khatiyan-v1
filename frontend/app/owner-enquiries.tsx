@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { ModalTitle } from "@/components/modal-title";
+import { formatIndianPhone } from "@/features/owner/phone-display";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Linking, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import {
   CalendarCheck,
@@ -14,6 +16,7 @@ import {
   MessageSquare,
   Phone,
   RotateCcw,
+  ShieldAlert,
   ThumbsDown,
   ThumbsUp,
   Timer,
@@ -51,6 +54,7 @@ import {
   type Tone,
 } from "@/features/enquiry/enquiry-tags";
 import { AssignHandlerSheet } from "@/features/enquiry/assign-handler-sheet";
+import { EnquiryMessagePreview } from "@/features/enquiry/enquiry-message-preview";
 import { HandlerModeSheet } from "@/features/enquiry/handler-mode-sheet";
 import { ManageVisitSheet } from "@/features/enquiry/manage-visit-sheet";
 import {
@@ -60,7 +64,7 @@ import {
   RecordResponseSheet,
 } from "@/features/enquiry/record-response-sheet";
 import { VisitSheet } from "@/features/enquiry/visit-sheet";
-import { formatVisitShort } from "@/features/enquiry/visit-time";
+import { formatVisitDay, formatVisitShort } from "@/features/enquiry/visit-time";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
@@ -84,6 +88,8 @@ import {
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 // The screen's empty state. It used to be the header artwork, with a borrowed
 // concerns illustration for the empty state.
@@ -124,7 +130,24 @@ const ALL_FILTERS: { label: string; value: AllFilter }[] = [
 /** How close to the bottom counts as "show me more". Matches the alert feeds. */
 const LOAD_MORE_THRESHOLD_PX = 240;
 
+const ENQUIRY_ATTENTION = { UNASSIGNED: "Enquiries to pick up", RESPONSE: "Enquiries to answer", CALLS: "Call outcomes to record" } as const;
+type EnquiryAttention = keyof typeof ENQUIRY_ATTENTION;
+
+function enquiryNeedsAction(enquiry: EnquiryDetail, attention: EnquiryAttention) {
+  if (isPastDate(enquiry) || enquiry.endedAt) return false;
+  if (attention === "CALLS") return Boolean(enquiry.callToSettleId);
+  return enquiry.status === "NEW" && !enquiry.callToSettleId
+    && (attention === "UNASSIGNED" ? !enquiry.handlerUserId : Boolean(enquiry.handlerUserId));
+}
+
+function EnquiryQueue({ attention, ...props }: ComponentProps<typeof FilteredQueue<string>> & { attention?: EnquiryAttention }) {
+  return attention ? <View style={{ gap: spacing.md }}>{props.headingNode}{props.children}</View> : <FilteredQueue {...props} />;
+}
+
 export default function OwnerEnquiriesScreen() {
+  const params = useLocalSearchParams<{ attention?: string }>();
+  const attention = params.attention && Object.prototype.hasOwnProperty.call(ENQUIRY_ATTENTION, params.attention)
+    ? params.attention as EnquiryAttention : undefined;
   const router = useGuardedRouter();
   const { colors, type } = useTheme();
   const toast = useToast();
@@ -329,7 +352,8 @@ export default function OwnerEnquiriesScreen() {
     NEW: unhandled.filter((enquiry) => isLive(enquiry) && isNewToday(enquiry)),
     OPEN: unhandled.filter(isLive),
   };
-  const visible = effectiveTab === "all" ? allBuckets[allFilter] : mineBuckets[mineFilter];
+  const visible = attention ? enquiries.filter((enquiry) => enquiryNeedsAction(enquiry, attention))
+    : effectiveTab === "all" ? allBuckets[allFilter] : mineBuckets[mineFilter];
   const filterLabel =
     effectiveTab === "all"
       ? ALL_FILTERS.find((option) => option.value === allFilter)!.label
@@ -379,7 +403,7 @@ export default function OwnerEnquiriesScreen() {
       <ScreenHeader
         italicTail="queue."
         subtitle={
-          selectedProperty
+          attention ? ENQUIRY_ATTENTION[attention] : selectedProperty
             ? `People asking about ${selectedProperty.name} from its public profile.`
             : "Select a property from Home first."
         }
@@ -430,7 +454,7 @@ export default function OwnerEnquiriesScreen() {
             <>
               {/* Two tabs, the Food preference screen's (user, 2026-10-03). The
                   blue circle counts what is new since the tab was last seen. */}
-              <SelectionTabs<EnquiryTab>
+              {attention ? null : <SelectionTabs<EnquiryTab>
                 active={effectiveTab}
                 bleed={spacing.lg}
                 distributed
@@ -439,18 +463,19 @@ export default function OwnerEnquiriesScreen() {
                   { badge: newInAll, label: "All enquiries", value: "all" },
                   { badge: newInMine, label: "My enquiries", value: "mine" },
                 ]}
-              />
-              <FilteredQueue
+              />}
+              <EnquiryQueue
+                attention={attention}
                 count={visible.length}
                 heading={`${filterLabel} enquiries`}
                 // A new one per tab, and per visit to the screen, so its list
                 // starts closed when the tab is switched (user, 2026-10-03).
-                key={`${effectiveTab}-${filterResets}`}
+                key={`${attention ?? effectiveTab}-${filterResets}`}
                 // The tenant screen's count pill (user, 2026-10-03): "2 open enquiries".
                 headingNode={
                   <CountPill
                     count={visible.length}
-                    kind={filterLabel === "All" ? undefined : filterLabel.toLowerCase()}
+                    kind={attention ? undefined : filterLabel === "All" ? undefined : filterLabel.toLowerCase()}
                   />
                 }
                 onChange={(next: string) => {
@@ -473,14 +498,14 @@ export default function OwnerEnquiriesScreen() {
                   artwork={ENQUIRIES_ILLUSTRATION}
                   artworkTextGap={-6}
                   description={
-                    (effectiveTab === "all" ? unhandled : mine).length > 0
+                    attention ? "No enquiries need this action" : (effectiveTab === "all" ? unhandled : mine).length > 0
                       ? "Pick another filter to see the rest."
                       : effectiveTab === "all"
                         ? "Every enquiry has a handler. Yours are under My enquiries."
                         : "Enquiries you become the handler for appear here."
                   }
                   title={
-                    (effectiveTab === "all" ? unhandled : mine).length > 0
+                    attention ? "No enquiries need this action" : (effectiveTab === "all" ? unhandled : mine).length > 0
                       ? `No ${filterLabel.toLowerCase()} enquiries`
                       : effectiveTab === "all"
                         ? "Nothing unassigned"
@@ -496,7 +521,7 @@ export default function OwnerEnquiriesScreen() {
                       key={enquiry.id}
                       visit={bookedVisitFor(enquiry.id)}
                       onActions={() => setActingOnId(enquiry.id)}
-                      onAssign={effectiveTab === "all" && ownerAssigns ? () => setAssigningId(enquiry.id) : undefined}
+                      onAssign={!enquiry.handlerUserId && effectiveTab === "all" && ownerAssigns ? () => setAssigningId(enquiry.id) : undefined}
                       onRespond={() => setRespondingId(enquiry.id)}
                       onSchedule={() => startScheduling(enquiry)}
                       onViewLog={() => setViewingLog(enquiry)}
@@ -507,7 +532,7 @@ export default function OwnerEnquiriesScreen() {
                   {!hasMore ? <ListEnd /> : null}
                 </View>
               )}
-              </FilteredQueue>
+              </EnquiryQueue>
             </>
           )}
         </View>
@@ -643,17 +668,23 @@ type EnquiryCardStep = "respond" | "record" | "log" | "actions" | "close" | "blo
  * @param onOpenChat a reply over chat opens the conversation. Handed up, not
  *                   opened here: a screen pushed from inside a modal lands
  *                   behind it, so the caller closes this sheet first
+ * @param respondFirst open on the respond sheet alone, with no card under it:
+ *                   Follow up on a lead (2026-10-17). Closing it, or finishing
+ *                   what it started, closes the whole thing (user, 2026-10-18:
+ *                   the card underneath was one modal too many)
  */
 export function EnquiryCardSheet({
   enquiryId,
   onClose,
   onOpenChat,
   propertyId,
+  respondFirst = false,
 }: {
   enquiryId: string;
   onClose: () => void;
   onOpenChat: (chat: { threadId: string; title: string }) => void;
   propertyId: string;
+  respondFirst?: boolean;
 }) {
   const { colors, type } = useTheme();
   const toast = useToast();
@@ -662,11 +693,18 @@ export function EnquiryCardSheet({
   const bookedVisitsQuery = useGetBookedVisitsQuery(propertyId, { refetchOnMountOrArgChange: true });
   const [clearDecision, clearState] = useClearEnquirySentimentMutation();
   const [endEnquiry, endState] = useEndEnquiryConversationMutation();
-  const [step, setStep] = useState<EnquiryCardStep | null>(null);
+  const [step, setStep] = useState<EnquiryCardStep | null>(respondFirst ? "respond" : null);
   const [refusal, setRefusal] = useState<string | null>(null);
 
   const enquiry = enquiriesQuery.data?.find((candidate) => candidate.id === enquiryId) ?? null;
   const visit = bookedVisitsQuery.data?.find((booked) => booked.enquiryId === enquiryId) ?? null;
+
+  // With no card to fall back to, a follow-up that ends ends everything.
+  useEffect(() => {
+    if (respondFirst && step === null) {
+      onClose();
+    }
+  }, [onClose, respondFirst, step]);
 
   /** A visit that stands is managed, and none is booked before a successful response. */
   function startScheduling(detail: EnquiryDetail) {
@@ -697,7 +735,11 @@ export function EnquiryCardSheet({
 
   return (
     <>
-      <SheetShell onClose={onClose} title="Enquiry">
+      {respondFirst ? (
+        !enquiry && !enquiriesQuery.isLoading
+          ? <AlertModal message="This enquiry is no longer listed." onClose={onClose} />
+          : null
+      ) : <SheetShell onClose={onClose} showClose={false} title="">
         {enquiry ? (
           <EnquiryCard
             enquiry={enquiry}
@@ -718,7 +760,7 @@ export function EnquiryCardSheet({
         ) : (
           <Text style={[type.modalDescription, { color: colors.muted }]}>This enquiry is no longer listed.</Text>
         )}
-      </SheetShell>
+      </SheetShell>}
 
       {step === "respond" && enquiry ? (
         <RespondSheet
@@ -884,9 +926,34 @@ function EnquiryCard({
   const visitWhen = visit ? ` · ${formatVisitShort(visit.date, visit.slotStart)}` : "";
   const showVisited = visit?.state === "VISITED";
   const showMissed = visit?.state === "MISSED" && !isExpired;
-  const hasStates = Boolean(
-    (visitBooked && !isExpired) || showVisited || showMissed || cancelledVisit || closesAt || endReason || handledBy,
-  );
+  // Where the visit stands, and Interested, side by side across the card above the message
+  // (user, 2026-10-17), each keeping its grey fill. The other states stay under the message.
+  const visitChip = visitBooked && !isExpired ? (
+    // "Rescheduled" once it has been moved on or after the day it was due (user, 2026-10-04).
+    <StateChip
+      icon={CalendarCheck}
+      label={(visit?.rescheduled ? "Visit rescheduled" : "Visit scheduled") + visitWhen}
+      neutralBackground
+      stretch
+      tone="success"
+    />
+  ) : showVisited ? (
+    // The date alone once they have been (user, 2026-10-18): the slot no longer matters.
+    <StateChip icon={CheckCircle2} label={`Visited · ${formatVisitDay(visit.date)}`} neutralBackground stretch tone="success" />
+  ) : showMissed ? (
+    <StateChip icon={CalendarX} label={"Visit missed" + visitWhen} neutralBackground stretch tone="danger" />
+  ) : cancelledVisit ? (
+    <StateChip icon={CalendarX} label="Visit cancelled" neutralBackground stretch tone="danger" />
+  ) : null;
+  // After a cancelled visit or a change of mind it says so, under the row (user, 2026-10-03).
+  const interestedNote = showInterested
+    ? cancelledVisit?.byTenant
+      ? "Tenant is interested but changed mind"
+      : changedMind
+        ? "Tenant changed mind"
+        : null
+    : null;
+  const hasStates = Boolean(closesAt || endReason || handledBy);
   const hasRibbon = isNew || isClosed || isExpired;
 
   return (
@@ -911,9 +978,9 @@ function EnquiryCard({
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingRight: hasRibbon ? 40 : 0 }}>
             <InitialsAvatar name={enquiry.enquirerName} />
             <View style={{ flex: 1, gap: 2 }}>
-              <Text numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
-                {enquiry.enquirerName ?? "Someone"}
-              </Text>
+              <FitText numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
+                {cardName(enquiry.enquirerName ?? "Someone")}
+              </FitText>
               {/* Wraps rather than truncates: beside a ribbon there is less room. */}
               <Text style={[type.caption, { color: colors.muted }]}>
                 {formatWhen(enquiry.createdAt)}
@@ -924,70 +991,53 @@ function EnquiryCard({
             </View>
           </View>
 
-          {/* The question itself, set as a quote: it is what the card is for. */}
-          <View
-            style={{
-              backgroundColor: colors.surfaceSunken,
-              borderCurve: "continuous",
-              borderRadius: radii.card,
-              flexDirection: "row",
-              gap: spacing.sm,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm + 2,
-            }}
-          >
-            <View style={{ backgroundColor: colors.borderStrong, borderRadius: 2, width: 3 }} />
-            <Text style={[type.description, { color: colors.ink, flex: 1, fontFamily: fonts.sansMedium }]}>
-              {enquiry.message}
-            </Text>
-          </View>
-
-          {/* Where it stands, each state in its own colour. */}
-          {hasStates ? (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-              {/* A booked visit, with its day and time (user, 2026-10-03).
-                  "Rescheduled" once it has been moved on or after the day it
-                  was due (user, 2026-10-04). */}
-              {visitBooked && !isExpired ? (
-                <StateChip
-                  icon={CalendarCheck}
-                  label={(visit?.rescheduled ? "Visit rescheduled" : "Visit scheduled") + visitWhen}
-                  tone="success"
-                />
-              ) : null}
-              {/* Checked in at the property, or nobody was (2026-10-04). */}
-              {showVisited ? <StateChip icon={CheckCircle2} label={"Visited" + visitWhen} tone="success" /> : null}
-              {showMissed ? <StateChip icon={CalendarX} label={"Visit missed" + visitWhen} tone="danger" /> : null}
-              {cancelledVisit ? <StateChip icon={CalendarX} label="Visit cancelled" tone="warning" /> : null}
-              {/* How long a Not interested enquiry has before it closes by
-                  itself (user, 2026-10-03). */}
-              {closesAt ? <StateChip icon={Timer} label={formatClosesIn(closesAt)} tone="danger" /> : null}
-              {endReason ? <StateChip label={endReason.label} tone={endReason.tone} /> : null}
-              {handledBy ? <StateChip icon={User} label={`Enquiry handled by ${handledBy}`} tone="neutral" /> : null}
+          {visitChip || showInterested ? (
+            <View style={{ gap: 4 }}>
+              <View style={{ flexDirection: "row", gap: spacing.xs }}>
+                {visitChip ? <View style={{ flex: 1, minWidth: 0 }}>{visitChip}</View> : null}
+                {/* Whenever they are marked interested, a booked visit included (user, 2026-10-04). */}
+                {showInterested ? (
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <StateChip icon={ThumbsUp} label="Interested" neutralBackground stretch tone="success" />
+                  </View>
+                ) : null}
+              </View>
+              {interestedNote ? <Text style={[type.caption, { color: colors.muted }]}>{interestedNote}</Text> : null}
             </View>
           ) : null}
 
-          {notInterested && !isExpired ? (
-            <StatusNote icon={ThumbsDown} label="Not interested" text={heldBack} tone="danger" />
+          <EnquiryMessagePreview message={enquiry.message} />
+
+          {/* Grey surfaces match the message; text and icons convey the outcome. */}
+          {hasStates ? (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+              {/* How long a Not interested enquiry has before it closes by
+                  itself (user, 2026-10-03). */}
+              {closesAt ? <StateChip icon={Timer} label={formatClosesIn(closesAt)} neutralBackground tone="danger" /> : null}
+              {endReason ? <StateChip label={endReason.label} neutralBackground tone={endReason.tone === "success" ? "success" : "danger"} /> : null}
+              {handledBy ? <StateChip icon={User} label={`Enquiry handled by ${handledBy}`} neutralBackground tone="neutral" /> : null}
+            </View>
           ) : null}
 
-          {/* Whenever they are marked interested, a booked visit included
-              (user, 2026-10-04); after a cancelled visit or a change of mind
-              it says so beside Interested (user, 2026-10-03). */}
-          {showInterested ? (
+          {/* The person keeps walking away from this property (user, 2026-10-17):
+              the leads pipeline's mark, with its reason. */}
+          {enquiry.repeatMark ? (
             <StatusNote
-              icon={ThumbsUp}
-              label="Interested"
-              text={
-                cancelledVisit?.byTenant ? "Tenant is interested but changed mind" : changedMind ? "Tenant changed mind" : null
-              }
-              tone="success"
+              icon={enquiry.repeatMark.flag === "POTENTIAL_SPAM" ? ShieldAlert : Copy}
+              label={enquiry.repeatMark.flag === "POTENTIAL_SPAM" ? "Potential spam" : "Duplicate"}
+              tinted
+              text={enquiry.repeatMark.reason}
+              tone={enquiry.repeatMark.flag === "POTENTIAL_SPAM" ? "danger" : "warning"}
             />
+          ) : null}
+
+          {notInterested && !isExpired ? (
+            <StatusNote icon={ThumbsDown} label="Not interested" neutralBackground text={heldBack} tone="danger" />
           ) : null}
 
           {/* Why the visit was called off, in its own note (user, 2026-10-03). */}
           {cancelReason ? (
-            <StatusNote icon={CalendarX} label="Cancellation reason" text={cancelReason} tone="warning" />
+            <StatusNote icon={CalendarX} label="Cancellation reason" neutralBackground text={cancelReason} tone="danger" />
           ) : null}
         </View>
 
@@ -1156,9 +1206,9 @@ function VisitBlockedDialog({ onClose }: { onClose: () => void }) {
             width: "100%",
           }}
         >
-          <Text accessibilityRole="header" style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
+          <ModalTitle accessibilityRole="header" style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>
             Schedule visits blocked
-          </Text>
+          </ModalTitle>
           <Text style={[type.modalDescription, { color: colors.muted }]}>
             You can schedule a visit after there has been a positive response from the enquirer, either over chat when
             they respond, or over a call back by you, whose response has to be recorded by you manually.
@@ -1465,7 +1515,7 @@ function ResponseLogCard({ response }: { response: EnquiryDetail["responses"][nu
               paddingVertical: 2,
             }}
           >
-            <Text
+            <FitText
               numberOfLines={1}
               style={{
                 color: response.outcome === "FAILED" ? colors.danger : colors.muted,
@@ -1474,7 +1524,7 @@ function ResponseLogCard({ response }: { response: EnquiryDetail["responses"][nu
               }}
             >
               {describeCallOutcome(response)}
-            </Text>
+            </FitText>
           </View>
         ) : null}
       </View>
@@ -1652,7 +1702,7 @@ function RespondSheet({
           icon={Phone}
           label="Call back"
           onPress={() => void choose("CALL_BACK", callChannel.target)}
-          subtitle={callChannel.target}
+          subtitle={formatIndianPhone(callChannel.target)}
         />
       ) : null}
 
@@ -1736,9 +1786,9 @@ function ChannelOption({
         <Text style={{ color: danger ? colors.danger : colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
           {label}
         </Text>
-        <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1}>
+        <FitText style={[type.caption, { color: colors.kicker }]} numberOfLines={1}>
           {subtitle}
-        </Text>
+        </FitText>
       </View>
     </AnimatedPressable>
   );

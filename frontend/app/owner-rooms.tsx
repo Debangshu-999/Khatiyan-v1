@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -73,10 +74,12 @@ import {
   type RoomStatus,
 } from "@/store/services/property-api";
 import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/services/tenancy-api";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { CountTabPills } from "@/components/filter-bubbles";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { FitText } from "@/components/fit-text";
 
 const NO_BEDS_ILLUSTRATION = require("../assets/empty-states/No-Beds_512x512.png");
 
@@ -477,10 +480,7 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
           flexDirection: "row",
           gap: spacing.sm,
           padding: spacing.md,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 2, width: 0 },
-          shadowOpacity: 1,
-          shadowRadius: 6,
+          ...softShadow(colors.shadow, 2, 6),
         }}
       >
         {/* Unboxed and full size, as on the Home property picker. A ringed
@@ -488,9 +488,9 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
         <PropertyArtwork size={34} />
 
         <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             {floorLabel(active)}
-          </Text>
+          </FitText>
           <Text style={[type.caption, { color: colors.muted }]}>
             {floors.length} floor{floors.length === 1 ? "" : "s"} in this property
           </Text>
@@ -529,9 +529,9 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
                 width: "100%",
               }}>
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingBottom: spacing.xs, paddingHorizontal: spacing.xs }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
+                <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
                   Choose floor
-                </Text>
+                </ModalTitle>
                 <IconButton accessibilityLabel="Close" icon={X} onPress={() => setOpen(false)} />
               </View>
               <ScrollView contentContainerStyle={{ gap: spacing.xs }} showsVerticalScrollIndicator={false}>
@@ -618,19 +618,19 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
       </View>
       <View style={{ alignSelf: "stretch", minWidth: 0, gap: 5 }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
-        <Text numberOfLines={1} style={[type.caption, { color: occupant ? colors.accent : colors.ink, fontSize: 13, fontWeight: "800" }]}>
+        <FitText numberOfLines={1} style={[type.caption, { color: occupant ? colors.accent : colors.ink, fontSize: 13, fontWeight: "800" }]}>
           Bed {index + 1}
-        </Text>
+        </FitText>
         {daily ? <Clock color={colors.accent} size={11} strokeWidth={2.4} /> : null}
       </View>
       {occupant ? (
         <>
-          <Text
+          <FitText
             numberOfLines={1}
             style={{ alignSelf: "stretch", color: colors.ink, fontFamily: fonts.display, fontSize: 18, lineHeight: 24 }}
           >
             {firstName ?? "Tenant"}
-          </Text>
+          </FitText>
           {daily && occupant.plannedEndDate ? (
             <Text style={{ color: colors.accent, fontFamily: fonts.sansBold, fontSize: 11, textAlign: "center" }}>
               Until {shortDate(occupant.plannedEndDate)}
@@ -786,7 +786,7 @@ function RoomCard({
                 and Android clips its descenders — the same way "per bed /
                 month" was being cut off on the room type card. */}
             <View style={{ alignItems: "baseline", flexDirection: "row", flexShrink: 1, gap: 0 }}>
-              <Text
+              <FitText
                 numberOfLines={1}
                 // Well under the room number, and a weight lighter (user,
                 // 2026-10-04): two big numbers on one card looked off. Bold
@@ -794,7 +794,7 @@ function RoomCard({
                 style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 20, letterSpacing: -0.2 }}
               >
                 {formatMoneyPaise(room.baseRentPaise)}
-              </Text>
+              </FitText>
               <Text style={[type.caption, { color: colors.muted }]}>/bed</Text>
             </View>
 
@@ -851,9 +851,9 @@ function RoomCard({
                 width: "100%",
               }}>
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
+                <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
                   Room {room.roomNumber}  -  Maintenance
-                </Text>
+                </ModalTitle>
                 <IconButton accessibilityLabel="Close" icon={X} onPress={() => setShowInfo(false)} />
               </View>
 
@@ -920,9 +920,9 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
             }}
           >
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
                 {title}
-              </Text>
+              </ModalTitle>
               <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
             {children}

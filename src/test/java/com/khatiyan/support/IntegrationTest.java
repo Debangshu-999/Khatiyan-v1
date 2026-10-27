@@ -10,6 +10,8 @@ import java.lang.annotation.Target;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.scheduling.TaskScheduler;
 
 /**
  * Boots the real application context against a real PostgreSQL.
@@ -23,13 +25,13 @@ import org.springframework.test.context.ActiveProfiles;
  *
  * <p><b>What it covers.</b> The container runs the real Flyway migrations and
  * the context comes up with {@code ddl-auto: validate}, so a mapping that has
- * drifted from the schema fails here rather than at startup. Scheduling is
- * disabled in {@code application-test.yml} — see the note there.
+ * drifted from the schema fails here rather than at startup. The task scheduler
+ * is mocked: tests call the real workers explicitly, without racing timed jobs.
  *
- * <p><b>Cost.</b> One container for the whole run: the {@code @ServiceConnection}
- * container in {@link PostgresContainer} is static, so JUnit and Spring's
- * context cache start it once and every test annotated with this shares it.
- * Requires Docker to be running.
+ * <p><b>Cost.</b> Disposable PostgreSQL and Valkey service connections from
+ * {@link PostgresContainer}. Spring's context cache shares them between suites
+ * with matching configurations; a distinct clock/mock configuration gets its
+ * own isolated context. Requires Docker to be running.
  *
  * <p><b>Query counting.</b> The DataSource is wrapped so a test can count the
  * SQL a call runs ({@link QueryCount}). That is how a query per row is caught
@@ -46,5 +48,8 @@ import org.springframework.test.context.ActiveProfiles;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import({ PostgresContainer.class, QueryCount.Wiring.class })
+// Includes hardcoded visit crons that cannot be disabled through a property.
+// Tests invoke real workers explicitly; automatic timers never race their fixtures.
+@MockitoBean(types = TaskScheduler.class)
 public @interface IntegrationTest {
 }

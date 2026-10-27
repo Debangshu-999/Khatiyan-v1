@@ -8,6 +8,7 @@ import { StatusIcon } from "@/components/status-icon";
 import type { UserSession } from "@/store/services/auth-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Shown when a sign-in would exceed the device cap: the devices already signed
@@ -137,9 +138,9 @@ function DeviceChoice({
     >
       <Icon color={colors.ink} size={18} strokeWidth={2.2} />
       <View style={{ flex: 1, gap: 1 }}>
-        <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]}>
+        <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]}>
           {session.deviceLabel ?? "Unknown device"}
-        </Text>
+        </FitText>
         <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
           Signed in {formatSignedIn(session.createdAt)}
         </Text>

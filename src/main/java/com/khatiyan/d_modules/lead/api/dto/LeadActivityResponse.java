@@ -16,6 +16,8 @@ public record LeadActivityResponse(
         String subjectName,
         UUID enquiryId,
         String detail,
+        // The booking this entry is a step of. Null for everything else.
+        UUID bookingRequestId,
         Instant occurredAt) {
 
     public static LeadActivityResponse of(LeadActivity activity, String actorName, String subjectName) {
@@ -28,6 +30,7 @@ public record LeadActivityResponse(
                 subjectName,
                 activity.getEnquiryId(),
                 activity.getDetail(),
+                activity.getBookingRequestId(),
                 activity.getOccurredAt());
     }
 }

@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.enquiry.service;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 
@@ -53,18 +54,20 @@ public class EnquiryExpirySchedulerService {
 
     /** One enquiry per transaction (2026-09-28). */
     private final RecordByRecord recordByRecord;
+    private final Clock clock;
 
     public EnquiryExpirySchedulerService(
             EnquiryRepository enquiryRepository,
             EnquiryResponseRepository enquiryResponseRepository,
             EnquiryService enquiryService,
             ApplicationEventPublisher eventPublisher,
-            RecordByRecord recordByRecord) {
+            RecordByRecord recordByRecord, Clock clock) {
         this.enquiryRepository = enquiryRepository;
         this.enquiryResponseRepository = enquiryResponseRepository;
         this.enquiryService = enquiryService;
         this.eventPublisher = eventPublisher;
         this.recordByRecord = recordByRecord;
+        this.clock = clock;
     }
 
     /**
@@ -83,7 +86,7 @@ public class EnquiryExpirySchedulerService {
     @Scheduled(cron = "${app.enquiry.expiry-cron}", zone = "${app.enquiry.expiry-zone}")
     @SchedulerLock(name = "enquiry-expireStale", lockAtMostFor = "PT10M", lockAtLeastFor = "PT15S")
     public void expireStaleEnquiries() {
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         List<UUID> stale = enquiryRepository.findOpenPastExpiry(now).stream().map(Enquiry::getId).toList();
 
         // One enquiry per transaction, re-read inside it (2026-09-28): an owner
@@ -91,8 +94,8 @@ public class EnquiryExpirySchedulerService {
         // catch-up, which called this method directly and so never got the
         // @Transactional it used to carry.
         int expired = recordByRecord.run("enquiry-expire", stale, id -> id, id -> {
-            Enquiry enquiry = enquiryRepository.findById(id).orElse(null);
-            if (enquiry == null || enquiry.getStatus() != EnquiryStatus.NEW) {
+            Enquiry enquiry = enquiryRepository.findByIdForUpdate(id).orElse(null);
+            if (enquiry == null || enquiry.getStatus() != EnquiryStatus.NEW || !enquiry.isExpired(clock.instant())) {
                 return false;
             }
             enquiry.expire();
@@ -114,6 +117,11 @@ public class EnquiryExpirySchedulerService {
         int closed = recordByRecord.run("enquiry-attempt-expire", leftOpen, id -> id, id -> {
             EnquiryResponse attempt = enquiryResponseRepository.findById(id).orElse(null);
             if (attempt == null || !attempt.isOpen()) {
+                return false;
+            }
+            // Attendance may have extended the enquiry after candidate selection.
+            Enquiry enquiry = enquiryRepository.findByIdForUpdate(attempt.getEnquiryId()).orElse(null);
+            if (enquiry == null || !enquiry.isExpired(clock.instant())) {
                 return false;
             }
             attempt.settle(EnquiryAttemptOutcome.FAILED, null, now);

@@ -126,6 +126,15 @@ public class ChatThread extends BaseEntity {
         return new ChatThread(propertyId, ChatThreadKind.DIRECT, ChatThreadOrigin.ENQUIRY, enquiryId, null);
     }
 
+    /**
+     * A booking's conversation: the person who booked and whoever handles it.
+     * No pair key, for the reason enquiries have none: the same two people may
+     * meet again over a second booking.
+     */
+    public static ChatThread forBooking(UUID propertyId, UUID bookingId) {
+        return new ChatThread(propertyId, ChatThreadKind.DIRECT, ChatThreadOrigin.BOOKING, bookingId, null);
+    }
+
     /** A one-to-one between two named people. */
     public static ChatThread personal(UUID propertyId, UUID firstUserId, UUID secondUserId) {
         return new ChatThread(

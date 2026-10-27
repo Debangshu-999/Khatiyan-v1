@@ -435,18 +435,19 @@ public class TenancyAgreementService {
             return PartyDetails.unknown();
         }
         return authModule.findIdentity(tenantUserId)
-                .map(tenant -> new PartyDetails(
-                        tenant.fullName(),
-                        checked.dateOfBirth() != null
-                                ? Period.between(checked.dateOfBirth(), on).getYears()
-                                : tenant.ageOn(on),
-                        label(checked.gender() != null ? checked.gender() : tenant.gender()),
-                        tenant.phone(),
-                        tenant.email(),
-                        tenant.permanentAddress(),
-                        tenant.permanentAddressPincode(),
-                        true))
+                .map(tenant -> tenantPartyDetails(tenant, on, checked))
                 .orElseGet(PartyDetails::unknown);
+    }
+
+    static PartyDetails tenantPartyDetails(UserIdentityResponse tenant, LocalDate on, IdCheckedParticulars checked) {
+        // Both branches must stay boxed: eKYC onboarding can have no DOB yet.
+        Integer age = checked.dateOfBirth() != null
+                ? Integer.valueOf(Period.between(checked.dateOfBirth(), on).getYears())
+                : tenant.ageOn(on);
+        return new PartyDetails(
+                tenant.fullName(), age,
+                label(checked.gender() != null ? checked.gender() : tenant.gender()),
+                tenant.phone(), tenant.email(), tenant.permanentAddress(), tenant.permanentAddressPincode(), true);
     }
 
     /**

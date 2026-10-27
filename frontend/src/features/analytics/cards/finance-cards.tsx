@@ -226,7 +226,7 @@ export function AccrualVsCashCard({ metric, onRetry }: CardProps) {
         "The ring is the money you billed, split into what tenants have paid and what is still to come in.",
         { formula: ["Collected", "=", { over: ["Money collected", "Bills raised"] }, "× 100"] },
         { formula: ["Profit on bills raised", "=", "Bills raised + Income you added − Expenses"], note: "Counts every bill raised, paid or not." },
-        { formula: ["Profit on cash received", "=", "Money collected + Income you added − Expenses"], note: "Counts only what tenants have actually paid." },
+        { formula: ["Profit on bills collected", "=", "Money collected + Income you added − Expenses"], note: "Counts only what tenants have actually paid." },
         "The two differ by the money still to come in.",
         MONEY_INFO_WHOLE_MONTHS,
       ]}
@@ -243,7 +243,7 @@ export function AccrualVsCashCard({ metric, onRetry }: CardProps) {
       />
       <View style={{ borderTopColor: colors.border, borderTopWidth: 1, gap: spacing.xs, marginTop: spacing.xs, paddingTop: spacing.sm }}>
         {profitRow("Profit on bills raised", figure(metric, "accrual_net"))}
-        {profitRow("Profit on cash received", figure(metric, "cash_net"))}
+        {profitRow("Profit on bills collected", figure(metric, "cash_net"))}
       </View>
     </ChartCard>
   );

@@ -43,6 +43,7 @@ import com.khatiyan.d_modules.lead.api.dto.LeadResponse;
 import com.khatiyan.d_modules.lead.model.LeadActivityType;
 import com.khatiyan.d_modules.lead.model.LeadCloseReason;
 import com.khatiyan.d_modules.lead.model.LeadHandlerSource;
+import com.khatiyan.d_modules.lead.model.LeadKind;
 import com.khatiyan.d_modules.lead.model.LeadStage;
 import com.khatiyan.d_modules.lead.model.LeadState;
 import com.khatiyan.d_modules.notification.NotificationModule;
@@ -66,6 +67,10 @@ import com.khatiyan.support.PublishedEvents;
 class LeadPipelineIntegrationTest {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final LeadKind[] OPEN = {
+            LeadKind.ENQUIRY, LeadKind.EARLY_LEAD, LeadKind.ADVANCED_LEAD, LeadKind.BOOKED };
+    private static final LeadKind[] CLOSED = {
+            LeadKind.CONVERTED, LeadKind.DEAD, LeadKind.LOST_ENQUIRY };
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EnquiryService enquiryService;
@@ -191,9 +196,9 @@ class LeadPipelineIntegrationTest {
         // Asking again starts a new record. The closed one stays as history.
         raise(prospect);
 
-        assertThat(page(null, null).items()).hasSize(2);
-        assertThat(page(LeadState.OPEN, null).items()).hasSize(1);
-        assertThat(page(LeadState.CLOSED, null).items()).extracting(LeadResponse::id).containsExactly(closed.id());
+        assertThat(page().items()).hasSize(2);
+        assertThat(page(OPEN).items()).hasSize(1);
+        assertThat(page(CLOSED).items()).extracting(LeadResponse::id).containsExactly(closed.id());
     }
 
     /**
@@ -276,13 +281,16 @@ class LeadPipelineIntegrationTest {
         expire(toExpire, prospects.get(2));
 
         assertThat(leads.countsForProperty(managerA, property))
-                .isEqualTo(new LeadCountsResponse(2, 0, 0, 0, 0, 1));
-        assertThat(page(LeadState.OPEN, LeadStage.ENQUIRED).totalElements()).isEqualTo(2);
-        assertThat(page(null, LeadStage.ENQUIRED).totalElements()).isEqualTo(3);
-        assertThat(page(LeadState.OPEN, LeadStage.BOOKED).items()).isEmpty();
+                // Two enquiries still open, and one that closed without a visit ever being booked: never a lead.
+                .isEqualTo(new LeadCountsResponse(2, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0));
+        assertThat(page(LeadKind.ENQUIRY).totalElements()).isEqualTo(2);
+        assertThat(page(LeadKind.ENQUIRY, LeadKind.LOST_ENQUIRY).totalElements()).isEqualTo(3);
+        assertThat(page(LeadKind.BOOKED).items()).isEmpty();
+        assertThat(page(LeadKind.LOST_ENQUIRY).items()).extracting(LeadResponse::kind)
+                .containsExactly(LeadKind.LOST_ENQUIRY);
 
         // Newest first, a page at a time.
-        PageResponse<LeadResponse> firstPage = leads.pageForProperty(owner, property, null, null, 0, 2);
+        PageResponse<LeadResponse> firstPage = leads.pageForProperty(owner, property, null, false, false, 0, 2);
         assertThat(firstPage.items()).hasSize(2);
         assertThat(firstPage.hasNext()).isTrue();
         assertThat(firstPage.items().get(0).prospectUserId()).isEqualTo(prospects.get(2));
@@ -294,7 +302,7 @@ class LeadPipelineIntegrationTest {
         UUID lead = onlyLead().id();
         UUID outsider = prospects.get(1);
 
-        assertThatThrownBy(() -> leads.pageForProperty(outsider, property, null, null, 0, 20))
+        assertThatThrownBy(() -> leads.pageForProperty(outsider, property, null, false, false, 0, 20))
                 .isInstanceOf(RuntimeException.class);
         assertThatThrownBy(() -> leads.countsForProperty(outsider, property))
                 .isInstanceOf(RuntimeException.class);
@@ -338,12 +346,13 @@ class LeadPipelineIntegrationTest {
         PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
     }
 
-    private PageResponse<LeadResponse> page(LeadState state, LeadStage stage) {
-        return leads.pageForProperty(owner, property, state, stage, 0, 20);
+    /** The property's records of these kinds. None named, every record. */
+    private PageResponse<LeadResponse> page(LeadKind... kinds) {
+        return leads.pageForProperty(owner, property, kinds.length == 0 ? null : Set.of(kinds), false, false, 0, 20);
     }
 
     private LeadResponse onlyLead() {
-        List<LeadResponse> all = page(null, null).items();
+        List<LeadResponse> all = page().items();
         assertThat(all).hasSize(1);
         return all.get(0);
     }

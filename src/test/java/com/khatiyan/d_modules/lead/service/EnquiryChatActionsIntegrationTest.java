@@ -61,6 +61,7 @@ import com.khatiyan.d_modules.lead.api.dto.EnquiryChatActionsResponse;
 import com.khatiyan.d_modules.lead.api.dto.LeadResponse;
 import com.khatiyan.d_modules.lead.api.dto.RescheduleVisitRequest;
 import com.khatiyan.d_modules.lead.api.dto.ScheduleVisitRequest;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryListScope;
 import com.khatiyan.d_modules.lead.api.dto.VisitAvailabilityResponse;
 import com.khatiyan.d_modules.lead.api.dto.VisitResponse;
 import com.khatiyan.d_modules.lead.model.LeadCloseReason;
@@ -119,7 +120,8 @@ class EnquiryChatActionsIntegrationTest {
         seeded = LargePropertySeeder.seed(jdbc, LocalDate.now(IST), 8, 1, 61L);
         property = seeded.propertyId();
         owner = seeded.ownerId();
-        prospects = seeded.userIds().stream().filter(id -> !id.equals(owner)).limit(3).toList();
+        // Visitors who do not stay here: a tenant of the place books no visit (user, 2026-10-17).
+        prospects = List.of(visitor("Visitor A"), visitor("Visitor B"), visitor("Visitor C"));
         assertThat(prospects).hasSize(3);
         manager = manager("Manager A");
         otherManager = manager("Manager B");
@@ -148,6 +150,76 @@ class EnquiryChatActionsIntegrationTest {
         jdbc.update("DELETE FROM property.property_managers WHERE property_id = ?", property);
         LargePropertySeeder.remove(jdbc, seeded);
         jdbc.update("DELETE FROM auth.users WHERE id IN (?, ?)", manager, otherManager);
+        for (UUID prospect : prospects) {
+            jdbc.update("DELETE FROM auth.users WHERE id = ?", prospect);
+        }
+    }
+
+    // ---- Straight from the property page (user, 2026-10-17) ---------------
+
+    @Test
+    void aVisitBookedStraightFromThePropertyPageNeedsNoEnquiryAndIsNeverListedAsOne() {
+        UUID prospect = prospects.get(0);
+        consentService.replace(prospect,
+                new UpdateEnquiryChannelConsentsRequest(Set.of(EnquiryResponseChannel.CALL_BACK), true));
+
+        EnquiryChatActionsResponse booked = visits.scheduleDirect(prospect, property, new ScheduleVisitRequest(tomorrow, TEN));
+
+        assertThat(booked.visit()).isNotNull();
+        UUID record = jdbc.queryForObject(
+                "SELECT id FROM enquiry.enquiries WHERE property_id = ? AND enquirer_user_id = ?",
+                UUID.class, property, prospect);
+        assertThat(jdbc.queryForObject("SELECT origin FROM enquiry.enquiries WHERE id = ?", String.class, record))
+                .isEqualTo("DIRECT_VISIT");
+        // The contact they agreed to share is on it, as for an enquiry.
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM enquiry.enquiry_shared_channels WHERE enquiry_id = ?", Integer.class, record))
+                .isEqualTo(1);
+        // An Early lead at once.
+        PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+        assertThat(jdbc.queryForObject(
+                "SELECT stage FROM lead.leads WHERE property_id = ? AND prospect_user_id = ?",
+                String.class, property, prospect)).isEqualTo("EARLY_LEAD");
+        // Never listed as an enquiry: not for the property, not for the person.
+        assertThat(enquiryService.pageForProperty(owner, property, EnquiryListScope.ALL, 0, 50).items())
+                .extracting(EnquiryDetailResponse::id).doesNotContain(record);
+        assertThat(enquiryService.myEnquiries(prospect)).isEmpty();
+        // The property's own people cannot book their own property.
+        assertThatThrownBy(() -> visits.scheduleDirect(manager, property, new ScheduleVisitRequest(tomorrow, FOUR)))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void aLiveEnquiryTakesAVisitBookedFromThePropertyPageEvenBeforeItIsAnswered() {
+        UUID prospect = prospects.get(1);
+        UUID enquiry = raise(prospect);
+
+        visits.scheduleDirect(prospect, property, new ScheduleVisitRequest(tomorrow, TEN));
+
+        // One conversation per person per property: no second record.
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM enquiry.enquiries WHERE property_id = ? AND enquirer_user_id = ?",
+                Integer.class, property, prospect)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT enquiry_id FROM lead.visits WHERE prospect_user_id = ? AND property_id = ?",
+                UUID.class, prospect, property)).isEqualTo(enquiry);
+    }
+
+    @Test
+    void someoneWhoStaysAtThePropertyGetsNoVisitThere() {
+        UUID tenant = seeded.userIds().stream()
+                .filter(id -> !id.equals(owner))
+                .filter(id -> jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM tenancy.tenancies WHERE user_id = ? AND property_id = ? AND status = 'ACTIVE'",
+                        Integer.class, id, property) > 0)
+                .findFirst()
+                .orElseThrow();
+
+        assertThatThrownBy(() -> visits.scheduleDirect(tenant, property, new ScheduleVisitRequest(tomorrow, TEN)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("You already stay at this property");
+        // Nothing was opened for them.
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM enquiry.enquiries WHERE property_id = ? AND enquirer_user_id = ?",
+                Integer.class, property, tenant)).isZero();
     }
 
     // ---- The bar ---------------------------------------------------------
@@ -700,7 +772,8 @@ class EnquiryChatActionsIntegrationTest {
         UUID again = raise(prospect);
         PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
         assertThat(again).isNotEqualTo(enquiry);
-        assertThat(leads.pageForProperty(owner, property, LeadState.OPEN, null, 0, 20).items()).hasSize(1);
+        assertThat(leads.pageForProperty(owner, property, null, false, false, 0, 20).items())
+                .filteredOn(record -> record.state() == LeadState.OPEN).hasSize(1);
     }
 
     @Test
@@ -1021,7 +1094,7 @@ class EnquiryChatActionsIntegrationTest {
 
     private LeadResponse leadOf(UUID prospect) {
         PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
-        return leads.pageForProperty(owner, property, null, null, 0, 20).items().stream()
+        return leads.pageForProperty(owner, property, null, false, false, 0, 20).items().stream()
                 .filter(lead -> lead.prospectUserId().equals(prospect))
                 .findFirst()
                 .orElseThrow();
@@ -1029,7 +1102,7 @@ class EnquiryChatActionsIntegrationTest {
 
     private LeadResponse onlyLead() {
         PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
-        List<LeadResponse> all = leads.pageForProperty(owner, property, null, null, 0, 20).items();
+        List<LeadResponse> all = leads.pageForProperty(owner, property, null, false, false, 0, 20).items();
         assertThat(all).hasSize(1);
         return all.get(0);
     }
@@ -1047,6 +1120,22 @@ class EnquiryChatActionsIntegrationTest {
                     is_active, reference_code, created_at, updated_at)
                 VALUES (?, ?, ?, ?, true, ?, now(), now())
                 """, UUID.randomUUID(), property, id, owner, "MGR-T-" + id.toString().substring(0, 12));
+        return id;
+    }
+
+    /**
+     * Someone with an account who does not stay at the property: no visit is
+     * booked for a tenant of the place (user, 2026-10-17), and the seeded
+     * users all stay there.
+     */
+    private UUID visitor(String name) {
+        UUID id = UUID.randomUUID();
+        String phone = "+9194" + String.format("%08d", ThreadLocalRandom.current().nextInt(100_000_000));
+        jdbc.update("""
+                INSERT INTO auth.users (id, phone, full_name, role, is_active, is_phone_verified,
+                    credential_version, gender, date_of_birth, created_at, updated_at)
+                VALUES (?, ?, ?, 'USER', true, true, 0, 'FEMALE', DATE '1999-01-01', now(), now())
+                """, id, phone, name);
         return id;
     }
 }

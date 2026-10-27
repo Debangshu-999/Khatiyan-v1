@@ -28,6 +28,7 @@ import {
 } from "@/store/services/enquiry-chat-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The strip of actions above an enquiry chat's message box.
@@ -250,9 +251,9 @@ function BarPill({
           style={iconColor ? { opacity: STATUS_ICON_OPACITY } : undefined}
         />
       )}
-      <Text numberOfLines={1} style={{ color: tint, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
+      <FitText numberOfLines={1} style={{ color: tint, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }

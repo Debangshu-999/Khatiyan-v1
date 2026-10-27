@@ -5,6 +5,8 @@ import { humanizeToken } from "@/features/owner/owner-ui";
 import type { ConcernStatus, ConcernSummary } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 type BadgeTone = "primary" | "danger" | "success" | "warning" | "neutral";
 
@@ -46,7 +48,7 @@ export function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
           </View>
         ) : null}
         <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 10, gap: 4 }}>
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, lineHeight: 21 }}>{concern.raisedByName ?? "Tenant"}</Text>
+          <FitText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, lineHeight: 21 }}>{cardName(concern.raisedByName ?? "Tenant")}</FitText>
           <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12, lineHeight: 17 }}>{concern.tenancyReferenceCode}</Text>
         </View>
 
@@ -70,9 +72,9 @@ export function ConcernDataCard({ concern }: { concern: ConcernSummary }) {
             <View style={{ width: 28, alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <MaterialCommunityIcons name="account" size={22} color={colors.muted} />
             </View>
-            <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[type.caption, { color: colors.muted, fontFamily: fonts.sansBold, flex: 1, minWidth: 0 }]}>
+            <FitText minimumFontScale={0.8} numberOfLines={1} style={[type.caption, { color: colors.muted, fontFamily: fonts.sansBold, flex: 1, minWidth: 0 }]}>
               Assigned by {assignedBy ?? "Not recorded"}{concern.assignedAt ? ` · ${formatDateTime(concern.assignedAt)}` : ""}
-            </Text>
+            </FitText>
           </View>
         ) : null}
 

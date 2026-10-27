@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.Past;
 import com.khatiyan.a_auth.model.Gender;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.PositiveOrZero;
 
 /**
@@ -30,7 +32,8 @@ public record AgreementPreviewQuery(
         @PositiveOrZero Long rentAmountPaise,
         @PositiveOrZero Long depositAmountPaise,
         LocalDate startDate,
-        Integer validityMonths,
+        @Min(value = 1, message = "Agreement term must be between 1 and 11 months")
+        @Max(value = 11, message = "Agreement term must be between 1 and 11 months") Integer validityMonths,
         String earlyExitRule,
         AgreementTemplate template,
 

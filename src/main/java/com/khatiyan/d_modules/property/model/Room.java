@@ -56,7 +56,7 @@ public class Room extends BaseEntity {
     @Column(name = "occupied_count", nullable = false)
     private int occupiedCount;
 
-    // Beds held for an approved room change that has not transferred yet. Held
+    // Beds held for a booking or approved room change. Held
     // beds are NOT occupied — nobody lives in them — but they are not available
     // either, or the move they were approved for would fail on transfer day.
     @Column(name = "reserved_count", nullable = false)
@@ -323,9 +323,8 @@ public class Room extends BaseEntity {
     }
 
     /**
-     * Holds a bed for an approved room change. Released either when the move
-     * executes (the bed then becomes occupied through the normal tenancy path)
-     * or when the request can no longer execute.
+     * Holds one bed for a booking or approved room change. Released/consumed
+     * only through that holder's lifecycle, never offered as a live vacancy.
      */
     public void reserveOneSlot() {
         if (status == RoomStatus.MAINTENANCE) {
@@ -362,7 +361,7 @@ public class Room extends BaseEntity {
         }
 
         if (reservedCount > 0) {
-            throw new ValidationException("Room has a bed reserved for an approved room change");
+            throw new ValidationException("Room has a reserved bed");
         }
 
         if (reason == null || reason.isBlank()) {

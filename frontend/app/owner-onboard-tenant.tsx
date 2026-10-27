@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ComponentProps, type ComponentType } from "react";
-import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState, type ComponentProps, type ComponentType } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
 import { ActivityIndicator, BackHandler, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { deviceFingerprint, primeInstallId } from "@/auth/device-fingerprint";
@@ -9,19 +9,19 @@ import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, C
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { HeaderNote } from "@/components/header-note";
 import { SegmentedChoice } from "@/components/segmented-choice";
 import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { AlertModal } from "@/components/alert-modal";
 import { SingleOptionPicker } from "@/components/option-picker";
+import { AgreementMonthDropdown } from "@/components/agreement-month-dropdown";
+import { agreementTermIssue, dateOfBirthIssue, identityErrors, monthlyAmountErrors } from "@/features/compliance/onboarding-validation";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { StepProgress } from "@/components/step-progress";
 import { PinnedWizardHeader, usePinnedWizardHeader } from "@/components/pinned-wizard-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import {
-  OwnerAgreementPreviewSkeleton,
   OwnerOnboardingPropertySkeleton,
   OwnerOnboardingRoomsSkeleton,
   OwnerStayTypeOptionsSkeleton,
@@ -48,14 +48,13 @@ import {
   type VerificationServiceKey,
 } from "@/features/compliance/verification-services";
 import { formatFloor } from "@/features/property/floor";
-import { AgreementDocument } from "@/features/compliance/agreement-document";
 import { AgreementTemplateEditor } from "@/features/compliance/agreement-template-editor";
 import { OnboardingGateBoard } from "@/features/compliance/onboarding-gate-board";
 import { Section } from "@/components/section";
-import { SectionHeading } from "@/components/section-heading";
 import { ActionButton, FormInput, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
-import { useAppSelector } from "@/store/hooks";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { clearAgreementPreview, showAgreementPreview } from "@/store/slices/agreement-preview-slice";
 import {
   useGetLegalStatementQuery,
   useGetOnboardingReadinessQuery,
@@ -82,6 +81,8 @@ import {
 } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 type Step = "type" | "tenant" | "details" | "verify" | "review" | "agreement" | "done";
 type IdDocumentType = "AADHAAR" | "PASSPORT" | "DRIVING_LICENCE" | "VOTER_ID" | "PAN" | "OTHER";
@@ -145,12 +146,7 @@ const ID_CHECK_GENDERS: Gender[] = ["MALE", "FEMALE", "TRANSGENDER", "OTHER"];
 const ID_DOB_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function adultDobIssue(dob: string, today: string): string | null {
-  if (!ID_DOB_PATTERN.test(dob.trim())) {
-    return "Enter the date of birth on the ID.";
-  }
-  const [year, month, day] = today.split("-");
-  const latestAdultBirthday = `${String(Number(year) - 18).padStart(4, "0")}-${month}-${day}`;
-  return dob.trim() > latestAdultBirthday ? "The tenant must be 18 or older." : null;
+  return dateOfBirthIssue(dob, today);
 }
 
 
@@ -226,9 +222,13 @@ export default function OwnerOnboardTenantScreen() {
     | "idLastFour"
     | "idGender"
     | "idDob"
+    | "rent"
+    | "deposit"
+    | "verification"
   >();
 
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -245,6 +245,9 @@ export default function OwnerOnboardTenantScreen() {
   // not. Asking for the phone first meant looking up an account for somebody
   // who was about to turn out not to need one.
   const [step, setStep] = useState<Step>("type");
+  useEffect(() => {
+    if (step !== "agreement") dispatch(clearAgreementPreview());
+  }, [dispatch, step]);
   const [confirmExit, setConfirmExit] = useState(false);
 
   // Read once on mount so the fingerprint can be assembled synchronously when
@@ -270,19 +273,6 @@ export default function OwnerOnboardTenantScreen() {
   ];
   const previousStep = PREVIOUS_STEP[step] ?? null;
 
-  // The device back button walks the wizard too. Without this it unmounted the
-  // whole screen from step 4, losing everything typed — the hardware button
-  // knows nothing about steps unless told.
-  useEffect(() => {
-    if (!previousStep) {
-      return;
-    }
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      setStep(previousStep);
-      return true;
-    });
-    return () => subscription.remove();
-  }, [previousStep]);
   /**
    * Field errors withdraw themselves after a few seconds.
    *
@@ -367,7 +357,6 @@ export default function OwnerOnboardTenantScreen() {
   const [tenantPincode, setTenantPincode] = useState("");
   const [tenantDob, setTenantDob] = useState("");
   const [tenantGender, setTenantGender] = useState<Gender | null>(null);
-  const [optionalOpen, setOptionalOpen] = useState(false);
 
   // What the owner confirms at a manual ID check on a MONTHLY stay (owner's
   // rule, 2026-09-27): gender, and the date of birth the 18+ check is made
@@ -390,6 +379,23 @@ export default function OwnerOnboardTenantScreen() {
   const verificationMode: VerificationMode | null = isDaily ? "MANUAL" : chosenVerificationMode;
   // Manual: the deed and the account take what the owner checked.
   const manualCheck = verificationMode === "MANUAL";
+  const goBackStep = useCallback(() => {
+    if (step === "verify" && !isDaily && verificationMode !== null) {
+      setVerificationMode(null);
+      form.clearAll();
+    } else if (previousStep) {
+      setStep(previousStep);
+    }
+  }, [step, isDaily, verificationMode, previousStep, form.clearAll]);
+
+  useFocusEffect(useCallback(() => {
+    if (!previousStep) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      goBackStep();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [goBackStep, previousStep]));
   const [triggerLookup, lookupState] = useLazyLookupTenantQuery();
   // What an existing Khatiyan account already holds. Those are not the
   // owner's to change (owner's rule, 2026-09-27): the check shows them
@@ -561,7 +567,7 @@ export default function OwnerOnboardTenantScreen() {
       // response rather than the seeded state, which is still null for the one
       // frame between the settings arriving and the effect copying them.
       || (settingsQuery.isSuccess && !settingsQuery.data?.template));
-  const termSummary = fixedTerm ? `Fixed term, ${termMonths ?? 11} months` : "Indefinite";
+  const termSummary = fixedTerm ? `Fixed term, ${termMonths ?? "Choose"} months` : "Indefinite";
 
   // Daily renting is available when the property has at least one nightly rate
   // configured; the rate that applies depends on the chosen room's AC type.
@@ -634,38 +640,47 @@ export default function OwnerOnboardTenantScreen() {
    * walk three more steps and be told at the end that a field on the first one
    * was empty — with the form that owns it no longer on screen.
    *
-   * <p>Age and gender are absent by design: they are optional on an agreement,
-   * and the deed omits them when blank.
+   * <p>DOB and gender can be supplied later on the manual-check step. The
+   * eKYC route leaves them optional until the tenant completes verification.
    */
   function goToRoomAndDates() {
-    if (!lookup?.canOnboard) {
-      return;
-    }
-    const cleared = form.validate({
-      ...(tenantName.trim() ? {} : { tenantName: "Enter the tenant's full name as it appears on their ID." }),
-      ...(tenantAddress.trim() ? {} : { tenantAddress: "Enter the tenant's permanent address." }),
-      ...(/^\d{6}$/.test(tenantPincode.trim()) ? {} : { tenantPincode: "Enter a 6-digit PIN code." }),
-    });
-    if (!cleared) {
-      return;
-    }
-
+    if (!tenantDetailsValid()) return;
     setMessage(null);
     setStep("details");
+  }
+
+  function tenantDetailsValid(): boolean {
+    if (isDaily) return guestDetailsValid();
+    if (!phoneValid || !lookup?.canOnboard) {
+      setMessage("Look up a valid tenant phone number before continuing.");
+      return false;
+    }
+    const cleared = form.validate({
+      ...(tenantName.trim() && tenantName.trim().length <= 120 ? {} : { tenantName: "Enter the tenant's full name (up to 120 characters)." }),
+      ...(tenantAddress.trim() && tenantAddress.trim().length <= 300 ? {} : { tenantAddress: "Enter the tenant's permanent address (up to 300 characters)." }),
+      ...(/^\d{6}$/.test(tenantPincode.trim()) ? {} : { tenantPincode: "Enter a 6-digit PIN code." }),
+    });
+    return cleared;
   }
 
   /**
    * Leaves the tenant step for a DAILY stay.
    *
    * <p>A different set of fields, because a different thing is being recorded.
-   * There is no PIN code and no date of birth — a guest register wants an age
-   * and a gender, and it wants them filled in, because this declaration is the
+   * There is no PIN code — a guest register requires a date of birth
+   * and a gender, because this declaration is the
    * whole of the owner's record of who they let the room to.
    *
    * <p>Email is the exception. A walk-in often has no reason to give one, so it
    * is asked for plainly and accepted blank.
    */
   function goToRoomAndDatesForGuest() {
+    if (!guestDetailsValid()) return;
+    setMessage(null);
+    setStep("details");
+  }
+
+  function guestDetailsValid(): boolean {
     const dobIssue = adultDobIssue(tenantDob, istToday());
     // Null blank message: a walk-in may have no email, but a typo is still a typo.
     const emailIssue = emailProblem(tenantEmail, null);
@@ -677,14 +692,9 @@ export default function OwnerOnboardTenantScreen() {
       ...(emailIssue ? { tenantEmail: emailIssue } : {}),
       ...(tenantAddress.trim() ? {} : { tenantAddress: "Enter the guest's address." }),
       ...(dobIssue ? { guestDob: dobIssue.replace("The tenant", "The guest") } : {}),
-      ...(tenantGender ? {} : { guestGender: "Select the guest's gender." }),
+      ...(tenantGender && tenantGender !== "UNDECLARED" ? {} : { guestGender: "Select the guest's gender." }),
     });
-    if (!cleared) {
-      return;
-    }
-
-    setMessage(null);
-    setStep("details");
+    return cleared;
   }
 
   function chooseBilling(kind: BillingKind) {
@@ -705,7 +715,6 @@ export default function OwnerOnboardTenantScreen() {
       setTenantPincode("");
       setTenantDob("");
       setTenantGender(null);
-      setOptionalOpen(false);
       setIdGenderEdit(undefined);
       setIdDobEdit(undefined);
       form.clearAll();
@@ -719,41 +728,49 @@ export default function OwnerOnboardTenantScreen() {
   }
 
   function goToReview() {
+    if (!tenantDetailsValid()) {
+      setStep("tenant");
+      return;
+    }
+    if (!roomAndDatesValid()) return;
+    setStep("verify");
+  }
+
+  function roomAndDatesValid(): boolean {
     setMessage(null);
     if (!selectedProperty || !selectedRoom) {
       setMessage("Select a property on Home and choose a room.");
-      return;
+      return false;
     }
     if (selectedRoom.status === "MAINTENANCE") {
       setMessage("This room is under maintenance and cannot take a tenancy.");
-      return;
+      return false;
     }
     if (selectedRoom.availableVacancies <= 0 && (isDaily || !selectedRoomAvailableFrom)) {
       setMessage("This room has no available vacancy.");
-      return;
+      return false;
     }
     if (selectedRoomAvailableFrom && dateToStr(startDate) < selectedRoomAvailableFrom) {
       setMessage(`This room becomes available on ${formatDateLong(minimumStartDate)}. Choose that date or later.`);
-      return;
+      return false;
     }
-    if (dateToStr(startDate) < dateToStr(startOfToday())) {
+    if (!Number.isFinite(startDate.getTime()) || dateToStr(startDate) < istToday()) {
       setMessage("Start date must be today or a future date.");
-      return;
+      return false;
     }
     if (isDaily) {
       if (dailyRatePaise == null) {
         setMessage("This room type has no daily rate configured.");
-        return;
+        return false;
       }
-      if (nights < 1 || nights > 29) {
+      if (!Number.isFinite(nights) || nights < 1 || nights > 29) {
         setMessage("Daily stay must be between 1 and 29 nights.");
-        return;
+        return false;
       }
-    } else if (!(Number(rent) > 0)) {
-      setMessage("Rent must be greater than zero.");
-      return;
+    } else if (!form.validate(monthlyAmountErrors(rent, deposit))) {
+      return false;
     }
-    setStep("verify");
+    return true;
   }
 
   /** Blocks every route out of review until the owner has declared the ID check. */
@@ -765,26 +782,24 @@ export default function OwnerOnboardTenantScreen() {
    * made yet.
    */
   function idCheckMissing() {
+    const errors = identityErrors({
+      mode: verificationMode,
+      dob: idDob,
+      gender: idGender,
+      documentType: idDocumentType,
+      lastFour: idLastFour,
+      verificationAttempts: orderedVerificationServices.map((service) => verificationOrder[service.key] ?? 0),
+      today: istToday(),
+    });
+    if (!form.validate(errors)) {
+      if (errors.verification) setMessage(errors.verification);
+      return true;
+    }
     if (verificationMode === "KYC") {
-      // Nothing for the owner to declare here. They are ordering checks the
-      // tenant will carry out, so the only requirement is that they ordered at
-      // least one.
-      if (orderedVerificationServices.length === 0) {
-        setMessage("Choose at least one check, or switch to checking the ID yourself.");
-        return true;
-      }
       return false;
     }
-    // The 18+ check is made against the date of birth checked here, on every
-    // stay. A guest's is the guest form's own, correctable here.
-    const dobIssue = adultDobIssue(idDob, istToday());
-    const cleared = form.validate({
-      ...(idDocumentType ? {} : { idDocumentType: "Select which ID you checked." }),
-      ...(/^[0-9]{4}$/.test(idLastFour) ? {} : { idLastFour: "Enter the last four digits." }),
-      ...(idGender && idGender !== "UNDECLARED" ? {} : { idGender: "Select the gender as you checked it." }),
-      ...(dobIssue ? { idDob: dobIssue } : {}),
-    });
-    if (!cleared) {
+    if (!idStatement.trim()) {
+      setMessage("The ID declaration has not loaded. Try again before continuing.");
       return true;
     }
     if (!idCheckConfirmed) {
@@ -792,6 +807,28 @@ export default function OwnerOnboardTenantScreen() {
       return true;
     }
     return false;
+  }
+
+  // Recheck prior steps at review and submit, including a changed verification route.
+  function priorStepsValid(): boolean {
+    if (!billingType) {
+      setStep("type");
+      setMessage("Select a kind of tenancy.");
+      return false;
+    }
+    if (!tenantDetailsValid()) {
+      setStep("tenant");
+      return false;
+    }
+    if (!roomAndDatesValid()) {
+      setStep("details");
+      return false;
+    }
+    if (idCheckMissing()) {
+      setStep("verify");
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -827,8 +864,7 @@ export default function OwnerOnboardTenantScreen() {
    * accepted before it starts.
    */
   async function handleConfirm() {
-    if (!selectedProperty || !roomId) return;
-    if (idCheckMissing()) return;
+    if (!priorStepsValid() || !selectedProperty || !roomId) return;
     setMessage(null);
     try {
       const res = await onboardDailyStay({
@@ -857,11 +893,17 @@ export default function OwnerOnboardTenantScreen() {
   }
 
   async function handleConfirmWithAgreement() {
-    if (!selectedProperty || !roomId) return;
-    if (idCheckMissing()) return;
+    if (!priorStepsValid() || !selectedProperty || !roomId) return;
     setMessage(null);
-    if (!tenantAddress.trim() || !/^\d{6}$/.test(tenantPincode.trim())) {
-      setMessage("The tenant's permanent address and a 6-digit PIN code are needed for the agreement.");
+    const termIssue = agreementTermIssue(fixedTerm, termMonths);
+    if (termIssue) {
+      setMessage(termIssue);
+      return;
+    }
+    if (!template || !previewQuery.data || previewQuery.isFetching || settingsQuery.isFetching
+      || previewQuery.isError || settingsQuery.isError || readinessQuery.isFetching
+      || !readinessQuery.data?.landlordReady) {
+      setMessage("Wait for the agreement to load successfully before creating the tenancy.");
       return;
     }
     try {
@@ -873,7 +915,7 @@ export default function OwnerOnboardTenantScreen() {
           permanentAddress: tenantAddress.trim(),
           permanentAddressPincode: tenantPincode.trim(),
         },
-        term: { earlyExitRule, months: fixedTerm ? termMonths ?? 11 : null },
+        term: { earlyExitRule, months: fixedTerm ? termMonths : null },
         depositAmountPaise: Math.round(Number(deposit || "0") * 100),
         propertyId: selectedProperty.id,
         rentAmountPaise: Math.round(Number(rent) * 100),
@@ -938,19 +980,19 @@ export default function OwnerOnboardTenantScreen() {
               the first and last steps. */}
           <View style={{ width: 40 }}>
             {previousStep ? (
-              <HeaderButton icon={ArrowLeft} onPress={() => setStep(previousStep)} subtle />
+              <HeaderButton icon={ArrowLeft} onPress={goBackStep} subtle />
             ) : null}
           </View>
 
           {/* The noun in blue, as it was. Blue stays legal as TEXT — it is a
               fill that is banned, not the colour. */}
-          <Text
+          <FitText
             numberOfLines={1}
             style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
           >
             {onDone ? "Tenant " : "Onboard "}
             <Text style={{ color: colors.primary }}>{onDone ? (bookedForFuture ? "booked" : "onboarded") : "tenant"}</Text>
-          </Text>
+          </FitText>
 
           <View style={{ alignItems: "flex-end", width: 40 }}>
             <HeaderButton icon={X} onPress={closeWizard} subtle />
@@ -987,7 +1029,7 @@ export default function OwnerOnboardTenantScreen() {
             <>
               <SelectRow
                 title="Monthly tenancy"
-                subtitle="Recurring monthly rent with a security deposit and billing cycles."
+                subtitle="Recurring monthly rent with a security deposit and billing cycles"
                 selected={billingType === "MONTHLY"}
                 onPress={() => chooseBilling("MONTHLY")}
               />
@@ -995,12 +1037,19 @@ export default function OwnerOnboardTenantScreen() {
                 title="Daily tenancy"
                 subtitle={
                   dailyAvailable
-                    ? "Short stay billed per night (1–29 nights). No deposit."
-                    : "Daily rates are not configured for this property."
+                    ? "Short stay billed per night (1–29 nights). No deposit"
+                    : "Daily rates are not configured for this property"
                 }
                 selected={billingType === "DAILY"}
                 disabled={!dailyAvailable}
                 onPress={() => chooseBilling("DAILY")}
+              />
+              {/* A confirmed booking arriving: its own screen of today's and missed move-ins (user, 2026-10-27). */}
+              <SelectRow
+                title="From booking"
+                subtitle="Onboard tenants from confirmed bookings for your property"
+                selected={false}
+                onPress={() => router.push("/owner-booking-onboarding")}
               />
             </>
           ) : null}
@@ -1070,10 +1119,8 @@ export default function OwnerOnboardTenantScreen() {
                 address={tenantAddress}
                 addressError={form.errors.tenantAddress}
                 canOnboard={lookup.canOnboard}
-                dob={tenantDob}
                 exists={lookup.exists}
                 existingName={lookup.fullName ?? null}
-                gender={tenantGender}
                 message={lookup.message}
                 name={tenantName}
                 nameError={nameError}
@@ -1085,14 +1132,10 @@ export default function OwnerOnboardTenantScreen() {
                   setTenantName(value);
                   form.clearField("tenantName");
                 }}
-                onDob={setTenantDob}
-                onGender={setTenantGender}
                 onPincode={(value) => {
                   setTenantPincode(value);
                   form.clearField("tenantPincode");
                 }}
-                onToggleOptional={() => setOptionalOpen((current) => !current)}
-                optionalOpen={optionalOpen}
                 phone={phone}
                 pincode={tenantPincode}
                 pincodeError={form.errors.tenantPincode}
@@ -1182,11 +1225,11 @@ export default function OwnerOnboardTenantScreen() {
                 </Field>
               ) : (
                 <>
-                  <Field label="Rent / month">
-                    <Input value={rent} onChangeText={setRent} placeholder="From room base rent" keyboardType="number-pad" prefix="₹" />
+                  <Field error={form.errors.rent} label="Rent / month">
+                    <Input invalid={Boolean(form.errors.rent)} value={rent} onChangeText={(value) => { setRent(value); form.clearField("rent"); }} placeholder="From room base rent" keyboardType="number-pad" prefix="₹" />
                   </Field>
-                  <Field label="Deposit">
-                    <Input value={deposit} onChangeText={setDeposit} placeholder="From property policy" keyboardType="number-pad" prefix="₹" />
+                  <Field error={form.errors.deposit} label="Deposit">
+                    <Input invalid={Boolean(form.errors.deposit)} value={deposit} onChangeText={(value) => { setDeposit(value); form.clearField("deposit"); }} placeholder="From property policy" keyboardType="number-pad" prefix="₹" />
                   </Field>
                 </>
               )}
@@ -1320,7 +1363,7 @@ export default function OwnerOnboardTenantScreen() {
           ) : (
             <>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                {isDaily ? null : <HeaderButton icon={ArrowLeft} onPress={() => setVerificationMode(null)} subtle />}
+                {isDaily ? null : <HeaderButton icon={ArrowLeft} onPress={goBackStep} subtle />}
                 <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>
                   {verificationMode === "MANUAL" ? "Manual verification" : "KYC verification"}
                 </Text>
@@ -1608,9 +1651,6 @@ export default function OwnerOnboardTenantScreen() {
 
       {step === "agreement" && !gateBlocked ? (
         <>
-          {/* No card behind the heading. The deed inside Preview is already a
-              bordered surface of its own, so wrapping this in another one put a
-              card inside a card and gave the page two competing edges. */}
           <View style={{ gap: spacing.sm }}>
             {/* The screen's subject, set as one. This step is where the legal
                 document is settled, and an 11px upper-case eyebrow gave it the
@@ -1624,60 +1664,7 @@ export default function OwnerOnboardTenantScreen() {
             </Text>
           </View>
 
-          {/* Open by default. This is the document being issued, and an owner
-              creating a tenancy without having seen it is the one outcome this
-              step exists to prevent. */}
-          <CollapsibleSection defaultOpen summary="The tenant's agreement" title="Preview">
-            {previewQuery.isFetching && !previewQuery.data ? <OwnerAgreementPreviewSkeleton /> : null}
-            {previewQuery.data ? (
-              <AgreementDocument
-                clauses={previewQuery.data.clauses}
-                preamble={previewQuery.data.preamble}
-              />
-            ) : null}
-            {/* A deed that failed to load used to render as an empty section,
-                which reads as "this agreement has no terms" — the one thing a
-                document preview must never imply. The clause editor below is
-                hidden by the same failure, because it needs the same template. */}
-            {agreementUnavailable ? (
-              <View style={{ gap: spacing.md }}>
-                <NoticeBar
-                  message="The agreement could not be loaded, so its clauses cannot be shown or changed. Check your connection and try again."
-                  title="Preview unavailable"
-                  tone="warning"
-                />
-                <ActionButton
-                  label="Try again"
-                  onPress={() => {
-                    if (settingsQuery.isError) {
-                      void settingsQuery.refetch();
-                    }
-                    if (previewQuery.isError) {
-                      void previewQuery.refetch();
-                    }
-                  }}
-                />
-              </View>
-            ) : null}
-          </CollapsibleSection>
-
-          {/* Choosing clauses is a TENANCY_RULES power, but creating a tenancy is
-              TENANCY_CREATE — a manager can hold one without the other. They still
-              see the deed above; they just cannot change which clauses it carries,
-              and the server falls back to the property's template for them rather
-              than refusing the request. */}
-          {template && !clausesReadOnly ? (
-            <CollapsibleSection summary={clauseCountLabel} title="Clauses">
-              <AgreementTemplateEditor
-                clauses={mainClauses}
-                miscOptions={miscQuery.data ?? []}
-                onChange={setTemplate}
-                template={template}
-              />
-            </CollapsibleSection>
-          ) : null}
-
-          <CollapsibleSection summary={termSummary} title="Agreement Term">
+          <CollapsibleSection summary={termSummary} title="Agreement" accentTail="duration">
             {/* The same segmented control the agreement settings screen uses.
                 Two ChoiceButtons here made the identical decision look like a
                 different kind of control depending on which screen you reached
@@ -1701,17 +1688,7 @@ export default function OwnerOnboardTenantScreen() {
 
             {fixedTerm ? (
               <>
-                <Field label="Length (months)">
-                  <Input
-                    keyboardType="number-pad"
-                    onChangeText={(text) => {
-                      const parsed = Number(text.replace(/[^0-9]/g, ""));
-                      setTermMonths(parsed > 0 ? Math.min(parsed, 11) : null);
-                    }}
-                    placeholder="11"
-                    value={termMonths != null ? String(termMonths) : ""}
-                  />
-                </Field>
+                <AgreementMonthDropdown onChange={setTermMonths} value={termMonths ?? 11} />
                 <Text style={[type.description, { color: colors.muted }]}>
                   Min 1, max 11 months. A fixed term ends the tenancy on its last day.
                 </Text>
@@ -1724,6 +1701,30 @@ export default function OwnerOnboardTenantScreen() {
             )}
           </CollapsibleSection>
 
+          {template && !clausesReadOnly ? (
+            <CollapsibleSection summary={clauseCountLabel} title="Agreement" accentTail="clauses">
+              <AgreementTemplateEditor
+                clauses={mainClauses}
+                miscOptions={miscQuery.data ?? []}
+                onChange={setTemplate}
+                template={template}
+              />
+            </CollapsibleSection>
+          ) : null}
+
+          {agreementUnavailable ? (
+            <View style={{ gap: spacing.md }}>
+              <NoticeBar
+                message="The agreement could not be loaded, so its clauses cannot be shown or changed. Check your connection and try again."
+                title="Preview unavailable"
+                tone="warning"
+              />
+              <ActionButton label="Try again" onPress={() => {
+                if (settingsQuery.isError) void settingsQuery.refetch();
+                if (previewQuery.isError) void previewQuery.refetch();
+              }} />
+            </View>
+          ) : null}
 
           {/* Measured, not guessed. PINNED_FOOTER_CLEARANCE assumes a single
               button; this footer carries a note as well, so its height is its
@@ -1864,7 +1865,7 @@ export default function OwnerOnboardTenantScreen() {
       {step === "tenant" && tenantStepCanContinue ? (
         <PinnedFooter>
           <ActionButton
-            disabled={form.blocked}
+            disabled={lookupState.isFetching}
             label="Continue"
             onPress={isDaily ? goToRoomAndDatesForGuest : goToRoomAndDates}
           />
@@ -1882,12 +1883,12 @@ export default function OwnerOnboardTenantScreen() {
           <ActionButton
             disabled={
               verificationMode === "MANUAL"
-                ? !idCheckConfirmed || form.blocked
+                ? !idCheckConfirmed || !idStatement.trim()
                 : orderedVerificationServices.length === 0
             }
             label="Continue to review"
             onPress={() => {
-              if (idCheckMissing()) return;
+              if (!priorStepsValid()) return;
               setStep("review");
             }}
           />
@@ -1905,7 +1906,7 @@ export default function OwnerOnboardTenantScreen() {
                   ? "Creating tenancy…"
                   : "Confirm and create tenancy"
             }
-            onPress={withAgreement ? () => setStep("agreement") : () => void handleConfirm()}
+            onPress={withAgreement ? () => { if (priorStepsValid()) setStep("agreement"); } : () => void handleConfirm()}
           />
         </PinnedFooter>
       ) : null}
@@ -1927,11 +1928,28 @@ export default function OwnerOnboardTenantScreen() {
               inside a footer lets the page scroll visibly through it — the
               shared button says disabled with colour and keeps a border, and
               its shadow and radius match the rest of the app. */}
-          <ActionButton
-            disabled={onboardWithAgreementState.isLoading}
-            label={onboardWithAgreementState.isLoading ? "Creating…" : "Create tenancy"}
-            onPress={() => void handleConfirmWithAgreement()}
-          />
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ActionButton
+              compact
+              disabled={onboardWithAgreementState.isLoading || !previewQuery.currentData
+                || previewQuery.isFetching || previewQuery.isError}
+              label="Preview agreement"
+              variant="secondary"
+              onPress={() => {
+                if (!previewQuery.currentData || previewQuery.isFetching) return;
+                dispatch(showAgreementPreview(previewQuery.currentData));
+                router.push("/owner-agreement-preview");
+              }}
+            />
+            <ActionButton
+              compact
+              disabled={onboardWithAgreementState.isLoading || !template || !previewQuery.data
+                || previewQuery.isFetching || previewQuery.isError || settingsQuery.isFetching || settingsQuery.isError
+                || readinessQuery.isFetching || !readinessQuery.data?.landlordReady}
+              label={onboardWithAgreementState.isLoading ? "Creating…" : "Create tenancy"}
+              onPress={() => void handleConfirmWithAgreement()}
+            />
+          </View>
 
           {/* Under the button, because it describes what pressing it does. The
               tenancy does not begin here — it waits, and somebody expecting a
@@ -2034,9 +2052,9 @@ function GuestStayCard({
         </View>
 
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
-            {name.trim() || "Guest details"}
-          </Text>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
+            {cardName(name.trim() || "Guest details")}
+          </FitText>
           <Text style={[type.description, { color: colors.muted }]}>
             Recorded for this stay only
           </Text>
@@ -2120,20 +2138,14 @@ function LookupResultCard({
   address,
   addressError,
   canOnboard,
-  dob,
   exists,
   existingName,
-  gender,
   message,
   name,
   nameError,
   onAddress,
   onChangeName,
-  onDob,
-  onGender,
   onPincode,
-  onToggleOptional,
-  optionalOpen,
   phone,
   pincode,
   pincodeError,
@@ -2142,20 +2154,14 @@ function LookupResultCard({
   address: string;
   addressError?: string;
   canOnboard: boolean;
-  dob: string;
   exists: boolean;
   existingName: string | null;
-  gender: Gender | null;
   message: string;
   name: string;
   nameError?: string;
   onAddress: (value: string) => void;
   onChangeName: (value: string) => void;
-  onDob: (value: string) => void;
-  onGender: (value: Gender | null) => void;
   onPincode: (value: string) => void;
-  onToggleOptional: () => void;
-  optionalOpen: boolean;
   phone: string;
   pincode: string;
   pincodeError?: string;
@@ -2209,12 +2215,12 @@ function LookupResultCard({
         </View>
 
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text
+          <FitText
             numberOfLines={1}
             style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}
           >
-            {displayName.trim() || "New tenant"}
-          </Text>
+            {cardName(displayName.trim() || "New tenant")}
+          </FitText>
           {/* The number is marked as a number. On its own under a name it read
               as a second line of the name rather than as how to reach them. */}
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
@@ -2251,22 +2257,6 @@ function LookupResultCard({
         </Field>
       ) : null}
 
-      {/* Sharper than "as it appears on their ID" since verification went in.
-          A check compares the two names exactly, so a middle name left off here
-          fails the tenant at the last step of onboarding — after the owner has
-          already paid for the attempt. Said where the name is typed, because by
-          the time anyone reads it on the verify step it is too late. */}
-      {canOnboard && !nameLocked && !nameError ? (
-        <Text style={[type.caption, { color: colors.kicker, lineHeight: 18 }]}>
-          This name goes on the agreement. Enter it exactly as printed on their ID, middle name
-          included, or an identity check will not pass.
-        </Text>
-      ) : null}
-      {canOnboard && nameLocked ? (
-        <Text style={[type.caption, { color: colors.kicker }]}>
-          Taken from their existing account and cannot be changed here.
-        </Text>
-      ) : null}
 
       {/* The rest of who this person is, in the same card as their name — it is
           one act, not two. Fields their account already holds render locked; the
@@ -2304,39 +2294,6 @@ function LookupResultCard({
             />
           </Field>
 
-          {/* Collapsed by default. Age and gender are genuinely optional — the
-              deed omits them when blank — and two fields nobody has to answer
-              should not be the last thing standing between an owner and the
-              Continue button. */}
-          <AnimatedPressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: optionalOpen }}
-            onPress={onToggleOptional}
-            style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, paddingVertical: spacing.xs }}
-          >
-            {/* The icon is SWAPPED, not rotated. A transform on a lucide icon
-                goes to an SVG that does not forward style, so a rotated chevron
-                silently stays pointing down. */}
-            {optionalOpen ? (
-              <ChevronUp color={colors.primary} size={17} strokeWidth={2.4} />
-            ) : (
-              <ChevronDown color={colors.primary} size={17} strokeWidth={2.4} />
-            )}
-            <Text style={{ color: colors.primary, fontFamily: fonts.sansSemiBold, fontSize: 14 }}>
-              {optionalOpen ? "Hide optional details" : "Add optional details (Age, Gender)"}
-            </Text>
-          </AnimatedPressable>
-
-          {optionalOpen ? (
-            <>
-              <DateOfBirthField disabled={held(prefill?.dateOfBirth)} onChange={onDob} value={dob} />
-              <GenderPicker
-                disabled={Boolean(prefill?.gender && prefill.gender !== "UNDECLARED")}
-                onChange={onGender}
-                value={gender}
-              />
-            </>
-          ) : null}
         </>
       ) : null}
 
@@ -2369,9 +2326,9 @@ function PropertySummary({ property }: { property: OwnerProperty }) {
         {location ? (
           <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
             <MapPin color={colors.kicker} size={12} strokeWidth={2.2} />
-            <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
+            <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
               {location}
-            </Text>
+            </FitText>
           </View>
         ) : null}
       </View>
@@ -2462,12 +2419,12 @@ function RoomPicker({
       >
         <DoorOpen color={colors.ink} size={19} strokeWidth={2} />
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15.5 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15.5 }}>
             Room {selected.roomNumber}
-          </Text>
-          <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+          </FitText>
+          <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
             {formatFloor(selected.floor)} · {conditioningLabel(selected)} · {priceOf(selected)}
-          </Text>
+          </FitText>
           {availableFrom(selected) ? (
             <Text style={[type.caption, { color: colors.primary }]}>
               Available from {formatDateLong(dateFromStr(availableFrom(selected)!))}
@@ -2554,47 +2511,21 @@ function RoomPicker({
   );
 }
 
-/**
- * A value the account already holds, shown but not editable here.
- *
- * <p>An owner filling in an onboarding form is not editing somebody else's
- * profile, and the server writes back only the blanks — so the lock is the rule
- * rather than a courtesy. It has to LOOK locked to say so: a plain input with
- * {@code editable={false}} is indistinguishable from one waiting to be filled.
- */
-/**
- * One part of the agreement step, opened when it is wanted.
- *
- * <p>The step used to be three stacked cards, all expanded: a full deed, a
- * clause editor and the term, which put a very long scroll between arriving and
- * the button at the bottom. Collapsed, the step is a short list of the three
- * things that can be settled here.
- *
- * <p>Headed like every other section in the app — the serif title over the
- * ruled margin, with the summary as an editorial note beside its own rule. A
- * collapsible built from its own heading style would have read as a widget
- * dropped into the page rather than as part of it.
- *
- * <p>The rule and the summary SWAP. Closed, the section is a row in a list and
- * the summary says what it holds — the term especially, since an owner who
- * never opens it is accepting a default, and a heading alone would let them do
- * that without ever seeing which default. Open, the content answers that
- * question better than the summary could, so the summary goes and the ruled
- * margin takes its place: a line under a heading with a section beneath it,
- * which is the letterhead detail doing its actual job.
- */
+/** Agreement settings use plain card titles and a summary when collapsed. */
 function CollapsibleSection({
+  accentTail,
   children,
   defaultOpen,
   summary,
   title,
 }: {
+  accentTail?: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
   summary?: string;
   title: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const [open, setOpen] = useState(Boolean(defaultOpen));
 
   return (
@@ -2614,13 +2545,18 @@ function CollapsibleSection({
         onPress={() => setOpen((current) => !current)}
         style={{ gap: spacing.xs, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
       >
-        <SectionHeading title={title} trailing={open ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, flex: 1 }}>
+            {title}{accentTail ? <Text style={{ color: colors.accent }}> {accentTail}</Text> : null}
+          </Text>
+          {open ? (
             <ChevronUp color={colors.muted} size={18} strokeWidth={2.2} />
           ) : (
             <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
-          )} />
+          )}
+        </View>
 
-        {!open && summary ? <HeaderNote>{summary}</HeaderNote> : null}
+        {!open && summary ? <Text style={[type.description, { color: colors.muted }]}>{summary}</Text> : null}
       </AnimatedPressable>
 
       {open ? (

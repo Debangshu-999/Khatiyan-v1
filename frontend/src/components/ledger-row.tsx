@@ -8,9 +8,10 @@ import { useTheme } from "@/theme/use-theme";
 
 type LedgerRowProps = {
   icon?: ComponentType<LucideProps>;
-  // Icon chip colours; default to the primary soft treatment.
+  /** The glyph's colour. No tile behind it (user, 2026-10-27): the card carries the colour instead. */
   iconColor?: string;
-  iconBackground?: string;
+  /** A pale tone fill for the whole card, in place of the border (user, 2026-10-27). */
+  fill?: string;
   title: string;
   caption?: string;
   // Right-hand slot — a MoneyText, a count, a pill. Rendered before the chevron.
@@ -25,37 +26,23 @@ type LedgerRowProps = {
 // The app's standard list row: icon chip → title + caption → trailing figure →
 // chevron, in a flat bordered card. One rhythm for expenses, actions, people
 // and history entries everywhere.
-export function LedgerRow({ caption, chevron, footer, icon: Icon, iconBackground, iconColor, onPress, title, trailing }: LedgerRowProps) {
+export function LedgerRow({ caption, chevron, fill, footer, icon: Icon, iconColor, onPress, title, trailing }: LedgerRowProps) {
   const { colors, type } = useTheme();
   const showChevron = chevron ?? Boolean(onPress);
 
   const body = (
     <>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+        {/* A label icon: the glyph alone, no tile or fill behind it. */}
         {Icon ? (
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: iconBackground ?? colors.primarySoft,
-              borderCurve: "continuous",
-              borderRadius: 12,
-              height: 40,
-              justifyContent: "center",
-              width: 40,
-            }}
-          >
-            <Icon color={iconColor ?? colors.primary} size={19} strokeWidth={2.2} />
+          <View style={{ alignItems: "center", height: 32, justifyContent: "center", width: 32 }}>
+            <Icon color={iconColor ?? colors.ink} size={26} strokeWidth={2} />
           </View>
         ) : null}
-        <View style={{ flex: 1, gap: 1 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
-            {title}
-          </Text>
-          {caption ? (
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
-              {caption}
-            </Text>
-          ) : null}
+        {/* Title and caption wrap rather than cut off (user, 2026-10-27). */}
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text style={[type.bodyStrong, { color: colors.ink }]}>{title}</Text>
+          {caption ? <Text style={[type.caption, { color: colors.muted }]}>{caption}</Text> : null}
         </View>
         {trailing}
         {showChevron ? <ChevronRight color={colors.kicker} size={18} strokeWidth={2.2} /> : null}
@@ -65,11 +52,11 @@ export function LedgerRow({ caption, chevron, footer, icon: Icon, iconBackground
   );
 
   const cardStyle = {
-    backgroundColor: colors.surface,
+    backgroundColor: fill ?? colors.surface,
     borderColor: colors.borderStrong,
     borderCurve: "continuous" as const,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: fill ? 0 : 1,
     gap: spacing.sm,
     padding: spacing.md,
   };

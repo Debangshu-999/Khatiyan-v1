@@ -105,7 +105,13 @@ export function HandlerModeSheet({ onClose, propertyId }: { onClose: () => void;
   );
 }
 
-function ModeRow({
+/**
+ * One choice among a few, with its tick and what choosing it means. Shared, so
+ * a setting that asks the same kind of question elsewhere looks the same
+ * (booking settings, user, 2026-10-10). The description is left out for a
+ * choice whose label says it all.
+ */
+export function ModeRow({
   description,
   disabled,
   label,
@@ -113,7 +119,7 @@ function ModeRow({
   selected,
   suggested = false,
 }: {
-  description: string;
+  description?: string;
   disabled: boolean;
   label: string;
   onPress: () => void;
@@ -144,7 +150,7 @@ function ModeRow({
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>{label}</Text>
           {suggested ? <StatusPill label="Suggested" tone="success" /> : null}
         </View>
-        <Text style={[type.caption, { color: colors.muted }]}>{description}</Text>
+        {description ? <Text style={[type.caption, { color: colors.muted }]}>{description}</Text> : null}
       </View>
     </AnimatedPressable>
   );

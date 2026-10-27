@@ -3,6 +3,9 @@ package com.khatiyan.support;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.test.context.DynamicPropertyRegistrar;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -30,5 +33,27 @@ public class PostgresContainer {
     @ServiceConnection
     PostgreSQLContainer<?> postgresContainer() {
         return new PostgreSQLContainer<>(IMAGE);
+    }
+
+    /** Never point the full-context harness at the application's local cache. */
+    @Bean
+    @ServiceConnection(name = "redis")
+    GenericContainer<?> testValkeyContainer() {
+        return new GenericContainer<>(DockerImageName.parse("valkey/valkey:8-alpine"))
+                .withExposedPorts(6379);
+    }
+
+    @Bean
+    DynamicPropertyRegistrar testServiceProperties(
+            @Qualifier("testValkeyContainer") GenericContainer<?> testValkeyContainer) {
+        return registry -> {
+            // Also feeds the rate-limit client, which reads properties directly
+            // rather than Spring Boot's RedisConnectionDetails.
+            registry.add("spring.data.redis.host", testValkeyContainer::getHost);
+            registry.add("spring.data.redis.port", () -> testValkeyContainer.getMappedPort(6379));
+            registry.add("spring.data.redis.password", () -> "");
+            registry.add("spring.data.redis.database", () -> 0);
+            registry.add("app.jwt.secret", () -> "harness-only-not-production-01234567890123456789012345678901");
+        };
     }
 }

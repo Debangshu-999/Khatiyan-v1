@@ -1,20 +1,18 @@
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Image, Text, View, type GestureResponderHandlers, type ImageSourcePropType } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { ArrowUpDown, Check, Menu, Pin, X, type LucideProps } from "lucide-react-native";
 import { useState, type ComponentType } from "react";
 
-import { PropertyArtwork } from "@/components/artwork-icon";
 import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SectionWithDropdown } from "@/components/filtered-queue";
 import { EmptyState } from "@/components/empty-state";
-import { HeaderNote } from "@/components/header-note";
 import { MetricTile } from "@/components/metric-tile";
 import { ReorderableList } from "@/components/reorderable-list";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { OwnerManageMetricsSkeleton, OwnerManagePropertySkeleton } from "@/components/skeletons/owner";
+import { OwnerManageMetricsSkeleton } from "@/components/skeletons/owner";
 import { visibleOwnerModules, type OwnerModule, type OwnerModuleRoute } from "@/features/owner/owner-modules";
 import { useWorkspaceSort } from "@/features/owner/use-workspace-sort";
 import {
@@ -31,6 +29,7 @@ import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
 import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
+import { tabShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -43,8 +42,7 @@ import { useTheme } from "@/theme/use-theme";
  * clip against, and behaves the same on web and native.
  */
 const PIN_TILT = { transform: [{ rotate: "32deg" }] } as const;
-const PROPERTY_CARD_ART = require("../../assets/images/workspace/property-card.jpg");
-// The four tiles under the property card share the Property screen's side-rail
+// The four tiles under the header share the Property screen's side-rail
 // tile, with every glyph in black (user, 2026-10-02). Rooms and Vacancy reuse
 // the Rooms & beds marks so a fact looks the same on both screens.
 const TILE_ICON_COLOR = "#000000";
@@ -67,7 +65,7 @@ function PropertyTileIcon(_props: LucideProps) {
 export default function OwnerScreen() {
   const router = useGuardedRouter();
   const dispatch = useAppDispatch();
-  const { colors, fonts, isDark, type } = useTheme();
+  const { colors, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const pinnedKeys = useAppSelector((state) => state.ownerPins.pinnedKeys);
   const user = useAppSelector((state) => state.auth.user);
@@ -199,10 +197,9 @@ export default function OwnerScreen() {
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} scrollEnabled={!dragging} surface={colors.surface}>
       <ManageHeader />
 
-      {/* Header and workspace actions are static. The property summary and
-          figures below are the only pieces waiting on the API. */}
+      {/* Keep the four-card loading shape without a duplicate property summary. */}
       {propertiesQuery.isFetching && properties.length === 0 ? (
-        <OwnerManagePropertySkeleton />
+        <OwnerManageMetricsSkeleton />
       ) : null}
 
       {!propertiesQuery.isFetching && properties.length === 0 ? (
@@ -215,58 +212,13 @@ export default function OwnerScreen() {
 
       {properties.length > 0 ? (
         <>
-          {selectedProperty ? (
-            <View
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.surfaceRaised,
-                borderCurve: "continuous",
-                borderRadius: 18,
-                elevation: 2,
-                flexDirection: "row",
-                gap: spacing.md,
-                minHeight: 72,
-                overflow: "hidden",
-                padding: spacing.md,
-                shadowColor: colors.shadow,
-                shadowOffset: { height: 2, width: 0 },
-                shadowOpacity: 1,
-                shadowRadius: 6,
-              }}
-            >
-              <Image
-                resizeMode="cover"
-                source={PROPERTY_CARD_ART}
-                style={{ bottom: 0, left: 0, opacity: isDark ? 0.1 : 0.16, position: "absolute", right: 0, top: 0 }}
-              />
-              <View style={{ alignItems: "center", alignSelf: "flex-start", marginTop: -3, width: 42 }}>
-                <PropertyArtwork size={36} />
-                <View style={{ height: 18, marginTop: 3, width: 18 }}>
-                  <Ionicons color={colors.primary} name="location-sharp" size={18} />
-                  <View
-                    pointerEvents="none"
-                    style={{ backgroundColor: "#FFFFFF", borderRadius: 3, height: 5, left: 6.5, position: "absolute", top: 4, width: 5 }}
-                  />
-                </View>
-              </View>
-              <View style={{ flex: 1, gap: spacing.xxs }}>
-                <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}>
-                  {selectedProperty.name}
-                </Text>
-                <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, fontSize: 11 }]}>
-                  {[selectedProperty.address, selectedProperty.city, selectedProperty.state, selectedProperty.pincode]
-                    .filter(Boolean)
-                    .join(", ")}
-                </Text>
-              </View>
-            </View>
-          ) : (
+          {!selectedProperty ? (
             <EmptyState
               icon={PropertyIcon}
               title="Select a property from Home"
               description="You own multiple properties. Pick the active property on Home before opening owner services."
             />
-          )}
+          ) : null}
 
           {/* The tiles read from the rooms and tenancies queries, not from the
               properties one that gates the screen — so on a warm property cache
@@ -327,25 +279,14 @@ export default function OwnerScreen() {
 }
 
 function ManageHeader() {
-  const { colors, type } = useTheme();
   const activeAccount = useAppSelector((state) => state.account.activeAccount);
 
   return (
-    <View style={{ gap: spacing.xs }}>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.62}
-        numberOfLines={1}
-        style={[type.brand, { color: colors.ink, fontSize: 30, lineHeight: 36 }]}
-      >
-        {activeAccount === "manager" ? "Manager" : "Owner"}
-        <Text style={[type.brandItalic, { color: colors.accent, fontSize: 30, lineHeight: 36 }]}>
-          {" "}Workspace
-        </Text>
-      </Text>
-
-      <HeaderNote>Find all services for your property in one place. Each service opens its own focused workspace.</HeaderNote>
-    </View>
+    <ScreenHeader
+      italicTail="Workspace"
+      subtitle="Find all services for your property in one place. Each service opens its own focused workspace."
+      title={activeAccount === "manager" ? "Manager" : "Owner"}
+    />
   );
 }
 function ServiceCard({
@@ -416,10 +357,7 @@ function ServiceCard({
           // a three-line one.
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.md,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 4, width: 0 },
-          shadowOpacity: 0.7,
-          shadowRadius: 11,
+          ...tabShadow(colors.shadow, 4, 11, 0.7),
         }}
       >
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>

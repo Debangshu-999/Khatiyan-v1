@@ -5,8 +5,10 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { AirVent } from "lucide-react-native";
 
 import { humanizeToken } from "@/features/owner/owner-ui";
+import { useSoftShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const COLLAPSED_FACILITY_ROWS = 3;
 const FACILITIES_PER_ROW = 2;
@@ -147,6 +149,7 @@ export function FacilityOverviewGrid({
 }
 
 function FacilityOverviewCell({ facility, showDivider, card = false }: { facility: string; showDivider: boolean; card?: boolean }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts } = useTheme();
   const iconName = iconForFacility(facility);
 
@@ -161,11 +164,7 @@ function FacilityOverviewCell({ facility, showDivider, card = false }: { facilit
           borderColor: colors.borderStrong,
           borderWidth: 1,
           borderRadius: 12,
-          elevation: 2,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 2, width: 0 },
-          shadowOpacity: 1,
-          shadowRadius: 6,
+          ...softShadow(colors.shadow, 2, 6),
         } : {}),
         flex: 1,
         flexBasis: 0,
@@ -184,12 +183,12 @@ function FacilityOverviewCell({ facility, showDivider, card = false }: { facilit
         <MaterialCommunityIcons color={card ? "#000000" : colors.muted} name={iconName} size={card ? 38 : 25} />
       )}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text
+        <FitText
           numberOfLines={2}
           style={{ color: colors.text, fontFamily: card ? fonts.sansSemiBold : undefined, fontSize: 15, fontWeight: card ? undefined : "800", lineHeight: 19 }}
         >
           {humanizeToken(facility)}
-        </Text>
+        </FitText>
         <Text style={{ color: colors.muted, fontSize: 12, fontWeight: "700", marginTop: 2 }}>
           Available
         </Text>

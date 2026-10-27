@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useState, type ComponentType, type ReactNode } from "react";
 import { Modal, Text, View } from "react-native";
@@ -165,9 +166,9 @@ export function GenderPicker({
                   paddingVertical: spacing.sm,
                 }}
               >
-                <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+                <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
                   Select gender
-                </Text>
+                </ModalTitle>
                 <IconButton accessibilityLabel="Close" filled icon={X} onPress={() => setOpen(false)} />
               </View>
 

@@ -11,6 +11,7 @@ import { formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
 import { ROOM_TYPES, type RoomMold } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /** One type's name: "AC double", "Non-AC 8-bed dormitory". */
 export function moldLabel(mold: RoomMold) {
@@ -109,12 +110,12 @@ export function MoldPicker({
           <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
             {chosen ? (
               <>
-                <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>
+                <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>
                   {moldLabel(chosen)}
-                </Text>
-                <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+                </FitText>
+                <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
                   {moldMeta(chosen)}
-                </Text>
+                </FitText>
               </>
             ) : (
               <Text style={[type.caption, { color: colors.muted }]}>Choose a room type</Text>
@@ -149,15 +150,10 @@ export function MoldPicker({
         <SheetShell onClose={() => setOpen(false)} title="Room type">
           <View>
             {ordered.length === 0 ? (
-              // The screens that open this mostly guard on having types at all,
-              // but the sheet has to answer for itself: an empty list with no
-              // explanation reads as a picker that failed to load.
+              // Keep the picker empty state title-only, like the screen empties.
               <View style={{ alignItems: "center", gap: spacing.xs, paddingVertical: spacing.xl }}>
                 <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
                   No room types yet
-                </Text>
-                <Text style={[type.modalDescription, { color: colors.muted, textAlign: "center" }]}>
-                  A room is cut from a type. Set them up on the property first.
                 </Text>
               </View>
             ) : null}

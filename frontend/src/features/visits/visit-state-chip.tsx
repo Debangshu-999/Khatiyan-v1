@@ -16,8 +16,11 @@ export type VisitStatus = {
  * colour, with no fill, a size under the slot's pill (user, 2026-10-04), and
  * made smaller again the same day. The same chip on the property's Manage
  * Visits cards and on the visitor's own.
+ *
+ * <p>`pill` sets it on a grey pill, as the property's Manage Visits cards
+ * show it (user, 2026-10-19).
  */
-export function VisitStateChip({ icon: Icon, label, tone }: VisitStatus) {
+export function VisitStateChip({ icon: Icon, label, pill = false, tone }: VisitStatus & { pill?: boolean }) {
   const { colors, fonts } = useTheme();
   const color = {
     amber: colors.warningText,
@@ -27,7 +30,14 @@ export function VisitStateChip({ icon: Icon, label, tone }: VisitStatus) {
     red: colors.danger,
   }[tone];
   return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
+    <View
+      style={{
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 3,
+        ...(pill ? { backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 } : {}),
+      }}
+    >
       <Icon color={color} size={13} strokeWidth={2.4} />
       <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 11 }}>{label}</Text>
     </View>

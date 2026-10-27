@@ -74,4 +74,19 @@ public interface ChatThreadRepository extends JpaRepository<ChatThread, UUID> {
             ORDER BY thread.lastMessageAt DESC NULLS LAST, thread.createdAt DESC
             """)
     List<ChatThread> findEnquirySectionFor(UUID propertyId, UUID userId);
+
+    /** Bookings: the booking conversations this person is in on the property (user, 2026-10-27). */
+    @Query("""
+            SELECT thread
+            FROM ChatThread thread
+            WHERE thread.propertyId = :propertyId
+              AND thread.origin = com.khatiyan.d_modules.chat.model.ChatThreadOrigin.BOOKING
+              AND thread.id IN (
+                SELECT member.threadId
+                FROM ChatThreadMember member
+                WHERE member.userId = :userId
+              )
+            ORDER BY thread.lastMessageAt DESC NULLS LAST, thread.createdAt DESC
+            """)
+    List<ChatThread> findBookingSectionFor(UUID propertyId, UUID userId);
 }

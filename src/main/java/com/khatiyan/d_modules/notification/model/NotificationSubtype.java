@@ -36,6 +36,10 @@ public enum NotificationSubtype {
      * exit nobody ended, or a room change that has not run. Sent once per booking.
      */
     FUTURE_BOOKING_BLOCKED,
+    // A post-visit booking is due to start and the bed it booked is still
+    // occupied (2026-10-10). About the booking that is waiting: the stay in
+    // the way has TENANCY_PENDING_EXIT of its own.
+    BOOKED_BED_NOT_FREE,
     /** The owner gave a pending stay's tenant more verification attempts. */
     VERIFICATION_ATTEMPTS_ADDED,
     /**
@@ -159,6 +163,48 @@ public enum NotificationSubtype {
     VISIT_ATTENDANCE_NOT_MARKED,
     /** A visitor was checked in. Told to the visitor, the owner and every manager, each in their own words. */
     VISIT_CHECKED_IN,
+    /**
+     * To the visitor, three hours after check-in: how to book a stay from the
+     * visit. Sent only to someone with no verified email, who gets a mail
+     * otherwise (2026-10-18).
+     */
+    VISIT_AFTER_BOOK_A_STAY,
+
+    // To the tenant about their own booking, each with a mail beside it (2026-10-18).
+    /** The property confirmed the booking: what happens next. */
+    BOOKING_CONFIRMED,
+    /** The tenant's one move of the move-in date, by up to seven days. */
+    BOOKING_DATE_MOVED,
+    /** At 10 am the day before the move-in date. */
+    BOOKING_MOVE_IN_TOMORROW,
+    /** Cancelled by either side. */
+    BOOKING_CANCELLED,
+    /** Ran out: an unanswered request, or a token not paid in time. */
+    BOOKING_EXPIRED,
+    /** Move-in day, and the booked bed is not free yet. Once. */
+    BOOKING_BED_NOT_READY,
+    // To the tenant before confirmation, push only, and the reminders (2026-10-19).
+    /** The property's offer is waiting on the tenant. */
+    BOOKING_OFFER_RECEIVED,
+    /** Rent agreed, the token due by its time. */
+    BOOKING_TERMS_AGREED,
+    /** The token's time runs out within twelve hours. */
+    BOOKING_TOKEN_LAPSING,
+    /** The property says it returned the token. */
+    BOOKING_REFUND_SENT,
+    /** The request runs out within a day and it is the tenant's turn. */
+    BOOKING_YOUR_TURN,
+    /** Tuesday and Friday after a visit: the booking window is open and nothing is booked. */
+    BOOKING_BOOK_AFTER_VISIT,
+    // To the property: the request's handler, or the owner and the booking access list (2026-10-19).
+    /** The request runs out within a day and it is the property's turn. */
+    BOOKING_REQUEST_YOUR_TURN,
+    /** The tenant's offer has waited a day for an answer. */
+    BOOKING_REQUEST_WAITING,
+    /** A token claim has waited a day for an answer. */
+    BOOKING_TOKEN_CLAIM_WAITING,
+    /** A refund the property owes, each morning until it is sent. */
+    BOOKING_REFUND_OWED,
 
     /**
      * Somebody wrote in a conversation.

@@ -31,6 +31,9 @@ public record ActionCenterResponse(
      * numbers.
      */
     PaymentIntentDigestResponse paymentIntents,
+    com.khatiyan.d_modules.booking.api.dto.BookingAttentionSummary bookings,
+    com.khatiyan.d_modules.lead.api.dto.VisitAttentionSummary visits,
+    com.khatiyan.d_modules.enquiry.api.dto.EnquiryAttentionSummary enquiries,
     List<RecentActivityItem> recentActivity,
     Instant generatedAt
 ) {

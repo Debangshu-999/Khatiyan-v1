@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
@@ -36,6 +37,7 @@ import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 import { ExitCard, RoomChangeCard } from "./tenancy-request-history";
+import { FitText } from "@/components/fit-text";
 
 const EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
@@ -284,9 +286,9 @@ function FilterBubble({
       })}
     >
       <Icon color={colors.ink} size={16} strokeWidth={2.1} />
-      <Text numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 14 }}>
+      <FitText numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 14 }}>
         {label}
-      </Text>
+      </FitText>
       <ChevronDown color={colors.muted} size={15} strokeWidth={2.1} />
     </Pressable>
   );
@@ -336,9 +338,9 @@ function FilterPickerDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               {title}
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
           <ScrollView
@@ -515,9 +517,9 @@ function DateSelectionChip({
         paddingHorizontal: spacing.sm,
       }}
     >
-      <Text numberOfLines={1} style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12 }}>
+      <FitText numberOfLines={1} style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12 }}>
         {value}
-      </Text>
+      </FitText>
       <Pressable
         accessibilityLabel={`Clear ${value}`}
         accessibilityRole="button"

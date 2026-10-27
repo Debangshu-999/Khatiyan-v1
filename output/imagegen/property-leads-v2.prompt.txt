@@ -1,0 +1,10 @@
+Generator: built-in image_gen tool. Transparent background enabled.
+Deliverable: property-leads-256-v2.png. Resized to exactly 256 x 256 with alpha preserved.
+
+Use case: precise-object-edit.
+Asset type: Property Leads home-tool icon, transparent PNG for export at exactly 256 x 256.
+Input images: Image 1 is the EDIT TARGET (simple profile clipboard with magnifier). Image 2 is a STYLE REFERENCE for natural skin/clothing colours in the VMS icon. Image 3 is the app's CURRENT VACANCY FINDER icon (bed and small magnifying glass): use ITS MAGNIFYING GLASS as the reference, not its bed.
+Primary request: Keep Image 1's simple compact two-object design, but replace ALL blue profile-card colouring with natural materials and colours. Frame: light tan clipboard with small brushed-silver clip; paper face: white; portrait: a friendly simple 3D tenant bust with natural warm skin, dark brown hair and muted green shirt, no detailed facial features. Only two broad medium-gray contact-detail bars beneath the portrait.
+IMPORTANT MAGNIFIER: replace the gold magnifying glass with a magnifying glass matching the one alongside the bed in Image 3: rounded silver/gray rim, neutral clear glass lens and dark charcoal handle, softly sculpted 3D highlights. Keep it compact, overlapping the lower-right of the card without covering the face. Do not copy the bed, mattress or any other objects from Image 3.
+Style: same friendly simple rounded miniature 3D app-icon language as the VMS and Vacancy Finder references. Normal natural colours, no monochrome blue. Clear readable silhouette at 60px.
+Constraints: exactly two main objects, profile clipboard and magnifier. No blue card or blue avatar, no gold magnifier, no full building, no scenery, no furniture, no plants, no decorative objects, no plus, no text, no numbers, no letters, no logo, no watermark. Genuine transparent alpha background, no backdrop tile or ground plane. Centered square composition, complete silhouette visible with a small even transparent margin.

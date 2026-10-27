@@ -6,6 +6,7 @@ import { ChatAvatar } from "@/features/chat/chat-avatar";
 import type { ChatThread } from "@/store/services/chat-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Which tenant to write to, at the property desk.
@@ -56,9 +57,9 @@ export function TenantPicker({
           }}
         >
           <ChatAvatar name={tenant.title} photoUrl={tenant.counterpartPhotoUrl} size={34} />
-          <Text numberOfLines={1} style={{ color: colors.ink, flex: 1, fontWeight: "600" }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, flex: 1, fontWeight: "600" }}>
             {tenant.title}
-          </Text>
+          </FitText>
         </AnimatedPressable>
       ))}
     </SheetShell>

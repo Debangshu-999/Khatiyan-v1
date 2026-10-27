@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -197,9 +198,6 @@ function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
         <Images color={colors.primary} size={38} strokeWidth={1.8} />
         <Text style={{ color: colors.primary, fontSize: 17, fontWeight: "900", textAlign: "center" }}>
           No images attached
-        </Text>
-        <Text style={{ color: colors.muted, lineHeight: 20, textAlign: "center" }}>
-          Photos you attach while raising a concern appear here.
         </Text>
       </View>
     );
@@ -444,9 +442,6 @@ function OwnerStyleConcernMediaCarousel({ concern }: { concern: ConcernSummary }
         <Text style={{ color: colors.primary, fontSize: 18, fontWeight: "900", textAlign: "center" }}>
           No images available
         </Text>
-        <Text style={{ color: colors.muted, lineHeight: 20, textAlign: "center" }}>
-          Concern photos will appear here when you attach them.
-        </Text>
       </View>
     );
   }
@@ -507,7 +502,7 @@ function ReopenConcernModal({
                 <Text style={[type.eyebrow, { color: colors.primary }]}>
                   Reopen concern
                 </Text>
-                <Text
+                <ModalTitle
                   style={{
                     color: colors.ink,
                     fontFamily: fonts.display,
@@ -516,7 +511,7 @@ function ReopenConcernModal({
                   }}
                 >
                   {concern.title}
-                </Text>
+                </ModalTitle>
                 <Text style={[type.modalDescription, { color: colors.muted }]}>
                   Tell the property team why this resolution still needs work.
                 </Text>

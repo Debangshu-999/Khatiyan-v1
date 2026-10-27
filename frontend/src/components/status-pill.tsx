@@ -1,4 +1,4 @@
-import { View, type ViewStyle } from "react-native";
+import { View, type TextStyle, type ViewStyle } from "react-native";
 
 import { MarqueeText } from "@/components/marquee-text";
 import { spacing } from "@/theme/spacing";
@@ -8,11 +8,12 @@ type StatusPillProps = {
   label: string;
   tone?: "success" | "warning" | "neutral" | "primary" | "accent" | "danger";
   style?: ViewStyle;
+  textStyle?: TextStyle;
 };
 
 // Editorial status chip — tracked-out caps on a soft tint. Deliberately plain:
 // no dots or icons inside pills, the colour and the word carry the status.
-export function StatusPill({ label, style, tone = "neutral" }: StatusPillProps) {
+export function StatusPill({ label, style, textStyle, tone = "neutral" }: StatusPillProps) {
   const { colors, type } = useTheme();
   const toneColors = {
     success: { background: colors.successSoft, text: colors.successText },
@@ -52,6 +53,7 @@ export function StatusPill({ label, style, tone = "neutral" }: StatusPillProps) 
             // caps label rather than sitting a touch looser than all of them.
             letterSpacing: 0.85,
           },
+          textStyle,
         ]}
       >
         {label}

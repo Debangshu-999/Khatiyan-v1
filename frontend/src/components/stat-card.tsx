@@ -4,6 +4,7 @@ import type { LucideProps } from "lucide-react-native";
 
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 type StatCardProps = {
   icon: ComponentType<LucideProps>;
@@ -46,17 +47,17 @@ export function StatCard({ icon: Icon, label, tone = "default", value, valueSuff
       >
         <Icon color={accent} size={18} strokeWidth={2.2} />
       </View>
-      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontWeight: "600" }]}>
+      <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, fontWeight: "600" }]}>
         {label}
-      </Text>
-      <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 22, letterSpacing: -0.3 }}>
+      </FitText>
+      <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 22, letterSpacing: -0.3 }}>
         {value}
         {valueSuffix ? (
           <Text style={{ color: colors.kicker, fontSize: 17, fontWeight: "700" }}>
             {valueSuffix}
           </Text>
         ) : null}
-      </Text>
+      </FitText>
     </View>
   );
 }

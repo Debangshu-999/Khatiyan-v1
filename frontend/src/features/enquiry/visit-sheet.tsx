@@ -26,6 +26,7 @@ import {
   useGetVisitAvailabilityQuery,
   useGetVisitMoveOptionsQuery,
   useRescheduleVisitMutation,
+  useScheduleDirectVisitMutation,
   useScheduleVisitMutation,
   type EnquiryParty,
   type Visit,
@@ -67,6 +68,7 @@ const SAMPLE_DAYS: Day[] = ["2026-01-04", "2026-01-05", "2026-01-06", "2026-01-0
  * when it happens.
  */
 export function VisitSheet({
+  direct = false,
   enquiryId,
   loadingVisit = false,
   notInterestedCloses = false,
@@ -78,6 +80,12 @@ export function VisitSheet({
   viewer,
   visit,
 }: {
+  /**
+   * Booked straight from the property profile, with no enquiry (user,
+   * 2026-10-17). The enquiry id is not used: the server finds or opens the
+   * record the visit goes on.
+   */
+  direct?: boolean;
   enquiryId: string;
   /** The enquirer changed their mind once, so Not interested now closes the enquiry at once. */
   notInterestedCloses?: boolean;
@@ -119,6 +127,7 @@ export function VisitSheet({
     skip: !visit,
   });
   const [scheduleVisit, scheduleState] = useScheduleVisitMutation();
+  const [scheduleDirectVisit, scheduleDirectState] = useScheduleDirectVisitMutation();
   const [rescheduleVisit, rescheduleState] = useRescheduleVisitMutation();
   const [cancelVisit, cancelState] = useCancelVisitMutation();
   const [sendMessage, sendState] = useSendChatMessageMutation();
@@ -142,7 +151,7 @@ export function VisitSheet({
   // has come, or the tenant has used both changes) opens here only to be
   // cancelled, with the reason it cannot move in place of the slots.
   const picking = !visit || visit.canReschedule;
-  const busy = scheduleState.isLoading || rescheduleState.isLoading || cancelState.isLoading || sendState.isLoading;
+  const busy = scheduleState.isLoading || scheduleDirectState.isLoading || rescheduleState.isLoading || cancelState.isLoading || sendState.isLoading;
   const loading = (visit ? moveOptions.isLoading : availability.isLoading) || loadingVisit;
   const days = useMemo(
     () => (visit ? moveOptions.data?.days : availability.data?.days) ?? [],
@@ -180,7 +189,11 @@ export function VisitSheet({
         await rescheduleVisit({ date, slotStart, version: visit.version, visitId: visit.id }).unwrap();
         toast.success(`Visit moved to ${picked}.`);
       } else {
-        await scheduleVisit({ date, enquiryId, slotStart }).unwrap();
+        if (direct) {
+          await scheduleDirectVisit({ date, propertyId, slotStart }).unwrap();
+        } else {
+          await scheduleVisit({ date, enquiryId, slotStart }).unwrap();
+        }
         toast.success(`Visit scheduled for ${picked}.`);
       }
       onClose();

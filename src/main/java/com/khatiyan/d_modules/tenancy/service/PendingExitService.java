@@ -13,6 +13,7 @@ import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyExitRequestRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
+import com.khatiyan.d_modules.property.PropertyModule;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,14 +34,16 @@ public class PendingExitService {
     private final TenancyRepository tenancyRepository;
     private final TenancyExitRequestRepository exitRequestRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final PropertyModule propertyModule;
 
     public PendingExitService(
             TenancyRepository tenancyRepository,
             TenancyExitRequestRepository exitRequestRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher, PropertyModule propertyModule) {
         this.tenancyRepository = tenancyRepository;
         this.exitRequestRepository = exitRequestRepository;
         this.eventPublisher = eventPublisher;
+        this.propertyModule = propertyModule;
     }
 
     /** Live stays whose checkout date is before today. */
@@ -56,7 +59,10 @@ public class PendingExitService {
      */
     @Transactional
     public boolean markPendingExit(UUID tenancyId, LocalDate today) {
-        Tenancy tenancy = tenancyRepository.findById(tenancyId).orElse(null);
+        UUID propertyId = tenancyRepository.findPropertyIdById(tenancyId).orElse(null);
+        if (propertyId == null) return false;
+        propertyModule.lockRoomInventory(propertyId);
+        Tenancy tenancy = tenancyRepository.findByIdForUpdate(tenancyId).orElse(null);
         if (tenancy == null || !tenancy.isCurrentlyActive() || !tenancy.isPastCheckout(today)) {
             return false;
         }

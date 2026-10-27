@@ -1,7 +1,8 @@
 import { api } from "@/store/api";
 
 export type ChatThreadKind = "TEAM" | "DIRECT";
-export type ChatThreadOrigin = "TENANCY" | "ENQUIRY" | "PERSONAL";
+// BOOKING: a booking made in the app, with whoever handles it (user, 2026-10-27).
+export type ChatThreadOrigin = "TENANCY" | "ENQUIRY" | "PERSONAL" | "BOOKING";
 export type ChatThreadStatus = "OPEN" | "READ_ONLY";
 export type ChatAttachmentKind = "IMAGE" | "FILE";
 
@@ -193,6 +194,12 @@ export const chatApi = api.injectEndpoints({
       providesTags: ["Chat"],
     }),
 
+    /** Bookings: the booking chats the reader handles (user, 2026-10-27). */
+    listBookingThreads: builder.query<ChatThread[], string>({
+      query: (propertyId) => `${base}/properties/${propertyId}/threads/bookings`,
+      providesTags: ["Chat"],
+    }),
+
     listChatContacts: builder.query<ChatContact[], string>({
       query: (propertyId) => `${base}/properties/${propertyId}/contacts`,
       providesTags: ["Chat"],
@@ -335,6 +342,7 @@ export const {
   useGetChatUnreadCountQuery,
   useListChatContactsQuery,
   useListEnquiryThreadsQuery,
+  useListBookingThreadsQuery,
   useListMyThreadsQuery,
   useListPersonalThreadsQuery,
   useListTenantThreadsQuery,

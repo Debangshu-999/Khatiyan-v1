@@ -149,6 +149,12 @@ function notificationDetails(notification: NotificationItem) {
         formatDate(data.startDate ?? data.endDate ?? data.checkoutDate),
       );
       break;
+    case "BOOKED_BED_NOT_FREE":
+      add(details, "Property", data.propertyName);
+      add(details, "Room", data.roomNumber);
+      add(details, "Booking", code(data.bookingReferenceCode));
+      add(details, "Move-in date", formatDate(data.moveInDate));
+      break;
     case "FUTURE_BOOKING_BLOCKED":
       add(details, "Property", data.propertyName);
       add(details, "Room", data.roomNumber);
@@ -301,6 +307,48 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Visit", data.visitWhen);
       add(details, "Checked in", data.checkedInAt);
       add(details, "Reference", code(data.visitReferenceCode));
+      break;
+    // How to book after a visit, for a visitor with no email to mail it to (2026-10-18).
+    case "VISIT_AFTER_BOOK_A_STAY":
+      add(details, "Property", data.propertyName);
+      add(details, "Book by", formatDate(data.bookUntil));
+      add(details, "Visit", code(data.visitReferenceCode));
+      break;
+    // The tenant's own booking, each with a mail beside it (2026-10-18).
+    case "BOOKING_CONFIRMED":
+    case "BOOKING_MOVE_IN_TOMORROW":
+    case "BOOKING_BED_NOT_READY":
+    case "BOOKING_CANCELLED":
+    case "BOOKING_EXPIRED":
+      add(details, "Property", data.propertyName);
+      add(details, "Room", data.roomNumber);
+      if (notification.subtype !== "BOOKING_EXPIRED") add(details, "Move-in date", formatDate(data.moveInDate));
+      add(details, "Booking", code(data.bookingReferenceCode));
+      break;
+    // Before confirmation and the reminders (2026-10-19): the booking, and which room.
+    case "BOOKING_OFFER_RECEIVED":
+    case "BOOKING_TERMS_AGREED":
+    case "BOOKING_TOKEN_LAPSING":
+    case "BOOKING_REFUND_SENT":
+    case "BOOKING_YOUR_TURN":
+    case "BOOKING_REQUEST_YOUR_TURN":
+    case "BOOKING_REQUEST_WAITING":
+    case "BOOKING_TOKEN_CLAIM_WAITING":
+    case "BOOKING_REFUND_OWED":
+      add(details, "Property", data.propertyName);
+      add(details, "Room", data.roomNumber);
+      add(details, "Booking", code(data.bookingReferenceCode));
+      break;
+    case "BOOKING_BOOK_AFTER_VISIT":
+      add(details, "Property", data.propertyName);
+      add(details, "Book by", formatDate(data.bookUntil));
+      add(details, "Visit", code(data.visitReferenceCode));
+      break;
+    case "BOOKING_DATE_MOVED":
+      add(details, "Property", data.propertyName);
+      add(details, "New move-in date", formatDate(data.moveInDate));
+      add(details, "Was", formatDate(data.originalMoveInDate));
+      add(details, "Booking", code(data.bookingReferenceCode));
       break;
     // The property's own notices about a day or a slot of it (2026-10-04).
     case "VISITORS_TODAY":

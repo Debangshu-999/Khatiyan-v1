@@ -1,7 +1,7 @@
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, BackHandler, Keyboard, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronRight, Info, Phone, Plus, ReceiptIndianRupee, ReceiptText, UserRound, Users, X } from "lucide-react-native";
 
@@ -11,6 +11,7 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SearchField } from "@/components/search-field";
 import { SheetShell } from "@/components/sheet-shell";
@@ -26,8 +27,11 @@ import { BillCard, compareByPeriodDesc } from "@/features/owner/bill-views";
 import { useAppSelector } from "@/store/hooks";
 import { useCreateOneOffBillMutation, useListManagedTenancyBillingCyclesQuery } from "@/store/services/billing-api";
 import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/services/tenancy-api";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 const NO_PERSON_ILLUSTRATION = require("../assets/empty-states/No-Person_512x512.png");
 
@@ -112,17 +116,6 @@ export default function OwnerTenantBillsScreen() {
   return (
     <View style={{ backgroundColor: colors.surface, flex: 1 }}>
     <ScreenScrollView
-      background={
-        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-          <LinearGradient
-            colors={[colors.primarySoft, colors.surface]}
-            end={{ x: 0.5, y: 1 }}
-            locations={[0, 1]}
-            start={{ x: 0.5, y: 0 }}
-            style={{ height: 230 }}
-          />
-        </View>
-      }
       safeAreaEdges={["top", "bottom"]}
       contentContainerStyle={{
         paddingBottom: selected ? FOOTER_CLEARANCE : undefined,
@@ -178,10 +171,7 @@ export default function OwnerTenantBillsScreen() {
           paddingTop: spacing.md,
           position: "absolute",
           right: 0,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: -4, width: 0 },
-          shadowOpacity: 1,
-          shadowRadius: 14,
+          ...softShadow(colors.shadow, -4, 14),
         }}
       >
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
@@ -217,7 +207,6 @@ function TenantBillsHeader({
   propertyName: string | null;
   selectedTenantName: string | null;
 }) {
-  const { colors, type } = useTheme();
   const description = selectedTenantName
     ? propertyName
       ? `All bills in ${selectedTenantName}'s current tenancy at ${propertyName}.`
@@ -227,34 +216,15 @@ function TenantBillsHeader({
       : "Select a property from Home to view tenant bills.";
 
   return (
-    <View>
-      <View style={{ gap: spacing.sm }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-          <Text
-            adjustsFontSizeToFit
-            minimumFontScale={0.72}
-            numberOfLines={1}
-            style={[type.brand, { color: colors.ink, flexShrink: 1, fontSize: 29, lineHeight: 35 }]}
-          >
-            Tenant
-            <Text style={[type.brandItalic, { color: colors.accent, fontSize: 29, lineHeight: 35 }]}> bills.</Text>
-          </Text>
-          {!canManageBilling ? <ViewOnlyChip /> : null}
-        </View>
-
-        <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
-          <View style={{ backgroundColor: colors.accent, borderRadius: 999, width: 3 }} />
-          <Text
-            style={[type.description, {
-                color: colors.muted,
-                flex: 1 },
-            ]}
-          >
-            {description}
-          </Text>
-        </View>
-      </View>
-    </View>
+    <ScreenHeader
+      badge={!canManageBilling ? <ViewOnlyChip /> : null}
+      italicTail="bills."
+      subtitle={description}
+      title="Tenant"
+      titleAdjustsFontSizeToFit
+      titleMinimumFontScale={0.72}
+      titleNumberOfLines={1}
+    />
   );
 }
 
@@ -337,20 +307,20 @@ function TenantPicker({ onSelect, propertyId }: { onSelect: (tenancy: TenancySum
                   </View>
 
                   <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-                    <Text
+                    <FitText
                       numberOfLines={1}
                       style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, lineHeight: 22 }}
                     >
-                      {tenantName}
-                    </Text>
-                    <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+                      {cardName(tenantName)}
+                    </FitText>
+                    <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
                       {tenancy.referenceCode}
-                    </Text>
+                    </FitText>
                     <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
                       <Phone color={colors.muted} size={13} strokeWidth={2.2} />
-                      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
-                        {phone || "Phone not added"}
-                      </Text>
+                      <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
+                        {phone ? formatIndianPhone(phone) : "Phone not added"}
+                      </FitText>
                     </View>
                   </View>
 
@@ -596,7 +566,7 @@ function FilterPill({ active, count, label, onPress }: { active: boolean; count:
         paddingHorizontal: spacing.xs,
       }}
     >
-      <Text
+      <FitText
         numberOfLines={1}
         style={[
           type.caption,
@@ -608,7 +578,7 @@ function FilterPill({ active, count, label, onPress }: { active: boolean; count:
         ]}
       >
         {label} ({count})
-      </Text>
+      </FitText>
       <View
         style={{
           backgroundColor: active ? colors.primary : "transparent",

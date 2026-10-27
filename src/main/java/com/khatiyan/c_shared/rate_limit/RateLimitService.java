@@ -1,83 +1,105 @@
 package com.khatiyan.c_shared.rate_limit;
 
 import java.time.Duration;
-import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Expiry;
 import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.c_shared.valkey.ValkeyHealth;
+import com.khatiyan.c_shared.valkey.ValkeyOutageListener;
 
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
-import lombok.extern.slf4j.Slf4j;
 
 /**
- * Consumes tokens from rate-limit buckets: Valkey's, or the database's when
- * Valkey cannot be reached.
+ * Consumes tokens from rate-limit buckets: Valkey's while it is up, this
+ * backend's own memory while it is not (2026-10-18).
  *
  * <p>Every limit in the app comes through here — the API-wide one, the
  * per-route ones, sign-up and email codes, chat, geocoding, the AI quota — so
- * the fallback here covers all of them at once. The database buckets are the
- * same shape and the same numbers (see {@link TokenBucket}), so which store
- * answered makes no difference to the person asking.
+ * the fallback here covers all of them at once. Both stores run the same
+ * Bucket4j bucket with the same numbers, so which one answered makes no
+ * difference to the person asking.
  *
- * <p><b>A circuit breaker in front of Valkey.</b> Its timeout is two seconds.
- * Without the breaker, every request during an outage would wait out those
- * two seconds before falling back — the limiter surviving the outage by making
- * the whole API crawl through it. After one failure Valkey is skipped for
- * {@link #VALKEY_RETRY_AFTER}, then tried again.
+ * <p><b>Memory, not the database.</b> The database fallback wrote a row on
+ * every request during an outage. These are abuse limits, and the ones that
+ * guard money or accounts live elsewhere: OTP pauses in an outage and PIN
+ * lockout is counted from {@code auth.login_attempts}. So the memory buckets
+ * accept two things: they start fresh after a restart during an outage, and
+ * each running copy of the backend counts on its own.
  *
- * <p>The two stores do not share state. When Valkey returns, its buckets are as
- * it left them and know nothing of what was spent against the database in
- * between. That is a window of fresh allowance right after a recovery, and it
- * is accepted: nobody outside can choose when Valkey goes down.
+ * <p>When Valkey goes down or comes back the memory buckets are emptied, and
+ * Valkey's buckets are as it left them. {@link ValkeyHealth} decides when
+ * Valkey may be asked, so an outage does not make every request wait out its
+ * two-second timeout.
  */
-@Slf4j
 @Service
-public class RateLimitService {
+public class RateLimitService implements ValkeyOutageListener {
 
-    static final Duration VALKEY_RETRY_AFTER = Duration.ofSeconds(10);
+    /** Plenty for every IP and person active during an outage, and a bound on the heap. */
+    static final long MAX_MEMORY_BUCKETS = 100_000;
 
-    private final ProxyManager<String> proxyManager;
-    private final DatabaseRateLimiter databaseRateLimiter;
-    private final LongSupplier nanoClock;
-    /** Until when Valkey is not asked. Zero while it is healthy. */
-    private volatile long skipValkeyUntil = 0L;
+    /**
+     * Valkey's buckets, made on first use (2026-10-17). A failure to connect
+     * comes out of here as any other Valkey failure, inside the fallback.
+     */
+    private final Supplier<ProxyManager<String>> proxyManager;
+    private final ValkeyHealth health;
+    /**
+     * Kept for as long as the bucket takes to refill, counted from its last use.
+     * A bucket untouched that long is full, so dropping it changes nothing.
+     */
+    private final Cache<String, MemoryBucket> memory = Caffeine.newBuilder()
+            .maximumSize(MAX_MEMORY_BUCKETS)
+            .expireAfter(new Expiry<String, MemoryBucket>() {
+                @Override
+                public long expireAfterCreate(String key, MemoryBucket bucket, long currentTime) {
+                    return bucket.refillNanos();
+                }
+
+                @Override
+                public long expireAfterUpdate(String key, MemoryBucket bucket, long currentTime, long currentDuration) {
+                    return bucket.refillNanos();
+                }
+
+                @Override
+                public long expireAfterRead(String key, MemoryBucket bucket, long currentTime, long currentDuration) {
+                    return bucket.refillNanos();
+                }
+            })
+            .build();
 
     @Autowired
-    public RateLimitService(ProxyManager<String> proxyManager, DatabaseRateLimiter databaseRateLimiter) {
-        this(proxyManager, databaseRateLimiter, System::nanoTime);
+    public RateLimitService(ObjectProvider<ProxyManager<String>> proxyManager, ValkeyHealth health) {
+        this(proxyManager::getObject, health);
     }
 
-    /** With a clock of our choosing, so the breaker can be tested without sleeping. */
-    RateLimitService(ProxyManager<String> proxyManager, DatabaseRateLimiter databaseRateLimiter, LongSupplier nanoClock) {
+    /** With Valkey's buckets made on demand, as the app has them. */
+    RateLimitService(Supplier<ProxyManager<String>> proxyManager, ValkeyHealth health) {
         this.proxyManager = proxyManager;
-        this.databaseRateLimiter = databaseRateLimiter;
-        this.nanoClock = nanoClock;
+        this.health = health;
     }
 
     public RateLimitResult consume(String key, int attempts, int durationSeconds) {
-        if (nanoClock.getAsLong() < skipValkeyUntil) {
-            return databaseRateLimiter.consume(key, attempts, durationSeconds);
+        if (health.available()) {
+            try {
+                return consumeFromValkey(key, attempts, durationSeconds);
+            } catch (RuntimeException valkeyFailure) {
+                // A refused connection, a timeout, a command error: the answer
+                // did not come from Valkey. Memory answers the same question.
+                health.failed(valkeyFailure);
+            }
         }
-        try {
-            return consumeFromValkey(key, attempts, durationSeconds);
-        } catch (RuntimeException valkeyFailure) {
-            // Any failure here means the answer did not come from Valkey — a
-            // refused connection, a timeout, a command error. The database can
-            // still answer the same question, so it is asked; whatever it says
-            // stands. Only if it ALSO fails does the exception travel on, to
-            // the filter's fail-open or the caller.
-            skipValkeyUntil = nanoClock.getAsLong() + VALKEY_RETRY_AFTER.toNanos();
-            log.warn(
-                    "Valkey rate limiter unavailable; using the database for {}s key={} reason={}",
-                    VALKEY_RETRY_AFTER.toSeconds(), key, valkeyFailure.getMessage());
-            return databaseRateLimiter.consume(key, attempts, durationSeconds);
-        }
+        return consumeFromMemory(key, attempts, durationSeconds);
     }
 
     public void consumeOrThrow(String key, int attempts, int durationSeconds, String message) {
@@ -87,9 +109,29 @@ public class RateLimitService {
         }
     }
 
+    @Override
+    public void onValkeyDown() {
+        memory.invalidateAll();
+    }
+
+    @Override
+    public void onValkeyRecovering() {
+        memory.invalidateAll();
+    }
+
     private RateLimitResult consumeFromValkey(String key, int attempts, int durationSeconds) {
-        Bucket bucket = proxyManager.getProxy(key, () -> configuration(attempts, durationSeconds));
-        ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+        Bucket bucket = proxyManager.get().getProxy(key, () -> configuration(attempts, durationSeconds));
+        return resultOf(bucket.tryConsumeAndReturnRemaining(1));
+    }
+
+    private RateLimitResult consumeFromMemory(String key, int attempts, int durationSeconds) {
+        MemoryBucket bucket = memory.get(key, ignored -> new MemoryBucket(
+                Bucket.builder().addLimit(bandwidth(attempts, durationSeconds)).build(),
+                Duration.ofSeconds(durationSeconds).toNanos()));
+        return resultOf(bucket.bucket().tryConsumeAndReturnRemaining(1));
+    }
+
+    private static RateLimitResult resultOf(ConsumptionProbe probe) {
         if (probe.isConsumed()) {
             return RateLimitResult.allowed(probe.getRemainingTokens());
         }
@@ -99,13 +141,26 @@ public class RateLimitService {
         return RateLimitResult.rejected(retryAfterSeconds);
     }
 
-    /** Package-visible so the database fallback's arithmetic can be checked against it. */
+    /** Package-visible so the database bucket's arithmetic can be checked against it. */
     static BucketConfiguration configuration(int attempts, int durationSeconds) {
         return BucketConfiguration.builder()
-                .addLimit(Bandwidth.builder()
-                        .capacity(attempts)
-                        .refillGreedy(attempts, Duration.ofSeconds(durationSeconds))
-                        .build())
+                .addLimit(bandwidth(attempts, durationSeconds))
                 .build();
+    }
+
+    private static Bandwidth bandwidth(int attempts, int durationSeconds) {
+        return Bandwidth.builder()
+                .capacity(attempts)
+                .refillGreedy(attempts, Duration.ofSeconds(durationSeconds))
+                .build();
+    }
+
+    /** Buckets held in memory. For tests. */
+    long memoryBuckets() {
+        memory.cleanUp();
+        return memory.estimatedSize();
+    }
+
+    private record MemoryBucket(Bucket bucket, long refillNanos) {
     }
 }

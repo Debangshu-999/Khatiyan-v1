@@ -29,8 +29,6 @@ import com.khatiyan.d_modules.expense.api.dto.ReverseExpenseRequest;
 import com.khatiyan.d_modules.expense.model.Expense;
 import com.khatiyan.d_modules.expense.model.ExpenseCategory;
 import com.khatiyan.d_modules.expense.model.ExpenseEntryType;
-import com.khatiyan.d_modules.expense.repository.ExpenseBudgetRaiseRepository;
-import com.khatiyan.d_modules.expense.repository.ExpenseBudgetVersionRepository;
 import com.khatiyan.d_modules.expense.repository.ExpenseCategoryRepository;
 import com.khatiyan.d_modules.expense.repository.ExpenseRepository;
 import com.khatiyan.d_modules.staff.StaffModule;
@@ -41,24 +39,21 @@ public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository categoryRepository;
-    private final ExpenseBudgetVersionRepository budgetVersionRepository;
-    private final ExpenseBudgetRaiseRepository budgetRaiseRepository;
     private final FinanceAccessPolicy financeAccessPolicy;
     private final StaffModule staffModule;
+    private final BudgetInForce budgetInForce;
 
     public ExpenseService(
             ExpenseRepository expenseRepository,
             ExpenseCategoryRepository categoryRepository,
-            ExpenseBudgetVersionRepository budgetVersionRepository,
-            ExpenseBudgetRaiseRepository budgetRaiseRepository,
             FinanceAccessPolicy financeAccessPolicy,
-            StaffModule staffModule) {
+            StaffModule staffModule,
+            BudgetInForce budgetInForce) {
         this.expenseRepository = expenseRepository;
         this.categoryRepository = categoryRepository;
-        this.budgetVersionRepository = budgetVersionRepository;
-        this.budgetRaiseRepository = budgetRaiseRepository;
         this.financeAccessPolicy = financeAccessPolicy;
         this.staffModule = staffModule;
+        this.budgetInForce = budgetInForce;
     }
 
     @Transactional
@@ -142,12 +137,9 @@ public class ExpenseService {
 
         long total = expenses.stream().mapToLong(Expense::getAmountPaise).sum() + projectedSalary;
         // The budget in force that month, not today's: an edit applies from the
-        // month it was made, so an earlier month keeps the budget it ran on.
-        Long defaultBudget = budgetVersionRepository.defaultFor(propertyId, start).orElse(null);
-        long raised = budgetRaiseRepository.sumForMonth(propertyId, start);
-        Long budget = (defaultBudget == null && raised == 0)
-                ? null
-                : (defaultBudget == null ? 0L : defaultBudget) + raised;
+        // month it was made, so an earlier month keeps the budget it ran on. With
+        // that month's income share (2026-10-18).
+        Long budget = budgetInForce.of(propertyId, start).effectivePaise();
         return new ExpenseMonthSummaryResponse(start, total, budget, byCategory);
     }
 

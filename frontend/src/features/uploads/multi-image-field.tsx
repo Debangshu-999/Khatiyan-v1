@@ -11,6 +11,7 @@ import { uploadAssets, UploadError, type UploadTarget } from "@/features/uploads
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * A capped set of photos, for the places that want more than one but not many.
@@ -190,9 +191,9 @@ export function MultiImageField({
           }}
         >
           <Image resizeMode="cover" source={{ uri: url }} style={{ borderRadius: 8, height: 48, width: 48 }} />
-          <Text numberOfLines={1} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
+          <FitText numberOfLines={1} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
             {urls.length > 1 ? `Photo ${index + 1}` : "Photo attached"}
-          </Text>
+          </FitText>
           {/* A bin, not a cross. A cross beside an attachment reads as "close
               this", and the only thing it could close is the row itself. */}
           <IconButton

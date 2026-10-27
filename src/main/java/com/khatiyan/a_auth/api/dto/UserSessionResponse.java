@@ -24,12 +24,20 @@ public record UserSessionResponse(
 ) {
 
     public static UserSessionResponse from(UserSession session, UUID callerSessionId) {
+        return from(session, callerSessionId, null);
+    }
+
+    /**
+     * With the last request time from the auth cache (2026-10-18), which is
+     * fresher than the row's. The row's is shown when the cache has none.
+     */
+    public static UserSessionResponse from(UserSession session, UUID callerSessionId, Instant lastSeenAt) {
         return new UserSessionResponse(
             session.getId(),
             session.getDeviceLabel(),
             session.getPlatform(),
             session.getCreatedAt(),
-            session.getLastSeenAt(),
+            lastSeenAt == null ? session.getLastSeenAt() : lastSeenAt,
             session.getExpiresAt(),
             session.getJti().equals(callerSessionId));
     }

@@ -138,4 +138,18 @@ class FutureVacanciesIntegrationTest {
         assertThatThrownBy(() -> bookingOn(fixed, TODAY.plusDays(6)))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
+
+    @Test
+    void legacyFutureWritesJoinTheCommonClaimAndCancellationReleasesIt() {
+        UUID fixed = fixedTerm(room, 4);
+        UUID booking = bookingOn(fixed, TODAY.plusDays(4));
+        assertThat(jdbc.queryForObject("SELECT departing_tenancy_id FROM tenancy.bed_holds "
+                + "WHERE owner_kind = 'TENANCY' AND owner_id = ?", UUID.class, booking)).isEqualTo(fixed);
+        assertThat(jdbc.queryForObject("SELECT state FROM tenancy.bed_holds WHERE owner_id = ?", String.class, booking))
+                .isEqualTo("WAITING");
+        jdbc.update("UPDATE tenancy.tenancies SET status = 'CANCELLED', is_active = false WHERE id = ?", booking);
+        assertThat(jdbc.queryForObject("SELECT state FROM tenancy.bed_holds WHERE owner_id = ?", String.class, booking))
+                .isEqualTo("RELEASED");
+        assertThat(vacancies.upcoming(p, TODAY)).hasSize(1);
+    }
 }

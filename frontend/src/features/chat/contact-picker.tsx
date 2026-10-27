@@ -12,6 +12,8 @@ import {
 } from "@/store/services/chat-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 const ROLE_LABEL: Record<ChatContact["role"], string> = {
   MANAGER: "Manager",
@@ -110,9 +112,9 @@ export function ContactPicker({
                   {initialsOf(contact.name)}
                 </Text>
               </View>
-              <Text numberOfLines={1} style={{ color: colors.ink, flex: 1, fontWeight: "600" }}>
-                {contact.name}
-              </Text>
+              <FitText numberOfLines={1} style={{ color: colors.ink, flex: 1, fontWeight: "600" }}>
+                {cardName(contact.name)}
+              </FitText>
             </AnimatedPressable>
           ))}
         </View>

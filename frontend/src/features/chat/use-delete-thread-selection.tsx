@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useCallback, useState } from "react";
 import { BackHandler, Modal, Pressable, Text, View } from "react-native";
@@ -134,9 +135,9 @@ function ConfirmDeleteThread({
             width: "100%",
           }}
         >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+          <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             Delete conversation
-          </Text>
+          </ModalTitle>
           <Text style={[type.modalDescription, { color: colors.muted, marginTop: spacing.sm }]}>
             This removes it from your chats only. The other side keeps everything, and starting
             again opens an empty conversation.

@@ -59,7 +59,8 @@ class GeocodingServiceNearbyCacheTest {
 
         service = new GeocodingService(
                 List.of(mappls),
-                valkeyTemplate,
+                new com.khatiyan.c_shared.valkey.FallbackCache(
+                        valkeyTemplate, new com.khatiyan.c_shared.valkey.ValkeyHealth(List::of, System::nanoTime)),
                 rateLimitService,
                 new ObjectMapper(),
                 "mappls",

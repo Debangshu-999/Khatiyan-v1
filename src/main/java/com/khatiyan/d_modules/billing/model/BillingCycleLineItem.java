@@ -485,6 +485,37 @@ public class BillingCycleLineItem extends BaseEntity {
                         || settlementAction == BillingLineSettlementAction.SYSTEM_CHARGE);
     }
 
+    /**
+     * A booking token the property already holds, taken off the stay's first
+     * bill. Written by the system when the stay starts, and never edited.
+     */
+    public static BillingCycleLineItem bookingToken(
+            BillingCycle cycle,
+            String label,
+            String description,
+            long amountPaise,
+            int displayOrder) {
+        return BillingCycleLineItem.builder()
+                .billingCycleId(cycle.getId())
+                .tenancyId(cycle.getTenancyId())
+                .tenantUserId(cycle.getTenantUserId())
+                .propertyId(cycle.getPropertyId())
+                .type(BillingCycleLineItemType.BOOKING_TOKEN)
+                .status(BillingCycleLineItemStatus.ADDED)
+                .label(label)
+                .description(description)
+                .amountPaise(amountPaise)
+                .settlementAmountPaise(amountPaise)
+                .settlementAction(BillingLineSettlementAction.DISCOUNTED)
+                .systemGenerated(true)
+                .displayOrder(displayOrder)
+                .build();
+    }
+
+    public boolean contributesToBookingTokenCredit() {
+        return status == BillingCycleLineItemStatus.ADDED && type == BillingCycleLineItemType.BOOKING_TOKEN;
+    }
+
     public boolean contributesToDiscountAmount() {
         return status == BillingCycleLineItemStatus.ADDED
                 && type == BillingCycleLineItemType.DISCOUNT

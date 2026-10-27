@@ -28,6 +28,7 @@ import { useTheme } from "@/theme/use-theme";
 import { computeFilterMatches, type FilterMatch, type MatchStrength } from "../discovery-match";
 import type { PropertyFilterState } from "./property-filter-modal";
 import { formatMoneyPaise } from "../discovery-format";
+import { FitText } from "@/components/fit-text";
 
 type PropertyListingCardProps = {
   property: PropertyDiscoveryCard;
@@ -109,6 +110,7 @@ export function PropertyListingCard({
       <View style={{ flexDirection: "row", gap: spacing.md }}>
         {imageUri ? (
           <Image
+            resizeMethod="resize"
             resizeMode="cover"
             source={{ uri: imageUri }}
             style={{
@@ -151,8 +153,7 @@ export function PropertyListingCard({
             overflow: "hidden",
           }}
         >
-          <Text
-            adjustsFontSizeToFit
+          <FitText
             minimumFontScale={0.82}
             numberOfLines={2}
             style={{
@@ -164,15 +165,15 @@ export function PropertyListingCard({
             }}
           >
             {property.name}
-          </Text>
+          </FitText>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: 5 }}>
             <MapPin color={colors.muted} size={14} strokeWidth={2.2} style={{ marginTop: 1 }} />
-            <Text
+            <FitText
               numberOfLines={2}
               style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 11.5, lineHeight: 15 }}
             >
               {addressLine}
-            </Text>
+            </FitText>
           </View>
           {/* Always a row, whatever is in it. This column is a fixed height laid
               out with space-between, so dropping the distance let the address
@@ -232,12 +233,12 @@ export function PropertyListingCard({
           </Text>
           {hasRent ? (
             <View style={{ alignItems: "baseline", flexDirection: "row", gap: 4 }}>
-              <Text
+              <FitText
                 numberOfLines={1}
                 style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 22, letterSpacing: -0.5 }}
               >
                 {formatMoneyPaise(property.startingRoomRentPaise)}
-              </Text>
+              </FitText>
               <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>
                 /month
               </Text>
@@ -253,7 +254,7 @@ export function PropertyListingCard({
           <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13, marginBottom: 7 }}>
             Deposit
           </Text>
-          <Text
+          <FitText
             numberOfLines={1}
             style={{
               color: property.standardDepositPaise > 0 ? colors.ink : colors.muted,
@@ -263,7 +264,7 @@ export function PropertyListingCard({
             }}
           >
             {property.standardDepositPaise > 0 ? formatMoneyPaise(property.standardDepositPaise) : "None"}
-          </Text>
+          </FitText>
         </View>
       </View>
 
@@ -407,14 +408,13 @@ function MatchMeter({ matched, strength, total }: { matched: number; strength: M
       >
         <Check color="#FFFFFF" size={16} strokeWidth={3} />
       </View>
-      <Text
-        adjustsFontSizeToFit
+      <FitText
         minimumFontScale={0.85}
         numberOfLines={1}
         style={{ color, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 11.5 }}
       >
         {label}
-      </Text>
+      </FitText>
       <View style={{ flexDirection: "row", gap: 3, marginLeft: "auto" }}>
         {Array.from({ length: total }, (_unused, index) => (
           <View
@@ -429,14 +429,13 @@ function MatchMeter({ matched, strength, total }: { matched: number; strength: M
         ))}
       </View>
       <View style={{ backgroundColor: colors.borderStrong, height: 22, width: 1 }} />
-      <Text
-        adjustsFontSizeToFit
+      <FitText
         minimumFontScale={0.85}
         numberOfLines={1}
         style={{ color: colors.muted, flexShrink: 1, fontFamily: fonts.sansMedium, fontSize: 10.5 }}
       >
         {matched} of {total} filter{total === 1 ? "" : "s"}
-      </Text>
+      </FitText>
     </View>
   );
 }

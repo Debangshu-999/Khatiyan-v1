@@ -10,6 +10,7 @@ import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { uploadAsset, UploadError, type UploadTarget } from "@/features/uploads/upload-asset";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Attaches exactly one stored image to a record — a payment proof, a photo of a
@@ -174,9 +175,9 @@ export function SingleImageField({
           }}
         >
           <Image resizeMode="cover" source={{ uri: url }} style={{ borderRadius: 8, height: 48, width: 48 }} />
-          <Text numberOfLines={1} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
+          <FitText numberOfLines={1} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
             {attachedLabel}
-          </Text>
+          </FitText>
           {/* A bin, not a cross. A cross beside an attachment reads as "close
               this", and the only thing it could close is the row itself. */}
           <IconButton accessibilityLabel="Remove image" icon={Trash2} onPress={() => onChange("")} />

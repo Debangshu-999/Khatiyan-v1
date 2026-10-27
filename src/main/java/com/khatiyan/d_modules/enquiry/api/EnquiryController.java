@@ -41,6 +41,8 @@ import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
 import com.khatiyan.d_modules.enquiry.service.EnquiryChannelConsentService;
 import com.khatiyan.d_modules.enquiry.service.EnquiryHandlerService;
 import com.khatiyan.d_modules.enquiry.service.EnquiryService;
+import com.khatiyan.d_modules.enquiry.service.EnquiryBookingEligibilityService;
+import com.khatiyan.d_modules.enquiry.api.dto.PostVisitBookingEligibility;
 
 import jakarta.validation.Valid;
 
@@ -59,14 +61,36 @@ public class EnquiryController {
     private final EnquiryService enquiryService;
     private final EnquiryChannelConsentService consentService;
     private final EnquiryHandlerService handlerService;
+    private final EnquiryBookingEligibilityService bookingEligibility;
 
     public EnquiryController(
             EnquiryService enquiryService,
             EnquiryChannelConsentService consentService,
-            EnquiryHandlerService handlerService) {
+            EnquiryHandlerService handlerService, EnquiryBookingEligibilityService bookingEligibility) {
         this.enquiryService = enquiryService;
         this.consentService = consentService;
         this.handlerService = handlerService;
+        this.bookingEligibility = bookingEligibility;
+    }
+
+    /**
+     * Book a stay straight from the property profile (user, 2026-10-17). Opens
+     * booking without a visit on the person's live enquiry here, or on a new
+     * direct record, and says what the booking form may book from. Called once
+     * the person has agreed what contact to share.
+     */
+    @PostMapping("/properties/{propertyId}/direct-booking")
+    public PostVisitBookingEligibility openDirectBooking(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID propertyId) {
+        UUID enquiryId = enquiryService.openDirect(
+                user.userId(), propertyId, com.khatiyan.d_modules.enquiry.model.EnquiryOrigin.DIRECT_BOOKING);
+        return bookingEligibility.forTenant(user.userId(), enquiryId);
+    }
+
+    @GetMapping("/enquiries/{enquiryId}/booking-eligibility")
+    public PostVisitBookingEligibility bookingEligibility(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID enquiryId) {
+        return bookingEligibility.forTenant(user.userId(), enquiryId);
     }
 
     // Enquirer side.
@@ -145,6 +169,14 @@ public class EnquiryController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId) {
         return enquiryService.listForProperty(user.userId(), propertyId);
+    }
+
+    /** One enquiry, for management: what Follow up on a lead opens (2026-10-17). */
+    @GetMapping("/enquiries/{enquiryId}")
+    public EnquiryDetailResponse detailForManagement(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID enquiryId) {
+        return enquiryService.detailForManagement(user.userId(), enquiryId);
     }
 
     /** Drives the badge on the workspace tile. */

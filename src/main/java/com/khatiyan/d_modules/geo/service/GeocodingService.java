@@ -9,12 +9,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.khatiyan.c_shared.rate_limit.RateLimitService;
+import com.khatiyan.c_shared.valkey.FallbackCache;
+import com.khatiyan.c_shared.valkey.SingleFlight;
 import com.khatiyan.d_modules.geo.api.dto.GeoSuggestionResponse;
 import com.khatiyan.d_modules.geo.api.dto.NearbyPlaceResponse;
 import com.khatiyan.d_modules.geo.api.dto.ReverseGeocodeResponse;
@@ -61,7 +62,10 @@ public class GeocodingService {
             };
 
     private final Map<GeocodingProviderType, GeocodingProvider> providers;
-    private final StringRedisTemplate valkeyTemplate;
+    /** Valkey while it is up, memory while it is not (2026-10-18). */
+    private final FallbackCache cache;
+    /** One vendor call per key at a time, so a burst of the same search costs one call. */
+    private final SingleFlight singleFlight = new SingleFlight();
     private final RateLimitService rateLimitService;
     private final ObjectMapper objectMapper;
     private final GeocodingProviderType activeProviderType;
@@ -74,7 +78,7 @@ public class GeocodingService {
 
     public GeocodingService(
             List<GeocodingProvider> providers,
-            StringRedisTemplate valkeyTemplate,
+            FallbackCache cache,
             RateLimitService rateLimitService,
             ObjectMapper objectMapper,
             @Value("${app.geo.provider:log}") String configuredProvider,
@@ -89,7 +93,7 @@ public class GeocodingService {
             @Value("${app.geo.landmark-lookup:mappls,geoapify}") String landmarkLookup) {
         this.providers = new EnumMap<>(GeocodingProviderType.class);
         providers.forEach(provider -> this.providers.put(provider.type(), provider));
-        this.valkeyTemplate = valkeyTemplate;
+        this.cache = cache;
         this.rateLimitService = rateLimitService;
         this.objectMapper = objectMapper;
         this.activeProviderType = resolveProviderType(configuredProvider);
@@ -165,7 +169,7 @@ public class GeocodingService {
             String cacheKey = (singlePlaced ? LANDMARK_KEY_PREFIX : LANDMARK_ALL_KEY_PREFIX)
                     + type + ":" + normalized
                     + ":" + round(latitude, 2) + ":" + round(longitude, 2);
-            String cached = valkeyTemplate.opsForValue().get(cacheKey);
+            String cached = cache.get(cacheKey);
             if (cached != null) {
                 List<GeoSuggestionResponse> remembered = readSuggestions(cached);
                 if (!remembered.isEmpty()) {
@@ -174,7 +178,8 @@ public class GeocodingService {
                 continue;
             }
 
-            List<GeoSuggestionResponse> hits = provider.search(query.trim(), latitude, longitude);
+            List<GeoSuggestionResponse> hits =
+                    singleFlight.run(cacheKey, () -> provider.search(query.trim(), latitude, longitude));
             List<GeoSuggestionResponse> kept = singlePlaced
                     ? placedAnchor(hits, type, latitude, longitude)
                     : pinnable(hits, type);
@@ -264,7 +269,7 @@ public class GeocodingService {
     /** A pincode's centre, cached for a month — pincodes do not move. */
     private Optional<double[]> pincodeCentroid(GeocodingProvider geoapify, String pincode) {
         String cacheKey = PINCODE_KEY_PREFIX + pincode;
-        String cached = valkeyTemplate.opsForValue().get(cacheKey);
+        String cached = cache.get(cacheKey);
         if (cached != null) {
             String[] parts = cached.split(",");
             if (parts.length == 2) {
@@ -275,14 +280,8 @@ public class GeocodingService {
                 }
             }
         }
-        Optional<double[]> centre = geoapify.postcodeCentroid(pincode);
-        centre.ifPresent(point -> {
-            try {
-                valkeyTemplate.opsForValue().set(cacheKey, point[0] + "," + point[1], NEARBY_TTL);
-            } catch (RuntimeException exception) {
-                log.warn("Geo cache write skipped key={}", cacheKey, exception);
-            }
-        });
+        Optional<double[]> centre = singleFlight.run(cacheKey, () -> geoapify.postcodeCentroid(pincode));
+        centre.ifPresent(point -> cache.set(cacheKey, point[0] + "," + point[1], NEARBY_TTL));
         return centre;
     }
 
@@ -319,7 +318,7 @@ public class GeocodingService {
         }
         String cacheKey = NEARBY_KEY_PREFIX + categoryCodes + ":" + radiusMeters
                 + ":" + round(latitude, 4) + ":" + round(longitude, 4);
-        String cached = valkeyTemplate.opsForValue().get(cacheKey);
+        String cached = cache.get(cacheKey);
         if (cached != null) {
             try {
                 return Optional.of(objectMapper.readValue(cached, NEARBY_LIST));
@@ -327,8 +326,8 @@ public class GeocodingService {
                 log.warn("Corrupt geo nearby cache entry dropped", exception);
             }
         }
-        Optional<List<NearbyPlaceResponse>> answer =
-                mappls.nearby(categoryCodes, latitude, longitude, radiusMeters);
+        Optional<List<NearbyPlaceResponse>> answer = singleFlight.run(
+                cacheKey, () -> mappls.nearby(categoryCodes, latitude, longitude, radiusMeters));
         if (answer.isEmpty()) {
             // The vendor did not answer. Saying so is right, caching it is not:
             // a month is a long time to remember a refusal as a fact about the
@@ -366,13 +365,13 @@ public class GeocodingService {
         String cacheKey = PLACES_KEY_PREFIX + category
                 + ":" + round(latitude, 2) + ":" + round(longitude, 2)
                 + ":" + radiusMeters + ":" + limit;
-        String cached = valkeyTemplate.opsForValue().get(cacheKey);
+        String cached = cache.get(cacheKey);
         if (cached != null) {
             return readSuggestions(cached);
         }
 
-        List<GeoSuggestionResponse> places =
-                activeProvider().places(category, latitude, longitude, radiusMeters, limit);
+        List<GeoSuggestionResponse> places = singleFlight.run(
+                cacheKey, () -> activeProvider().places(category, latitude, longitude, radiusMeters, limit));
         if (!places.isEmpty()) {
             writeCache(cacheKey, places, placesCacheTtl);
         }
@@ -425,12 +424,13 @@ public class GeocodingService {
     private List<GeoSuggestionResponse> cachedSearch(
             String normalized, String rawQuery, Double nearLatitude, Double nearLongitude) {
         String cacheKey = SEARCH_KEY_PREFIX + normalized + ":" + roundOrDash(nearLatitude, 2) + ":" + roundOrDash(nearLongitude, 2);
-        String cached = valkeyTemplate.opsForValue().get(cacheKey);
+        String cached = cache.get(cacheKey);
         if (cached != null) {
             return readSuggestions(cached);
         }
 
-        List<GeoSuggestionResponse> suggestions = activeProvider().search(rawQuery, nearLatitude, nearLongitude);
+        List<GeoSuggestionResponse> suggestions =
+                singleFlight.run(cacheKey, () -> activeProvider().search(rawQuery, nearLatitude, nearLongitude));
         if (!suggestions.isEmpty()) {
             writeCache(cacheKey, suggestions, searchCacheTtl);
         }
@@ -445,12 +445,13 @@ public class GeocodingService {
                 "Too many location lookups. Please wait a moment.");
 
         String cacheKey = REVERSE_KEY_PREFIX + round(latitude, 4) + ":" + round(longitude, 4);
-        String cached = valkeyTemplate.opsForValue().get(cacheKey);
+        String cached = cache.get(cacheKey);
         if (cached != null) {
             return readReverse(cached);
         }
 
-        Optional<ReverseGeocodeResponse> result = activeProvider().reverse(latitude, longitude);
+        Optional<ReverseGeocodeResponse> result =
+                singleFlight.run(cacheKey, () -> activeProvider().reverse(latitude, longitude));
         result.ifPresent(value -> writeCache(cacheKey, value, reverseCacheTtl));
         return result;
     }
@@ -491,7 +492,7 @@ public class GeocodingService {
 
     private void writeCache(String key, Object value, Duration ttl) {
         try {
-            valkeyTemplate.opsForValue().set(key, objectMapper.writeValueAsString(value), ttl);
+            cache.set(key, objectMapper.writeValueAsString(value), ttl);
         } catch (Exception exception) {
             log.warn("Geo cache write skipped key={}", key, exception);
         }

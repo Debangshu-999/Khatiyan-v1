@@ -36,6 +36,7 @@ import {
   CHAT_LIVE_OPTIONS,
   THREAD_LIST_POLL_MS,
   useListEnquiryThreadsQuery,
+  useListBookingThreadsQuery,
   useListMyThreadsQuery,
   useListPersonalThreadsQuery,
   useListTenantThreadsQuery,
@@ -47,11 +48,13 @@ import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { NUDGE_REFETCH_OPTIONS, useGetNudgeUnreadCountQuery } from "@/store/services/nudge-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const NO_CHATS_ILLUSTRATION = require("../../assets/empty-states/No-Chats_512x512.png");
 
-type Section = "TENANTS" | "MINE" | "ENQUIRIES" | "NUDGES";
-type PersonalSection = "MINE" | "ENQUIRIES" | "NUDGES";
+// BOOKINGS: chats about bookings made in the app (user, 2026-10-27).
+type Section = "TENANTS" | "MINE" | "ENQUIRIES" | "BOOKINGS" | "NUDGES";
+type PersonalSection = "MINE" | "ENQUIRIES" | "BOOKINGS" | "NUDGES";
 
 /**
  * Conversations.
@@ -124,7 +127,9 @@ function ManagementChats() {
 
   // Sections swipe as well as tap (user, 2026-10-02); either way the new one
   // slides in from the side it lies on.
-  const sectionOrder: Section[] = canSeeTenants ? ["MINE", "TENANTS", "ENQUIRIES", "NUDGES"] : ["MINE", "ENQUIRIES", "NUDGES"];
+  const sectionOrder: Section[] = canSeeTenants
+    ? ["MINE", "TENANTS", "ENQUIRIES", "BOOKINGS", "NUDGES"]
+    : ["MINE", "ENQUIRIES", "BOOKINGS", "NUDGES"];
   const [arrivedFrom, setArrivedFrom] = useState<"left" | "right" | "none">("none");
   function goToSection(next: Section, from: "left" | "right" = arrivalSide(sectionOrder, section, next)) {
     if (next === section) return;
@@ -150,11 +155,12 @@ function ManagementChats() {
   const tenants = useListTenantThreadsQuery(propertyId, { ...fresh, skip: !propertyId || !canSeeTenants });
   const mine = useListPersonalThreadsQuery(propertyId, fresh);
   const enquiries = useListEnquiryThreadsQuery(propertyId, fresh);
+  const bookings = useListBookingThreadsQuery(propertyId, fresh);
   const [openTeamThread] = useOpenTeamThreadMutation();
   const [openDirectThread] = useOpenDirectThreadMutation();
 
   const active =
-    section === "TENANTS" ? tenants : section === "MINE" ? mine : enquiries;
+    section === "TENANTS" ? tenants : section === "MINE" ? mine : section === "BOOKINGS" ? bookings : enquiries;
 
   // The server sends every current tenant so the picker can offer them, but the
   // LIST only shows conversations that exist. A screen of "tap to start" rows is
@@ -233,7 +239,7 @@ function ManagementChats() {
         // The sent nudges are fetched by the embedded section, not here, so
         // they are refreshed by their tag.
         dispatch(api.util.invalidateTags(["Nudge"]));
-        await Promise.all([tenants.refetch(), mine.refetch(), enquiries.refetch()]);
+        await Promise.all([tenants.refetch(), mine.refetch(), enquiries.refetch(), bookings.refetch()]);
       }}
       safeAreaEdges={["top", "bottom"]}
       surface={colors.chatSurface}
@@ -243,9 +249,9 @@ function ManagementChats() {
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, letterSpacing: -0.3 }}>
             Chats
           </Text>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+          <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {property.name}
-          </Text>
+          </FitText>
         </View>
 
       </View>
@@ -273,6 +279,12 @@ function ManagementChats() {
           label="Enquiries"
           onPress={() => goToSection("ENQUIRIES")}
           selected={section === "ENQUIRIES"}
+        />
+        <SectionPill
+          count={bookings.data?.filter((thread) => thread.unread).length ?? 0}
+          label="Bookings"
+          onPress={() => goToSection("BOOKINGS")}
+          selected={section === "BOOKINGS"}
         />
         <SectionPill count={0} label="Nudges" onPress={() => goToSection("NUDGES")} selected={section === "NUDGES"} />
       </View>
@@ -311,6 +323,7 @@ function ManagementChats() {
                 }
                 onDelete={selection.ask}
                 selected={selection.selectedId === thread.id}
+                subtitle={thread.origin === "BOOKING" ? "Booking" : undefined}
                 thread={thread}
               />
             </View>
@@ -335,7 +348,7 @@ function ManagementChats() {
             onPress={() => setNudgeSheetOpen(true)}
           />
         ) : null}
-        {section !== "ENQUIRIES" && section !== "NUDGES" ? (
+        {section !== "ENQUIRIES" && section !== "BOOKINGS" && section !== "NUDGES" ? (
           <FloatingAction
             accessibilityLabel="Start a new chat"
             icon={MessageCirclePlus}
@@ -489,6 +502,9 @@ function emptyTitle(section: Section) {
   if (section === "TENANTS") {
     return "No tenant conversations";
   }
+  if (section === "BOOKINGS") {
+    return "No booking chats";
+  }
   return section === "MINE" ? "No personal chats" : "No enquiry chats";
 }
 
@@ -498,6 +514,9 @@ function emptyCopy(section: Section) {
   }
   if (section === "MINE") {
     return "Start one with the owner, a manager or a tenant using New chat.";
+  }
+  if (section === "BOOKINGS") {
+    return "Chats about the bookings you handle appear here. Start one with Chat on a booking's card.";
   }
   return "Enquiries answered over chat will appear here.";
 }
@@ -532,8 +551,12 @@ function PersonalChats() {
   // enquiries a property answered. One list mixed both, so the chat with the
   // place someone lives sat among conversations about places they only asked
   // about.
-  const personal = threads.filter((thread) => thread.kind !== "TEAM" && thread.origin !== "ENQUIRY");
+  const personal = threads.filter(
+    (thread) => thread.kind !== "TEAM" && thread.origin !== "ENQUIRY" && thread.origin !== "BOOKING",
+  );
   const enquiries = threads.filter((thread) => thread.origin === "ENQUIRY");
+  // Chats about the person's own bookings (user, 2026-10-27).
+  const bookingChats = threads.filter((thread) => thread.origin === "BOOKING");
 
   /**
    * The pinned row exists because the tenancy does, not because a conversation
@@ -614,9 +637,14 @@ function PersonalChats() {
   // only ever enquired has nothing there, so they open on Enquiries instead.
   const [chosenSection, setChosenSection] = useState<PersonalSection | null>(null);
   const section: PersonalSection =
-    chosenSection ?? (pinned || personal.length > 0 || enquiries.length === 0 ? "MINE" : "ENQUIRIES");
-  const others = section === "MINE" ? personal : enquiries;
-  const personalOrder: PersonalSection[] = ["MINE", "ENQUIRIES", "NUDGES"];
+    chosenSection ??
+    (pinned || personal.length > 0 || (enquiries.length === 0 && bookingChats.length === 0)
+      ? "MINE"
+      : enquiries.length > 0
+        ? "ENQUIRIES"
+        : "BOOKINGS");
+  const others = section === "MINE" ? personal : section === "BOOKINGS" ? bookingChats : enquiries;
+  const personalOrder: PersonalSection[] = ["MINE", "ENQUIRIES", "BOOKINGS", "NUDGES"];
   const [personalArrivedFrom, setPersonalArrivedFrom] = useState<"left" | "right" | "none">("none");
   function goToPersonal(next: PersonalSection, from: "left" | "right" = arrivalSide(personalOrder, section, next)) {
     if (next === section) return;
@@ -666,6 +694,12 @@ function PersonalChats() {
           selected={section === "ENQUIRIES"}
         />
         <SectionPill
+          count={bookingChats.filter((thread) => thread.unread).length}
+          label="Bookings"
+          onPress={() => goToPersonal("BOOKINGS")}
+          selected={section === "BOOKINGS"}
+        />
+        <SectionPill
           count={nudgeUnread.data ?? 0}
           label="Nudges"
           onPress={() => goToPersonal("NUDGES")}
@@ -684,10 +718,12 @@ function PersonalChats() {
             description={
               section === "MINE"
                 ? "Conversations with the property you rent appear here."
-                : "When a property answers your enquiry over chat, it appears here."
+                : section === "BOOKINGS"
+                  ? "Chats about your bookings appear here. Start one with Chat on a booking."
+                  : "When a property answers your enquiry over chat, it appears here."
             }
             artwork={NO_CHATS_ILLUSTRATION}
-            title={section === "MINE" ? "No chats yet" : "No enquiry chats"}
+            title={section === "MINE" ? "No chats yet" : section === "BOOKINGS" ? "No booking chats" : "No enquiry chats"}
           />
         </CentredEmpty>
       ) : null}
@@ -724,13 +760,17 @@ function PersonalChats() {
                 }
                 if (thread.id) {
                   router.push(
-                    threadRoute(thread.id, thread, thread.origin === "ENQUIRY" ? "Enquiry" : null),
+                    threadRoute(
+                      thread.id,
+                      thread,
+                      thread.origin === "ENQUIRY" ? "Enquiry" : thread.origin === "BOOKING" ? "Booking" : null,
+                    ),
                   );
                 }
               }}
               onDelete={selection.ask}
                 selected={selection.selectedId === thread.id}
-              subtitle={thread.origin === "ENQUIRY" ? "Enquiry" : null}
+              subtitle={thread.origin === "ENQUIRY" ? "Enquiry" : thread.origin === "BOOKING" ? "Booking" : null}
               thread={thread}
             />
           ))}

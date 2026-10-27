@@ -6,10 +6,11 @@ import { useTheme } from "@/theme/use-theme";
 
 type DiscoveryEmptyStateProps = {
   title: string;
-  description: string;
+  /** Kept compatible with existing callers; empty-state helper text is not displayed. */
+  description?: string;
 };
 
-export function DiscoveryEmptyState({ title, description }: DiscoveryEmptyStateProps) {
+export function DiscoveryEmptyState({ title }: DiscoveryEmptyStateProps) {
   const { colors, fonts, type } = useTheme();
 
   return (
@@ -28,9 +29,6 @@ export function DiscoveryEmptyState({ title, description }: DiscoveryEmptyStateP
           }}
         >
           {title}
-        </Text>
-        <Text style={[type.description, { color: colors.muted }]}>
-          {description}
         </Text>
       </View>
     </Card>

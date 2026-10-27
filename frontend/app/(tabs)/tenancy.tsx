@@ -75,6 +75,7 @@ import {
   type RequestBlock,
 } from "@/features/tenancy/request-blocked-modal";
 import { formatFloor } from "@/features/property/floor";
+import { FitText } from "@/components/fit-text";
 
 // The same drawing the owner's Deposit manager tile carries on Home. A deposit
 // is one thing across both sides of the app and should look like one thing.
@@ -488,14 +489,13 @@ function TenancyOverviewCard({
             <PropertyArtwork size={24} />
             {/* No "Current stay" eyebrow (user, 2026-09-27): the name alone. */}
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text
-                adjustsFontSizeToFit
+              <FitText
                 minimumFontScale={0.78}
                 numberOfLines={1}
                 style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}
               >
                 {activeTenancy.property.name}
-              </Text>
+              </FitText>
             </View>
             {/* Hidden before the start date. "Active" there is the record's
                 status, not the tenant's reality, and the bubble below already
@@ -659,9 +659,9 @@ function TenancyStatusPill({ status }: { status: string }) {
       }}
     >
       <View style={{ backgroundColor: dot, borderRadius: 999, height: 7, width: 7 }} />
-      <Text numberOfLines={1} style={{ color: text, fontFamily: fonts.sansBold, fontSize: 12 }}>
+      <FitText numberOfLines={1} style={{ color: text, fontFamily: fonts.sansBold, fontSize: 12 }}>
         {tenancyStatusLabel(status as TenancyStatus)}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -738,9 +738,9 @@ function AllBillsCard({
         />
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>All bills on this stay</Text>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             My Bills
-          </Text>
+          </FitText>
         </View>
         <SummaryChevron hasUpdate={hasUnpaid} />
       </AnimatedPressable>
@@ -798,9 +798,9 @@ function StayRequestsCard({
         />
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>On this stay</Text>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             My Requests
-          </Text>
+          </FitText>
         </View>
         <SummaryChevron hasUpdate={hasUpdate} />
       </AnimatedPressable>
@@ -850,9 +850,9 @@ function TenantConcernsCard({
         />
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>On this stay</Text>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             My Concerns
-          </Text>
+          </FitText>
         </View>
         <SummaryChevron hasUpdate={hasUpdate} />
       </AnimatedPressable>
@@ -957,9 +957,9 @@ function BillStat({
         paddingLeft: divided ? spacing.sm : 0,
       }}
     >
-      <Text numberOfLines={1} style={{ color: tone ?? colors.ink, fontFamily: fonts.sansBold, fontSize: 17 }}>
+      <FitText numberOfLines={1} style={{ color: tone ?? colors.ink, fontFamily: fonts.sansBold, fontSize: 17 }}>
         {value}
-      </Text>
+      </FitText>
       <Text style={[type.caption, { color: colors.kicker }]}>{label}</Text>
     </View>
   );
@@ -1007,12 +1007,12 @@ function EntryCard({
       ) : null}
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
         <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
-        <Text
+        <FitText
           numberOfLines={1}
           style={{ color: onPress ? colors.ink : colors.muted, fontFamily: fonts.sansBold, fontSize: 17 }}
         >
           {value}
-        </Text>
+        </FitText>
       </View>
       {onPress ? <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} /> : null}
     </>

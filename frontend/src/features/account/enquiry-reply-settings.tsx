@@ -6,6 +6,7 @@ import { Card } from "@/components/card";
 import { useToast } from "@/components/toast";
 import { AccountEnquiryRepliesSkeleton } from "@/components/skeletons/account";
 import { ConsentTick } from "@/features/compliance/clickwrap-consent";
+import { ActionButton } from "@/features/owner/owner-ui";
 import {
   describeChannelName,
   describeEmailChannelGapShort,
@@ -16,6 +17,7 @@ import {
 } from "@/store/services/enquiry-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The standing decision about how a property may reply to an enquiry.
@@ -27,8 +29,12 @@ import { useTheme } from "@/theme/use-theme";
  * under them is the agreement to share them.
  *
  * <p>The tick gates the switches rather than sitting beside them as decoration.
- * Untick it and every live grant is withdrawn, because it is the agreement the
+ * Untick it and every grant is switched off, because it is the agreement the
  * grants rest on, not a preference of its own.
+ *
+ * <p><b>Nothing applies until Save (user, 2026-10-18).</b> The switches and the
+ * tick are a draft. Save is enabled only while the draft differs from what is
+ * saved, so switching a channel off after a save enables it again.
  */
 export function EnquiryReplySettings() {
   const { colors, type } = useTheme();
@@ -51,6 +57,8 @@ export function EnquiryReplySettings() {
    * made, here it is being shown back.
    */
   const [ticked, setTicked] = useState<boolean | null>(null);
+  /** The switches as drafted, null while they match what is saved. */
+  const [drafted, setDrafted] = useState<EnquiryResponseChannel[] | null>(null);
   const agreed = ticked ?? anyGranted;
 
   if (consentsQuery.isLoading && !consents) {
@@ -61,42 +69,36 @@ export function EnquiryReplySettings() {
     return null;
   }
 
-  const live = consents.channels
+  const saved = consents.channels
     .filter((option) => option.granted && !option.locked)
     .map((option) => option.channel);
-
-  /** `message` null means say nothing — the switch moving is the confirmation. */
-  async function apply(channels: EnquiryResponseChannel[], message: string | null) {
-    try {
-      await save({ agreed: true, channels }).unwrap();
-      if (message) {
-        toast.show(message, "success");
-      }
-    } catch {
-      toast.show("Could not change that. Try again.", "error");
-    }
-  }
+  const picked = drafted ?? saved;
+  const changed = picked.length !== saved.length || picked.some((channel) => !saved.includes(channel));
 
   function toggleChannel(channel: EnquiryResponseChannel, on: boolean) {
-    const next = on ? [...live, channel] : live.filter((each) => each !== channel);
-    // Nothing on the way up. The switch itself already says what happened, and a
-    // toast for it was one confirmation too many. Turning something OFF still
-    // speaks, because that one has a consequence worth naming.
-    void apply(next, on ? null : `${describeChannelName(channel)} turned off for new enquiries.`);
+    setDrafted(on ? [...picked.filter((each) => each !== channel), channel] : picked.filter((each) => each !== channel));
   }
 
   function toggleAgreement() {
-    // Ticking grants nothing on its own — there is no channel picked yet, and a
-    // tick that silently switched things on would be agreeing on someone's
-    // behalf. Unticking is a withdrawal and takes everything with it.
+    // Ticking picks nothing on its own — a tick that switched things on would be
+    // agreeing on someone's behalf. Unticking is a withdrawal and drafts every
+    // channel off, for Save to apply.
     if (agreed) {
       setTicked(false);
-      if (live.length > 0) {
-        void apply([], "Reply channels turned off.");
-      }
+      setDrafted([]);
       return;
     }
     setTicked(true);
+  }
+
+  async function submit() {
+    try {
+      await save({ agreed, channels: picked }).unwrap();
+      setDrafted(null);
+      toast.show(picked.length === 0 ? "Reply channels turned off." : "Communication permissions saved.", "success");
+    } catch {
+      toast.show("Could not save that. Try again.", "error");
+    }
   }
 
   return (
@@ -118,6 +120,7 @@ export function EnquiryReplySettings() {
             canChange={agreed}
             first={index === 0}
             key={option.channel}
+            on={picked.includes(option.channel)}
             onToggle={(on) => toggleChannel(option.channel, on)}
             option={option}
             unavailableNote={option.channel === "EMAIL" ? describeEmailChannelGapShort(consents.emailChannelState) : null}
@@ -131,6 +134,15 @@ export function EnquiryReplySettings() {
           I agree to share the contact details I picked with the properties I enquire to.
         </Text>
       </View>
+
+      {/* In a row, because ActionButton grows to fill a column. */}
+      <View style={{ flexDirection: "row" }}>
+        <ActionButton
+          disabled={!changed || saveState.isLoading}
+          label={saveState.isLoading ? "Saving…" : "Save"}
+          onPress={() => void submit()}
+        />
+      </View>
     </Card>
   );
 }
@@ -139,6 +151,7 @@ function ChannelPreferenceRow({
   busy,
   canChange,
   first,
+  on,
   onToggle,
   option,
   unavailableNote,
@@ -146,6 +159,8 @@ function ChannelPreferenceRow({
   busy: boolean;
   canChange: boolean;
   first: boolean;
+  /** As drafted, which may differ from what is saved until Save. */
+  on: boolean;
   onToggle: (on: boolean) => void;
   option: EnquiryChannelOption;
   unavailableNote: string | null;
@@ -182,9 +197,9 @@ function ChannelPreferenceRow({
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
           {describeChannelName(option.channel)}
         </Text>
-        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
+        <FitText numberOfLines={2} style={[type.description, { color: colors.muted }]}>
           {description}
-        </Text>
+        </FitText>
       </View>
 
       {/* A locked channel gets words, not a dead switch. A switch nobody can move
@@ -197,7 +212,7 @@ function ChannelPreferenceRow({
           onValueChange={onToggle}
           thumbColor={colors.surface}
           trackColor={{ false: colors.neutralSoft, true: colors.primary }}
-          value={option.granted}
+          value={on}
         />
       )}
     </View>

@@ -17,6 +17,8 @@ import { billTitle, type BillingCycle } from "@/store/services/billing-api";
 import { GhostText } from "@/components/skeleton-boundary";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 // Shared, read-only bill views + pure bill helpers, reused by the owner
 // payment-history and tenant-bills screens. The main billing screen keeps its
@@ -171,12 +173,12 @@ export function BillTotal({ cycle, size = 24 }: { cycle: BillingCycle; size?: nu
         </GhostText>
         {discount ? (
           <>
-            <Text
+            <FitText
               style={[type.caption, { color: colors.muted, textDecorationLine: "line-through" }]}
               numberOfLines={1}
             >
               {formatMoney(discount.grossPaise)}
-            </Text>
+            </FitText>
             <View style={{ backgroundColor: colors.jadeSoft, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1 }}>
               <Text style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11 }}>
                 {discount.percent}% off
@@ -239,9 +241,9 @@ export function BillingStatusBadge({
       }}
     >
       <Icon color={color} size={13} strokeWidth={2.3} />
-      <Text numberOfLines={1} style={{ color, fontFamily: fonts.sansBold, fontSize: 11 }}>
+      <FitText numberOfLines={1} style={{ color, fontFamily: fonts.sansBold, fontSize: 11 }}>
         {label}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -368,7 +370,7 @@ export function InfoBlock({ label, strong = false, value }: { label: string; str
       <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
-      <Text
+      <FitText
         numberOfLines={1}
         style={{
           color: colors.ink,
@@ -379,7 +381,7 @@ export function InfoBlock({ label, strong = false, value }: { label: string; str
         }}
       >
         {value}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -456,20 +458,20 @@ export function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
 
         <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
+            <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
               {cycle.referenceCode}
-            </Text>
+            </FitText>
             <PaymentStatusBadge cycle={cycle} />
           </View>
-          <Text
+          <FitText
             numberOfLines={1}
             style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 24 }}
           >
-            {tenantName}
-          </Text>
-          <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+            {cardName(tenantName)}
+          </FitText>
+          <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
             {billTitle(cycle)} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
-          </Text>
+          </FitText>
         </View>
       </View>
 
@@ -509,15 +511,15 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
         <View style={{ flex: 1, gap: spacing.sm, minWidth: 0 }}>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
             <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-              <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
+              <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
                 {cycle.referenceCode}
-              </Text>
-              <Text
+              </FitText>
+              <FitText
                 numberOfLines={2}
                 style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
               >
-                {tenantName}
-              </Text>
+                {cardName(tenantName)}
+              </FitText>
             </View>
 
             <View style={{ alignItems: "flex-end", gap: spacing.sm, marginRight: -spacing.xs }}>
@@ -554,9 +556,9 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
         ) : (
           <ReceiptText color={colors.primary} size={17} strokeWidth={2.1} />
         )}
-        <Text numberOfLines={2} style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 18 }]}>
+        <FitText numberOfLines={2} style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 18 }]}>
           {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
-        </Text>
+        </FitText>
       </View>
 
       {/* Why it was cancelled, kept on the bill so it does not just turn grey. */}

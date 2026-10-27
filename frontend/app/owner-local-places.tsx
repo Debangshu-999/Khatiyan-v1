@@ -39,6 +39,7 @@ import {
 import type { OwnerProperty } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const NO_LOCATION_ILLUSTRATION = require("../assets/empty-states/No-Location_512x512.png");
 
@@ -332,9 +333,9 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
             paddingHorizontal: spacing.md,
           }}
         >
-          <Text style={[type.body, { color: selectedNames.length > 0 ? colors.ink : colors.muted, flex: 1, fontWeight: "700" }]} numberOfLines={1}>
+          <FitText style={[type.body, { color: selectedNames.length > 0 ? colors.ink : colors.muted, flex: 1, fontWeight: "700" }]} numberOfLines={1}>
             {selectedNames.length > 0 ? `${selectedNames.length} selected` : "Choose categories"}
-          </Text>
+          </FitText>
           <ChevronDown color={colors.muted} size={18} strokeWidth={2.3} />
         </AnimatedPressable>
         <FieldError message={form.errors.categories} />

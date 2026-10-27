@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useMemo, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -48,6 +49,7 @@ import {
 import type { MealType } from "@/store/services/property-api";
 import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * One profile's week, a day at a time.
@@ -296,12 +298,12 @@ function MealSection({
           >
             <FoodItemThumb imageUrl={entry.itemImageUrl} size={46} />
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
+              <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
                 {entry.itemName}
-              </Text>
-              <Text numberOfLines={2} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5, lineHeight: 16 }}>
+              </FitText>
+              <FitText numberOfLines={2} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5, lineHeight: 16 }}>
                 {entrySummary(entry)}
-              </Text>
+              </FitText>
             </View>
             {!readOnly ? (
               <View style={{ flexDirection: "row", gap: spacing.xxs }}>
@@ -490,9 +492,9 @@ function FoodItemPickerDialog({
             }}
           >
             <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
                 Add to {MEAL_LABEL[meal].toLowerCase()}
-              </Text>
+              </ModalTitle>
               <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
                 {DAY_LABEL[day]} · tap to pick as many as you need
               </Text>
@@ -552,7 +554,7 @@ function FoodItemPickerDialog({
                   >
                     <FoodItemThumb imageUrl={item.imageUrl} size={48} />
                     <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-                      <Text
+                      <FitText
                         numberOfLines={1}
                         style={{
                           color: picked ? colors.primaryDeep : colors.ink,
@@ -561,7 +563,7 @@ function FoodItemPickerDialog({
                         }}
                       >
                         {item.name}
-                      </Text>
+                      </FitText>
                       <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5 }}>
                         Measured in {FOOD_UNIT_LABEL[item.quantityUnit]}
                       </Text>
@@ -723,9 +725,9 @@ function MenuEntrySheet({
           only reason this sheet needed the whole catalogue loaded. */}
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <FoodItemThumb imageUrl={entry.itemImageUrl} size={44} />
-        <Text numberOfLines={2} style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 16 }}>
+        <FitText numberOfLines={2} style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 16 }}>
           {entry.itemName}
-        </Text>
+        </FitText>
       </View>
 
       <FormInput

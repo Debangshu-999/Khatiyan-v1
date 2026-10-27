@@ -93,6 +93,12 @@ public class GlobalExceptionHandler {
             .body(ErrorResponse.of(e.getCode(), e.getMessage()));
     }
 
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleServiceUnavailable(ServiceUnavailableException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(ErrorResponse.of(e.getCode(), e.getMessage()));
+    }
+
     @ExceptionHandler(PaymentProviderUnavailableException.class)
     public ResponseEntity<ErrorResponse> handlePaymentProviderUnavailable(PaymentProviderUnavailableException e) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)

@@ -1,7 +1,10 @@
 package com.khatiyan.d_modules.property.service;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -94,6 +97,21 @@ public class RoomMoldService {
                 .sorted(BY_OCCUPANCY)
                 .map(mold -> RoomMoldResponse.from(mold, roomRepository.countByMoldId(mold.getId())))
                 .toList();
+    }
+
+    /**
+     * Each type's photos by the type's id, first one first, for a screen that
+     * lists rooms and shows what a room of that type looks like (the booking
+     * form). No access check, like {@link #listPublicTypes}: these are the
+     * photos the public listing already shows. A type with no photo is absent.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, List<String>> imageUrlsByType(UUID propertyId) {
+        Map<UUID, List<String>> byType = new LinkedHashMap<>();
+        for (Object[] row : roomMoldRepository.findImageUrlsByPropertyId(propertyId)) {
+            byType.computeIfAbsent((UUID) row[0], type -> new ArrayList<>()).add((String) row[1]);
+        }
+        return byType;
     }
 
     /**

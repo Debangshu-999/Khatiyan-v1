@@ -46,6 +46,7 @@ import {
 } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 const REQUEST_HISTORY_ILLUSTRATION = require("../assets/images/workspace/staff-history.png");
@@ -461,12 +462,12 @@ function RequestCardHeader({
           justifyContent: "space-between",
         }}
       >
-        <Text
+        <FitText
           numberOfLines={1}
           style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20 }}
         >
           {title}
-        </Text>
+        </FitText>
         <StatusPill label={humanizeToken(status)} tone={statusTone(status)} />
       </View>
       <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>

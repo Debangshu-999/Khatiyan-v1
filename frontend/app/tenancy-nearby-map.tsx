@@ -26,8 +26,10 @@ import {
   type LocalPlacesMap,
   type PropertyLocalPlace,
 } from "@/store/services/discovery-api";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The tenant's neighbourhood, on a map.
@@ -435,10 +437,7 @@ export default function TenancyNearbyMapScreen() {
             justifyContent: "center",
             position: "absolute",
             right: spacing.md,
-            shadowColor: colors.shadow,
-            shadowOffset: { height: 2, width: 0 },
-            shadowOpacity: 0.2,
-            shadowRadius: 6,
+            ...softShadow(colors.shadow, 2, 6, 0.2),
             width: 46,
           }}
         >
@@ -550,19 +549,16 @@ export default function TenancyNearbyMapScreen() {
               padding: spacing.md,
               position: "absolute",
               right: spacing.md,
-              shadowColor: colors.shadow,
-              shadowOffset: { height: 3, width: 0 },
-              shadowOpacity: 0.22,
-              shadowRadius: 8,
+              ...softShadow(colors.shadow, 3, 8, 0.22),
             }}
           >
             <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
               <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
                 <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{callout.name}</MarqueeText>
                 {callout.address ? (
-                  <Text numberOfLines={2} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
+                  <FitText numberOfLines={2} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
                     {callout.address}
-                  </Text>
+                  </FitText>
                 ) : null}
                 <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5 }}>
                   {[callout.distance, callout.listed ? "Listed by your property" : null]
@@ -640,14 +636,11 @@ export default function TenancyNearbyMapScreen() {
               gap: spacing.xs,
               minHeight: 48,
               paddingHorizontal: spacing.md,
-              shadowColor: colors.shadow,
-              shadowOffset: { height: 2, width: 0 },
-              shadowOpacity: 0.18,
-              shadowRadius: 6,
+              ...softShadow(colors.shadow, 2, 6, 0.18),
             }}
           >
             <MaterialCommunityIcons color={colors.primary} name="magnify" size={21} />
-            <Text
+            <FitText
               numberOfLines={1}
               style={{
                 color: committed ? colors.ink : colors.muted,
@@ -657,7 +650,7 @@ export default function TenancyNearbyMapScreen() {
               }}
             >
               {committed || "Search a place or a category"}
-            </Text>
+            </FitText>
             {searching ? (
               <AnimatedPressable
                 accessibilityLabel="Clear search"
@@ -696,10 +689,7 @@ export default function TenancyNearbyMapScreen() {
                     gap: spacing.xxs,
                     paddingHorizontal: spacing.md,
                     paddingVertical: spacing.xs,
-                    shadowColor: colors.shadow,
-                    shadowOffset: { height: 2, width: 0 },
-                    shadowOpacity: 0.15,
-                    shadowRadius: 4,
+                    ...softShadow(colors.shadow, 2, 4, 0.15),
                   }}
                 >
                   <MaterialCommunityIcons
@@ -903,10 +893,7 @@ function ResultBanner({
         maxWidth: "100%",
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.xs,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 0.16,
-        shadowRadius: 5,
+        ...softShadow(colors.shadow, 2, 5, 0.16),
       }}
     >
       {fetching ? (
@@ -918,12 +905,12 @@ function ResultBanner({
           size={16}
         />
       )}
-      <Text
+      <FitText
         numberOfLines={1}
         style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansMedium, fontSize: 12.5 }}
       >
         {message}
-      </Text>
+      </FitText>
       <AnimatedPressable
         accessibilityLabel="Clear search"
         accessibilityRole="button"
@@ -1158,13 +1145,9 @@ function PlaceCard({
         borderColor: colors.border,
         borderRadius: radii.card,
         borderWidth: 1,
-        elevation: flat ? 0 : 4,
         gap: spacing.sm,
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: flat ? 0 : 0.18,
-        shadowRadius: 6,
+        ...(flat ? {} : softShadow(colors.shadow, 2, 6, 0.18)),
       }}
     >
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -1178,16 +1161,16 @@ function PlaceCard({
             </View>
           </View>
           {address ? (
-            <Text numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
+            <FitText numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
               {address}
-            </Text>
+            </FitText>
           ) : null}
-          <Text
+          <FitText
             numberOfLines={1}
             style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5 }}
           >
             {meta}
-          </Text>
+          </FitText>
         </View>
       </View>
 

@@ -13,4 +13,7 @@ public interface LeadActivityRepository extends JpaRepository<LeadActivity, UUID
 
     /** One lead's timeline, newest first. */
     List<LeadActivity> findByLeadIdOrderByOccurredAtDescCreatedAtDesc(UUID leadId);
+
+    /** The booking steps already on a lead's timeline, so each is written once. */
+    List<LeadActivity> findByLeadIdAndBookingRequestIdIsNotNull(UUID leadId);
 }

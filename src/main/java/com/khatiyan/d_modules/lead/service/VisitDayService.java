@@ -19,11 +19,14 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
+import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -132,6 +135,7 @@ public class VisitDayService {
         Map<UUID, EnquirySnapshot> enquiries = enquiryModule.findSnapshots(
                 visits.stream().map(Visit::getEnquiryId).collect(Collectors.toSet()));
         Map<UUID, UserSummaryResponse> users = authModule.findByIds(peopleOn(visits, enquiries));
+        Map<UUID, String> walkIns = externalNames(visits);
 
         Instant instant = Instant.now();
         List<VisitCardResponse> todays = new ArrayList<>();
@@ -139,7 +143,7 @@ public class VisitDayService {
         List<VisitCardResponse> missed = new ArrayList<>();
         for (Visit visit : visits) {
             EnquirySnapshot enquiry = enquiries.get(visit.getEnquiryId());
-            VisitCardResponse card = card(visit, enquiry, users, actorUserId, property.ownerId(), today);
+            VisitCardResponse card = card(visit, enquiry, users, walkIns, actorUserId, property.ownerId(), today);
             if (card.state() == VisitCardState.MISSED) {
                 // Listed while its enquiry is still open: once that ends, nothing can come of it.
                 if (enquiry != null && !enquiry.isOver(instant)) {
@@ -164,6 +168,54 @@ public class VisitDayService {
                 property.ownerId().equals(actorUserId), slotsOn(propertyId, today), todays, upcoming, missed);
     }
 
+    /** Bounded visitor history for the selected property, available to its management. */
+    @Transactional(readOnly = true)
+    public PageResponse<VisitCardResponse> propertyHistory(UUID actorUserId, UUID propertyId, int page, int size) {
+        return propertyHistory(actorUserId, propertyId, page, size, null);
+    }
+
+    /** The history narrowed by status: ALL (the default), VISITED, NO_VISIT or CANCELLED. */
+    @Transactional(readOnly = true)
+    public PageResponse<VisitCardResponse> propertyHistory(
+            UUID actorUserId, UUID propertyId, int page, int size, String status) {
+        String filter = status == null || status.isBlank() ? "ALL" : status.strip().toUpperCase(java.util.Locale.ROOT);
+        if (!HISTORY_FILTERS.contains(filter)) {
+            throw new ValidationException("Pick All, Visited, No visit or Cancelled.");
+        }
+        propertyModule.ensureCanManageProperty(actorUserId, propertyId);
+        PropertyResponse property = propertyModule.getActiveProperty(propertyId);
+        LocalDate today = now().toLocalDate();
+        Page<Visit> found = visitRepository.findPropertyHistory(propertyId, today, filter, historyPage(page, size));
+        Map<UUID, EnquirySnapshot> enquiries = enquiryModule.findSnapshots(found.getContent().stream()
+                .map(Visit::getEnquiryId).filter(java.util.Objects::nonNull).collect(Collectors.toSet()));
+        Set<UUID> people = peopleOn(found.getContent(), enquiries);
+        Map<UUID, UserSummaryResponse> users = people.isEmpty() ? Map.of() : authModule.findByIds(people);
+        Map<UUID, String> walkIns = externalNames(found.getContent());
+        List<VisitCardResponse> items = found.getContent().stream()
+                .map(visit -> card(visit, enquiries.get(visit.getEnquiryId()), users, walkIns, actorUserId,
+                        property.ownerId(), today))
+                .toList();
+        return historyResponse(found, items);
+    }
+
+    /** The signed-in visitor's history, including cancelled visits. */
+    @Transactional(readOnly = true)
+    public PageResponse<MyVisitResponse> myHistory(UUID actorUserId, int page, int size) {
+        Page<Visit> found = visitRepository.findProspectHistory(actorUserId, now().toLocalDate(), historyPage(page, size));
+        return historyResponse(found, myVisitCards(found.getContent()));
+    }
+
+    private static final Set<String> HISTORY_FILTERS = Set.of("ALL", "VISITED", "NO_VISIT", "CANCELLED");
+
+    private static PageRequest historyPage(int page, int size) {
+        return PageRequest.of(Math.max(0, page), Math.min(50, Math.max(1, size)));
+    }
+
+    private static <T> PageResponse<T> historyResponse(Page<Visit> found, List<T> items) {
+        return new PageResponse<>(items, found.getNumber(), found.getSize(), found.getTotalElements(),
+                found.getTotalPages(), found.hasNext(), found.hasPrevious());
+    }
+
     /**
      * The visitor's own visits, at any property, latest first. Four reads
      * however many there are: the visits, their properties, their enquiries,
@@ -173,6 +225,10 @@ public class VisitDayService {
     public List<MyVisitResponse> myVisits(UUID actorUserId) {
         List<Visit> visits = visitRepository.findByProspectUserIdAndStatusNotOrderByVisitDateDescSlotStartMinuteDesc(
                 actorUserId, VisitStatus.CANCELLED);
+        return myVisitCards(visits);
+    }
+
+    private List<MyVisitResponse> myVisitCards(List<Visit> visits) {
         if (visits.isEmpty()) {
             return List.of();
         }
@@ -350,7 +406,7 @@ public class VisitDayService {
             }
         }
         // Refuses by itself when they are already in, the slot has not started, or the day is over.
-        visit.checkIn(actorUserId, byToken ? VisitCheckInMethod.QR : VisitCheckInMethod.CODE, Instant.now(), now);
+        visit.checkIn(actorUserId, byToken ? VisitCheckInMethod.QR : VisitCheckInMethod.CODE, clock.instant(), now);
         return attended(visit, actorUserId);
     }
 
@@ -362,12 +418,15 @@ public class VisitDayService {
         if (!property.ownerId().equals(actorUserId)) {
             throw new ForbiddenException("Only the owner can mark a missed check-in");
         }
-        visit.markMissedCheckIn(actorUserId, Instant.now(), now());
+        visit.markMissedCheckIn(actorUserId, clock.instant(), now());
         return attended(visit, actorUserId);
     }
 
     private VisitCardResponse attended(Visit visit, UUID actorUserId) {
         Visit saved = visitRepository.saveAndFlush(visit);
+        if (saved.getEnquiryId() != null) {
+            enquiryModule.visitAttended(saved.getEnquiryId(), saved.getId());
+        }
         leadActivityRepository.save(LeadActivity.by(
                 actorUserId, saved.getLeadId(), LeadActivityType.VISIT_ATTENDED, saved.getEnquiryId(),
                 LeadVisitService.when(saved), saved.getCheckedInAt()));
@@ -506,14 +565,16 @@ public class VisitDayService {
         PropertyResponse property = propertyModule.getActiveProperty(visit.getPropertyId());
         return card(
                 visit, enquiries.get(visit.getEnquiryId()),
-                authModule.findByIds(peopleOn(List.of(visit), enquiries)),
+                authModule.findByIds(peopleOn(List.of(visit), enquiries)), externalNames(List.of(visit)),
                 viewerUserId, property.ownerId(), now().toLocalDate());
     }
 
     private static Set<UUID> peopleOn(List<Visit> visits, Map<UUID, EnquirySnapshot> enquiries) {
         Set<UUID> ids = new HashSet<>();
         for (Visit visit : visits) {
-            ids.add(visit.getProspectUserId());
+            if (visit.getProspectUserId() != null) {
+                ids.add(visit.getProspectUserId());
+            }
             if (visit.getCheckedInByUserId() != null) {
                 ids.add(visit.getCheckedInByUserId());
             }
@@ -548,18 +609,35 @@ public class VisitDayService {
                 now.date(),
                 now.slotStart(),
                 now.placedAt(),
-                now.version());
+                now.version(),
+                now.external());
+    }
+
+    /** The names of people who walked in, read once for the visits on screen (2026-10-19). */
+    private Map<UUID, String> externalNames(List<Visit> visits) {
+        List<UUID> ids = visits.stream().map(Visit::getExternalProspectId).filter(java.util.Objects::nonNull)
+                .distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, String> names = new java.util.HashMap<>();
+        jdbcTemplate.query("SELECT id, full_name FROM lead.external_prospects WHERE id = ANY (?)",
+                rs -> {
+                    names.put(rs.getObject("id", UUID.class), rs.getString("full_name"));
+                },
+                (Object) ids.toArray(new UUID[0]));
+        return names;
     }
 
     private static VisitCardResponse card(
             Visit visit, EnquirySnapshot enquiry, Map<UUID, UserSummaryResponse> users,
-            UUID viewerUserId, UUID ownerUserId, LocalDate today) {
+            Map<UUID, String> walkIns, UUID viewerUserId, UUID ownerUserId, LocalDate today) {
         UUID handler = enquiry == null ? null : enquiry.handlerUserId();
         return new VisitCardResponse(
                 visit.getId(),
                 visit.getReferenceCode(),
                 visit.getEnquiryId(),
-                nameOf(users, visit.getProspectUserId()),
+                visit.isExternal() ? walkIns.get(visit.getExternalProspectId()) : nameOf(users, visit.getProspectUserId()),
                 visit.getVisitDate(),
                 visit.getSlotStart(),
                 visit.getSlotEnd(),
@@ -584,7 +662,8 @@ public class VisitDayService {
                 null,
                 null,
                 visit.getMovedAt() != null ? visit.getMovedAt() : visit.getCreatedAt(),
-                visit.getVersion());
+                visit.getVersion(),
+                visit.isExternal());
     }
 
     private Visit find(UUID visitId) {

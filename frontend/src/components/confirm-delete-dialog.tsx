@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { Modal, Pressable, Text, View } from "react-native";
 
@@ -62,9 +63,9 @@ export function ConfirmDeleteDialog({
             width: "100%",
           }}
         >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
+          <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
             {title}
-          </Text>
+          </ModalTitle>
           <Text style={[type.modalDescription, { color: colors.muted, marginTop: spacing.sm }]}>
             {message}
           </Text>

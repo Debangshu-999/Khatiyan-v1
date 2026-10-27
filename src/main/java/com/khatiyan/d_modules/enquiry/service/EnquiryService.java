@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.enquiry.service;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.time.Year;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -54,17 +55,21 @@ import com.khatiyan.d_modules.enquiry.event.EnquiryRespondedEvent;
 import com.khatiyan.d_modules.enquiry.event.EnquiryWindowClosedEvent;
 import com.khatiyan.d_modules.enquiry.model.Enquiry;
 import com.khatiyan.d_modules.enquiry.model.EnquiryAttemptOutcome;
+import com.khatiyan.d_modules.enquiry.EnquiryLeadMarks;
 import com.khatiyan.d_modules.enquiry.EnquiryVisitLookup;
+import com.khatiyan.d_modules.enquiry.api.dto.EnquiryRepeatMark;
 import com.khatiyan.d_modules.enquiry.api.dto.CancelledVisitView;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryHandlerSettingsRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryHandlerSettingsResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryItemResponse;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryState;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryVisitView;
+import com.khatiyan.d_modules.enquiry.api.dto.PostVisitBookingEligibility;
 import com.khatiyan.d_modules.enquiry.model.EnquiryCallResult;
 import com.khatiyan.d_modules.enquiry.model.EnquiryEndReason;
 import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
 import com.khatiyan.d_modules.enquiry.model.EnquiryHandlerMode;
+import com.khatiyan.d_modules.enquiry.model.EnquiryOrigin;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponse;
 import com.khatiyan.d_modules.enquiry.model.EnquiryResponseChannel;
 import com.khatiyan.d_modules.enquiry.model.EnquiryStatus;
@@ -126,7 +131,10 @@ public class EnquiryService {
     private final AuthModule authModule;
     private final NotificationModule notificationModule;
     private final EnquiryVisitLookup visitLookup;
+    private final EnquiryLeadMarks leadMarks;
+    private final com.khatiyan.d_modules.tenancy.TenancyModule tenancyModule;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     public EnquiryService(
             EnquiryRepository enquiryRepository,
@@ -138,7 +146,9 @@ public class EnquiryService {
             AuthModule authModule,
             NotificationModule notificationModule,
             EnquiryVisitLookup visitLookup,
-            ApplicationEventPublisher eventPublisher) {
+            EnquiryLeadMarks leadMarks,
+            @org.springframework.context.annotation.Lazy com.khatiyan.d_modules.tenancy.TenancyModule tenancyModule,
+            ApplicationEventPublisher eventPublisher, Clock clock) {
         this.enquiryRepository = enquiryRepository;
         this.enquiryResponseRepository = enquiryResponseRepository;
         this.consentService = consentService;
@@ -148,7 +158,10 @@ public class EnquiryService {
         this.authModule = authModule;
         this.notificationModule = notificationModule;
         this.visitLookup = visitLookup;
+        this.leadMarks = leadMarks;
+        this.tenancyModule = tenancyModule;
         this.eventPublisher = eventPublisher;
+        this.clock = clock;
     }
 
     /**
@@ -181,13 +194,13 @@ public class EnquiryService {
 
         List<Enquiry> current = currentAt(actorUserId, propertyId);
         // A live one, answered or not, is the one to use (owner's rule, 2026-10-03).
-        Enquiry live = current.stream().filter(enquiry -> !enquiry.isOver()).findFirst().orElse(null);
+        Enquiry live = current.stream().filter(enquiry -> !enquiry.isOver(clock.instant())).findFirst().orElse(null);
         if (live != null) {
             return MyEnquiryResponse.alreadyAsked(live.getId(), live.askedAt());
         }
         // Closed as not interested with the one reopen left: offer that first.
         return current.stream()
-                .filter(Enquiry::mayChangeMind)
+                .filter(enquiry -> enquiry.mayChangeMind(clock.instant()))
                 .findFirst()
                 .map(closed -> MyEnquiryResponse.reopenable(closed.getId(), closed.getVersion()))
                 .orElseGet(MyEnquiryResponse::allowed);
@@ -195,8 +208,8 @@ public class EnquiryService {
 
     /** The enquirer's enquiries at a property that have not expired, newest first. */
     private List<Enquiry> currentAt(UUID enquirerUserId, UUID propertyId) {
-        return enquiryRepository.findUnexpiredForEnquirerAtProperty(enquirerUserId, propertyId, Instant.now()).stream()
-                .filter(enquiry -> !enquiry.isExpired())
+        return enquiryRepository.findUnexpiredForEnquirerAtProperty(enquirerUserId, propertyId, clock.instant()).stream()
+                .filter(enquiry -> !enquiry.isExpired(clock.instant()))
                 .toList();
     }
 
@@ -250,13 +263,13 @@ public class EnquiryService {
                         (one, other) -> one.isBefore(other) ? one : other));
     }
 
-    private static MyEnquiryItemResponse itemFor(
+    private MyEnquiryItemResponse itemFor(
             Enquiry enquiry, String propertyName, EnquiryVisitLookup.BookedVisit booked,
             EnquiryVisitLookup.CancelledVisit cancelled, Instant firstResponseAt,
             EnquiryVisitLookup.StandingVisit standing) {
-        EnquiryVisitLookup.BookedVisit visit = enquiry.isOver() ? null : booked;
+        EnquiryVisitLookup.BookedVisit visit = enquiry.isOver(clock.instant()) ? null : booked;
         // Cancelled, and nothing booked since: "Visit cancelled" on their card.
-        Instant visitCancelledAt = !enquiry.isOver() && booked == null && cancelled != null
+        Instant visitCancelledAt = !enquiry.isOver(clock.instant()) && booked == null && cancelled != null
                 ? cancelled.cancelledAt()
                 : null;
         return new MyEnquiryItemResponse(
@@ -273,15 +286,15 @@ public class EnquiryService {
                 visit != null ? visit.date() : null,
                 visit != null ? visit.start() : null,
                 visitCancelledAt,
-                enquiry.isExpired() ? null : enquiry.notInterestedClosesAt(),
-                enquiry.mayChangeMind(),
+                enquiry.isExpired(clock.instant()) ? null : enquiry.notInterestedClosesAt(),
+                enquiry.mayChangeMind(clock.instant()),
                 // Nothing to do with a visit once the enquiry is over.
-                enquiry.isOver() ? null : MyEnquiryVisitView.of(standing),
-                enquiry.getVersion());
+                enquiry.isOver(clock.instant()) ? null : MyEnquiryVisitView.of(standing),
+                enquiry.getVersion(), PostVisitBookingEligibility.of(enquiry, clock.instant()));
     }
 
-    private static MyEnquiryState stateFor(Enquiry enquiry) {
-        if (enquiry.isExpired()) {
+    private MyEnquiryState stateFor(Enquiry enquiry) {
+        if (enquiry.isExpired(clock.instant())) {
             return MyEnquiryState.EXPIRED;
         }
         if (enquiry.isEnded()) {
@@ -302,9 +315,9 @@ public class EnquiryService {
         // guarantees it for unanswered ones, this is the readable message.
         // Closed ones are expired first, so the fresh enquiry is the only one
         // left to act on.
-        Instant expiringAt = Instant.now();
+        Instant expiringAt = clock.instant();
         for (Enquiry existing : currentAt(actorUserId, propertyId)) {
-            if (!existing.isOver()) {
+            if (!existing.isOver(clock.instant())) {
                 throw new ValidationException("You already have an open enquiry with this property.");
             }
         }
@@ -335,8 +348,8 @@ public class EnquiryService {
                 .map(ReachableChannelResponse::channel)
                 .collect(Collectors.toCollection(() -> EnumSet.noneOf(EnquiryResponseChannel.class)));
 
-        Instant now = Instant.now();
-        Enquiry raised = Enquiry.raise(propertyId, actorUserId, request.message(), shared);
+        Instant now = clock.instant();
+        Enquiry raised = Enquiry.raise(propertyId, actorUserId, request.message(), shared, now);
         // Before the save, so the handler is part of the row's first write. In
         // every mode but system turns this assigns nobody.
         EnquiryHandlerMode mode = handlerService.assignOnArrival(raised, property, now);
@@ -356,6 +369,80 @@ public class EnquiryService {
                 enquiry.askedAt(),
                 reachable,
                 emailChannelState(enquirer));
+    }
+
+    /**
+     * The record a visit or a stay booked straight from the property profile
+     * goes on (user, 2026-10-17).
+     *
+     * <p>One conversation per person per property stays the rule: their live
+     * enquiry here, when there is one, takes it. Otherwise a direct record is
+     * opened, with the contact they agreed to share frozen onto it as for an
+     * enquiry, and a handler from the property's assignment setting. It is never
+     * listed as an enquiry. A stay also opens booking without a visit.
+     *
+     * <p>Nobody is told here: the visit or the booking that follows tells the
+     * property, as it always does.
+     *
+     * @return the record's id
+     */
+    @Transactional
+    public UUID openDirect(UUID actorUserId, UUID propertyId, EnquiryOrigin origin) {
+        if (origin == null || !origin.isDirect()) {
+            throw new IllegalArgumentException("A direct visit or a direct booking");
+        }
+        PropertyResponse property = propertyModule.getActiveProperty(propertyId);
+        if (managesProperty(actorUserId, property)) {
+            throw new ValidationException("You cannot book at a property you manage.");
+        }
+        // Someone who stays here is not booking a visit or a stay here. A stay
+        // elsewhere must have its move-out date before a new stay is booked
+        // (user, 2026-10-17). The booking repeats this when the request is sent.
+        tenancyModule.findActiveByUserId(actorUserId).ifPresent(stay -> {
+            if (propertyId.equals(stay.propertyId())) {
+                throw new ValidationException("You already stay at this property.");
+            }
+            if (origin == EnquiryOrigin.DIRECT_BOOKING && stay.checkoutDate() == null) {
+                throw new ValidationException("Your current stay has no move-out date yet."
+                        + " Ask that property to approve your exit, then book.");
+            }
+        });
+        Instant now = clock.instant();
+        Enquiry live = currentAt(actorUserId, propertyId).stream()
+                .filter(enquiry -> !enquiry.isOver(now))
+                .findFirst()
+                .orElse(null);
+        if (live != null) {
+            if (origin == EnquiryOrigin.DIRECT_BOOKING) {
+                Enquiry locked = enquiryRepository.findByIdForUpdate(live.getId())
+                        .orElseThrow(() -> new NotFoundException("Enquiry", live.getId()));
+                if (locked.openDirectBooking(now)) {
+                    enquiryRepository.saveAndFlush(locked);
+                    log.info("Booking without a visit opened on a live enquiry enquiryId={} propertyId={}",
+                            locked.getId(), propertyId);
+                }
+            }
+            return live.getId();
+        }
+        // Ones closed by hand go, as when enquiring afresh.
+        for (Enquiry closed : currentAt(actorUserId, propertyId)) {
+            closed.expireNow(now);
+            eventPublisher.publishEvent(new EnquiryExpiredEvent(
+                    closed.getId(), closed.getPropertyId(), closed.getEnquirerUserId(), now));
+        }
+
+        UserSummaryResponse person = authModule.findById(actorUserId).orElse(null);
+        Set<EnquiryResponseChannel> shared = reachableChannels(person, consentService.liveChannels(actorUserId))
+                .stream()
+                .map(ReachableChannelResponse::channel)
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(EnquiryResponseChannel.class)));
+        Enquiry raised = Enquiry.raiseDirect(propertyId, actorUserId, origin, shared, now);
+        EnquiryHandlerMode mode = handlerService.assignOnArrival(raised, property, now);
+        Enquiry enquiry = enquiryRepository.save(raised);
+        eventPublisher.publishEvent(new EnquiryRaisedEvent(enquiry.getId(), propertyId, actorUserId, now));
+        log.info("Direct record opened enquiryId={} origin={} propertyId={} enquirerUserId={} handlerMode={}",
+                enquiry.getId(), origin, propertyId, actorUserId, mode);
+        return enquiry.getId();
     }
 
     // ---- Management side: reading ----------------------------------------
@@ -399,17 +486,29 @@ public class EnquiryService {
                 found.hasPrevious());
     }
 
+    /**
+     * One enquiry as management reads it: what Follow up on a lead opens the
+     * respond sheet with (Leads screen, 2026-10-17).
+     */
+    @Transactional(readOnly = true)
+    public EnquiryDetailResponse detailForManagement(UUID actorUserId, UUID enquiryId) {
+        Enquiry enquiry = enquiryRepository.findById(enquiryId)
+                .orElseThrow(() -> new NotFoundException("Enquiry", enquiryId));
+        Viewer viewer = viewerOf(actorUserId, enquiry.getPropertyId());
+        return describeOne(enquiry, authModule.findById(enquiry.getEnquirerUserId()).orElse(null), viewer);
+    }
+
     @Transactional(readOnly = true)
     public long countOpenForProperty(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
-        return enquiryRepository.countAwaitingAnswer(propertyId, Instant.now());
+        return enquiryRepository.countAwaitingAnswer(propertyId, clock.instant());
     }
 
     /** The screen's three badges, in one query. */
     @Transactional(readOnly = true)
     public EnquiryCountsResponse countsForProperty(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
-        AwaitingCounts counts = enquiryRepository.countAwaiting(propertyId, actorUserId, Instant.now());
+        AwaitingCounts counts = enquiryRepository.countAwaiting(propertyId, actorUserId, clock.instant());
         return new EnquiryCountsResponse(counts.getAwaiting(), counts.getMine(), counts.getUnassigned());
     }
 
@@ -488,7 +587,7 @@ public class EnquiryService {
         // stale — it was rendered before the sweep ran — and an expired enquiry
         // is one the enquirer has been freed to re-raise, so answering it now
         // would be answering a question that has already been withdrawn.
-        if (enquiry.isExpired()) {
+        if (enquiry.isExpired(clock.instant())) {
             throw new ValidationException("This enquiry has expired. The enquirer can raise a new one.");
         }
         if (enquiry.isEnded()) {
@@ -507,7 +606,7 @@ public class EnquiryService {
         // use when the question arrived is what it may use to answer it.
         ensureChannelIsReachable(request.channel(), enquirer, enquiry.getSharedChannels());
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         if (request.channel() == EnquiryResponseChannel.CHAT) {
             // Idempotent on the enquiry id, so opening it twice lands in the
             // same thread.
@@ -563,7 +662,7 @@ public class EnquiryService {
             throw new ValidationException("Only the person who called, the handler or the owner can say how it went.");
         }
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         EnquiryCallResult result = request.callResult();
         if (result != null) {
             if (request.outcome() != null && request.outcome() != result.outcome()) {
@@ -610,7 +709,7 @@ public class EnquiryService {
         Viewer viewer = new Viewer(actorUserId, property.ownerId(), handlerService.modeOf(property.id()));
         VersionGuard.claim(enquiry);
 
-        if (enquiry.isExpired()) {
+        if (enquiry.isExpired(clock.instant())) {
             throw new ValidationException("This enquiry has expired. The enquirer can raise a new one.");
         }
         if (enquiry.isEnded()) {
@@ -624,7 +723,7 @@ public class EnquiryService {
 
         UserSummaryResponse enquirer = authModule.findById(enquiry.getEnquirerUserId()).orElse(null);
         if (!enquiry.isHandledBy(handlerUserId)) {
-            handlerService.assignByOwner(enquiry, handlerUserId, actorUserId, Instant.now());
+            handlerService.assignByOwner(enquiry, handlerUserId, actorUserId, clock.instant());
             // Every assignment is told, the owner taking it themselves included
             // (owner's rule, 2026-10-03). That one in-app only: they just did it.
             tellHandlerOfAssignment(
@@ -653,7 +752,7 @@ public class EnquiryService {
         Viewer viewer = viewerOf(actorUserId, enquiry.getPropertyId());
         VersionGuard.claim(enquiry);
 
-        if (enquiry.isOver()) {
+        if (enquiry.isOver(clock.instant())) {
             throw new ValidationException("This conversation has ended.");
         }
         handlerService.ensureMayAct(actorUserId, enquiry, viewer.ownerUserId(), viewer.mode());
@@ -661,7 +760,7 @@ public class EnquiryService {
             throw new ValidationException("They have not replied yet.");
         }
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         enquiry.setSentiment(request.sentiment(), actorUserId, now);
         log.info("Enquiry sentiment set enquiryId={} sentiment={} byUserId={}",
                 enquiryId, request.sentiment(), actorUserId);
@@ -686,7 +785,7 @@ public class EnquiryService {
         Viewer viewer = viewerOf(actorUserId, enquiry.getPropertyId());
         VersionGuard.claim(enquiry);
 
-        if (enquiry.isOver()) {
+        if (enquiry.isOver(clock.instant())) {
             throw new ValidationException("This conversation has ended.");
         }
         handlerService.ensureMayAct(actorUserId, enquiry, viewer.ownerUserId(), viewer.mode());
@@ -718,7 +817,7 @@ public class EnquiryService {
         handlerService.ensureMayAct(actorUserId, enquiry, viewer.ownerUserId(), viewer.mode());
 
         if (!enquiry.isEnded()) {
-            if (enquiry.isExpired()) {
+            if (enquiry.isExpired(clock.instant())) {
                 throw new ValidationException("This enquiry has already expired.");
             }
             if (enquiry.getSentiment() != EnquirySentiment.NOT_INTERESTED) {
@@ -726,7 +825,7 @@ public class EnquiryService {
             }
         }
 
-        closeNow(enquiry, actorUserId, Instant.now(), false);
+        closeNow(enquiry, actorUserId, clock.instant(), false);
 
         UserSummaryResponse enquirer = authModule.findById(enquiry.getEnquirerUserId()).orElse(null);
         return describeOne(enquiry, enquirer, viewer);
@@ -740,11 +839,11 @@ public class EnquiryService {
      */
     @Transactional
     public boolean closeChatOfExpired(UUID enquiryId) {
-        Enquiry enquiry = enquiryRepository.findById(enquiryId).orElse(null);
-        if (enquiry == null || !enquiry.hasOpenChat() || !enquiry.isExpired()) {
+        Enquiry enquiry = enquiryRepository.findByIdForUpdate(enquiryId).orElse(null);
+        if (enquiry == null || !enquiry.hasOpenChat() || !enquiry.isExpired(clock.instant())) {
             return false;
         }
-        closeChatOf(enquiry, Instant.now());
+        closeChatOf(enquiry, clock.instant());
         return true;
     }
 
@@ -756,12 +855,12 @@ public class EnquiryService {
      */
     @Transactional
     public boolean closeWindowOfAnswered(UUID enquiryId) {
-        Enquiry enquiry = enquiryRepository.findById(enquiryId).orElse(null);
+        Enquiry enquiry = enquiryRepository.findByIdForUpdate(enquiryId).orElse(null);
         if (enquiry == null || enquiry.getStatus() != EnquiryStatus.RESPONDED || enquiry.isEnded()
-                || !enquiry.isExpired()) {
+                || !enquiry.isExpired(clock.instant())) {
             return false;
         }
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         if (!enquiry.markWindowClosed(now)) {
             return false;
         }
@@ -810,10 +909,10 @@ public class EnquiryService {
      */
     @Transactional
     public boolean closeNotInterestedAfterGrace(UUID enquiryId) {
-        Enquiry enquiry = enquiryRepository.findById(enquiryId).orElse(null);
-        Instant now = Instant.now();
+        Enquiry enquiry = enquiryRepository.findByIdForUpdate(enquiryId).orElse(null);
+        Instant now = clock.instant();
         if (enquiry == null || enquiry.notInterestedClosesAt() == null
-                || now.isBefore(enquiry.notInterestedClosesAt()) || enquiry.isExpired()) {
+                || now.isBefore(enquiry.notInterestedClosesAt()) || enquiry.isExpired(clock.instant())) {
             return false;
         }
         closeNow(enquiry, enquiry.getSentimentSetByUserId(), now, true);
@@ -833,7 +932,7 @@ public class EnquiryService {
         }
         VersionGuard.claim(enquiry);
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         boolean reopened = enquiry.changeMind(actorUserId, now);
         enquiryRepository.saveAndFlush(enquiry);
         if (reopened) {
@@ -900,10 +999,10 @@ public class EnquiryService {
     @Transactional
     public boolean expireForMissedVisit(UUID enquiryId) {
         Enquiry enquiry = enquiryRepository.findById(enquiryId).orElse(null);
-        if (enquiry == null || enquiry.isExpired()) {
+        if (enquiry == null || enquiry.isExpired(clock.instant())) {
             return false;
         }
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         enquiry.cutShort(now);
         closeChatOf(enquiry, now);
         if (!enquiry.isEnded()) {
@@ -930,7 +1029,7 @@ public class EnquiryService {
         if (enquiry == null) {
             return;
         }
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         enquiryResponseRepository
                 .findByEnquiryIdAndChannelAndOutcome(
                         enquiryId, EnquiryResponseChannel.CALL_BACK, EnquiryAttemptOutcome.OPEN)
@@ -953,10 +1052,10 @@ public class EnquiryService {
     @Transactional
     public void onVisitCancelled(UUID enquiryId, UUID cancelledByUserId, boolean stillInterested) {
         Enquiry enquiry = enquiryRepository.findById(enquiryId).orElse(null);
-        if (enquiry == null || enquiry.isOver()) {
+        if (enquiry == null || enquiry.isOver(clock.instant())) {
             return;
         }
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         EnquirySentiment answer = stillInterested ? EnquirySentiment.INTERESTED : EnquirySentiment.NOT_INTERESTED;
         if (enquiry.getSentiment() != answer) {
             enquiry.setSentiment(answer, cancelledByUserId, now);
@@ -993,7 +1092,7 @@ public class EnquiryService {
      */
     private void handOutWaiting(UUID actorUserId, UUID propertyId) {
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
-        List<Enquiry> handedOut = handlerService.handOutWaiting(property, Instant.now());
+        List<Enquiry> handedOut = handlerService.handOutWaiting(property, clock.instant());
         if (handedOut.isEmpty()) {
             return;
         }
@@ -1097,7 +1196,7 @@ public class EnquiryService {
         if (enquiry == null) {
             return;
         }
-        Instant sentAt = event.sentAt() != null ? event.sentAt() : Instant.now();
+        Instant sentAt = event.sentAt() != null ? event.sentAt() : clock.instant();
         Optional<EnquiryResponse> openChat = enquiryResponseRepository.findByEnquiryIdAndChannelAndOutcome(
                 enquiry.getId(), EnquiryResponseChannel.CHAT, EnquiryAttemptOutcome.OPEN);
 
@@ -1115,7 +1214,7 @@ public class EnquiryService {
 
         // Only an unanswered, unexpired enquiry takes an attempt. Past that,
         // messages are just the conversation carrying on.
-        if (openChat.isPresent() || !enquiry.isOpen() || enquiry.isExpired()) {
+        if (openChat.isPresent() || !enquiry.isOpen() || enquiry.isExpired(clock.instant())) {
             return;
         }
         PropertyResponse property;
@@ -1145,7 +1244,7 @@ public class EnquiryService {
         // Told about this message after the reply to it was already handled:
         // that reply found nothing to settle, so settle it here.
         if (chatModule.hasWrittenSince(event.threadId(), enquiry.getEnquirerUserId(), sentAt)) {
-            Instant now = Instant.now();
+            Instant now = clock.instant();
             attempt.settle(EnquiryAttemptOutcome.SUCCEEDED, null, now);
             recordSuccess(enquiry, EnquiryResponseChannel.CHAT, now);
             tellHandlerOfChatReply(enquiry, attempt, event.threadId());
@@ -1344,6 +1443,7 @@ public class EnquiryService {
         Map<UUID, UserSummaryResponse> users = authModule.findByIds(userIds);
         Map<UUID, EnquiryVisitLookup.CancelledVisit> cancelled =
                 visitLookup.lastCancelledOn(enquiries.stream().map(Enquiry::getId).toList());
+        Map<UUID, EnquiryRepeatMark> marks = leadMarks.marksOn(enquiries.stream().map(Enquiry::getId).toList());
 
         // No consent lookup here. Each enquiry carries the set it was raised
         // with, which is both the correct answer and one fewer query per page
@@ -1355,6 +1455,7 @@ public class EnquiryService {
                         attemptsByEnquiry.getOrDefault(enquiry.getId(), List.of()),
                         users,
                         cancelled.get(enquiry.getId()),
+                        marks.get(enquiry.getId()),
                         viewer))
                 .toList();
     }
@@ -1381,7 +1482,8 @@ public class EnquiryService {
         addClosers(userIds, enquiry);
         return toDetail(
                 enquiry, enquirer, attempts, authModule.findByIds(userIds),
-                visitLookup.lastCancelledOn(List.of(enquiry.getId())).get(enquiry.getId()), viewer);
+                visitLookup.lastCancelledOn(List.of(enquiry.getId())).get(enquiry.getId()),
+                leadMarks.marksOn(List.of(enquiry.getId())).get(enquiry.getId()), viewer);
     }
 
     private EnquiryDetailResponse toDetail(
@@ -1390,6 +1492,7 @@ public class EnquiryService {
             List<EnquiryResponse> attempts,
             Map<UUID, UserSummaryResponse> users,
             EnquiryVisitLookup.CancelledVisit cancelledVisit,
+            EnquiryRepeatMark repeatMark,
             Viewer viewer) {
         // The contact detail is read off the reachable list rather than off the
         // user, so there is exactly one place where "may management see this"
@@ -1442,7 +1545,7 @@ public class EnquiryService {
                         : new CancelledVisitView(
                                 cancelledVisit.reason(), cancelledVisit.byTenant(), cancelledVisit.cancelledAt()),
                 endingsOf(enquiry, users),
-                enquiry.getVersion());
+                enquiry.getVersion(), PostVisitBookingEligibility.of(enquiry, clock.instant()), repeatMark);
     }
 
     /** Whoever closed it, now or before a change of mind reopened it, for the names in the log. */
@@ -1460,11 +1563,11 @@ public class EnquiryService {
      * expiry, then each closing, the one a change of mind undid included. An
      * expiry brought on by the enquirer's fresh enquiry is its own kind.
      */
-    private static List<EnquiryEndingView> endingsOf(Enquiry enquiry, Map<UUID, UserSummaryResponse> users) {
+    private List<EnquiryEndingView> endingsOf(Enquiry enquiry, Map<UUID, UserSummaryResponse> users) {
         List<EnquiryEndingView> endings = new ArrayList<>();
-        if (enquiry.isExpired() && enquiry.getReplacedAt() != null) {
+        if (enquiry.isExpired(clock.instant()) && enquiry.getReplacedAt() != null) {
             endings.add(EnquiryEndingView.expiredByDuplicate(enquiry.getReplacedAt()));
-        } else if (enquiry.isExpired() && enquiry.getExpiresAt() != null) {
+        } else if (enquiry.isExpired(clock.instant()) && enquiry.getExpiresAt() != null) {
             endings.add(EnquiryEndingView.expired(enquiry.getExpiresAt(), enquiry.getEndReason()));
         }
         if (enquiry.isEnded()) {

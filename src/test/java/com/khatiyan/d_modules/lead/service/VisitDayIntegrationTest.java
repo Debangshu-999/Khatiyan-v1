@@ -45,6 +45,11 @@ import com.khatiyan.d_modules.chat.ChatModule;
 import com.khatiyan.d_modules.chat.event.ChatMessageSentEvent;
 import com.khatiyan.d_modules.chat.model.ChatThreadOrigin;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryItemResponse;
+import com.khatiyan.d_modules.enquiry.api.dto.PostVisitBookingEligibility;
+import com.khatiyan.d_modules.enquiry.EnquiryModule;
+import com.khatiyan.d_modules.enquiry.PostVisitBookingWindow;
+import com.khatiyan.d_modules.enquiry.service.EnquiryExpirySchedulerService;
+import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.d_modules.enquiry.api.dto.MyEnquiryState;
 import com.khatiyan.d_modules.enquiry.api.dto.RaiseEnquiryRequest;
 import com.khatiyan.d_modules.enquiry.api.dto.RespondToEnquiryRequest;
@@ -101,10 +106,23 @@ class VisitDayIntegrationTest {
     @Autowired private VisitDayService visitDay;
     @Autowired private VisitDaySchedulerService sweep;
     @Autowired private VisitNotificationSchedulerService notices;
+    @Autowired private AfterVisitTelling afterVisit;
 
     @MockitoBean private NotificationModule notifications;
     @MockitoBean private ChatModule chat;
     @Autowired private SettableClock clock;
+
+    private final EnquiryModule enquiries;
+    private final EnquiryExpirySchedulerService enquiryExpiry;
+    private final LeadPipelineService pipeline;
+
+    @Autowired
+    VisitDayIntegrationTest(EnquiryModule enquiries, EnquiryExpirySchedulerService enquiryExpiry,
+            LeadPipelineService pipeline) {
+        this.enquiries = enquiries;
+        this.enquiryExpiry = enquiryExpiry;
+        this.pipeline = pipeline;
+    }
 
     private Seeded seeded;
     private UUID property;
@@ -162,7 +180,8 @@ class VisitDayIntegrationTest {
         seeded = LargePropertySeeder.seed(jdbc, today, 8, 1, 62L);
         property = seeded.propertyId();
         owner = seeded.ownerId();
-        prospects = seeded.userIds().stream().filter(id -> !id.equals(owner)).limit(3).toList();
+        // Visitors who do not stay here: a tenant of the place books no visit (user, 2026-10-17).
+        prospects = List.of(visitor("Visitor A"), visitor("Visitor B"), visitor("Visitor C"));
         assertThat(prospects).hasSize(3);
         manager = manager("Manager A");
         otherManager = manager("Manager B");
@@ -177,9 +196,12 @@ class VisitDayIntegrationTest {
 
     @AfterEach
     void remove() {
-        clock.set(null);
         PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+        clock.set(null);
         jdbc.update("DELETE FROM lead.visit_notices WHERE property_id = ?", property);
+        for (UUID prospect : prospects) {
+            jdbc.update("DELETE FROM mail.outbox WHERE user_id = ?", prospect);
+        }
         jdbc.update("DELETE FROM lead.leads WHERE property_id = ?", property);
         jdbc.update("DELETE FROM enquiry.enquiries WHERE property_id = ?", property);
         for (UUID prospect : prospects) {
@@ -193,9 +215,164 @@ class VisitDayIntegrationTest {
         jdbc.update("DELETE FROM property.property_managers WHERE property_id = ?", property);
         LargePropertySeeder.remove(jdbc, seeded);
         jdbc.update("DELETE FROM auth.users WHERE id IN (?, ?)", manager, otherManager);
+        for (UUID prospect : prospects) {
+            jdbc.update("DELETE FROM auth.users WHERE id = ?", prospect);
+        }
+    }
+
+    // ---- Mails to the visitor (user, 2026-10-18) -------------------------------
+
+    @Test
+    void theVisitorIsMailedWhenTheirVisitIsBookedMovedAndCancelledOnlyWithAVerifiedEmail() {
+        UUID mailed = prospects.get(0);
+        verifiedEmail(mailed);
+        UUID visit = visitOn(mailed, tomorrow, TEN);
+        visits.reschedule(mailed, visit, new RescheduleVisitRequest(tomorrow, FOUR, null));
+        visits.cancel(mailed, visit, new CancelVisitRequest(true, "Plans changed"));
+
+        assertThat(mailKinds(mailed)).containsExactly("VISIT_SCHEDULED", "VISIT_RESCHEDULED", "VISIT_CANCELLED");
+        assertThat(mailSubject(mailed, "VISIT_RESCHEDULED")).endsWith(" was moved");
+        // The new slot and the old one are both in it, and the short code, never the id.
+        String moved = mailText(mailed, "VISIT_RESCHEDULED");
+        assertThat(moved).contains("4:00 pm").contains("Was:").contains("10:00 am").contains("VIS-")
+                .doesNotContain(visit.toString());
+        assertThat(mailText(mailed, "VISIT_CANCELLED")).contains("You cancelled your visit");
+
+        // No verified email, no mail. The push still goes, as it always has.
+        visitOn(prospects.get(2), tomorrow, TEN);
+        assertThat(mailKinds(prospects.get(2))).isEmpty();
+    }
+
+    @Test
+    void threeHoursAfterCheckInTheVisitorIsToldHowToBookOnceAndNotAtNight() {
+        UUID mailed = prospects.get(0);
+        verifiedEmail(mailed);
+        UUID visit = visitOn(mailed, today, TEN);
+        UUID pushed = visitOn(prospects.get(1), today, TEN);
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(mailed, visit).token(), null));
+        visitDay.checkIn(manager, pushed, new CheckInVisitRequest(visitDay.pass(prospects.get(1), pushed).token(), null));
+
+        itIs(13, 0);
+        assertThat(afterVisit.tellDue()).as("not three hours yet").isZero();
+        itIs(13, 10);
+        assertThat(afterVisit.tellDue()).isEqualTo(2);
+        assertThat(mailKinds(mailed)).contains("VISIT_AFTER");
+        assertThat(mailText(mailed, "VISIT_AFTER")).contains("Book a stay").contains("Book by:");
+        // No verified email: the app says it instead.
+        verify(notifications).notifyUser(eq(prospects.get(1)), contains("Liked"), contains("Book a stay"), any(), any(),
+                eq(NotificationSubtype.VISIT_AFTER_BOOK_A_STAY), eq(pushed), any(), any(), any());
+        // Once.
+        itIs(14, 0);
+        assertThat(afterVisit.tellDue()).isZero();
+    }
+
+    @Test
+    void noAfterVisitTellingForSomeoneWhoDidNotLikeItNorBetweenNineAtNightAndNineInTheMorning() {
+        UUID disliked = prospects.get(0);
+        verifiedEmail(disliked);
+        UUID visit = visitOn(disliked, today, FOUR);
+        UUID late = visitOn(prospects.get(1), today, FOUR);
+        verifiedEmail(prospects.get(1));
+        itIs(16, 10);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(disliked, visit).token(), null));
+        visitDay.checkIn(manager, late, new CheckInVisitRequest(visitDay.pass(prospects.get(1), late).token(), null));
+        visitDay.completeForm(manager, visit, new VisitFormRequest(LocalTime.of(16, 40), 1, VisitImpression.DISLIKED));
+
+        // Three hours on is 7:10 pm, inside the day: the one who disliked it is settled and not told.
+        itIs(19, 15);
+        afterVisit.tellDue();
+        assertThat(mailKinds(disliked)).doesNotContain("VISIT_AFTER");
+        assertThat(jdbc.queryForObject("SELECT after_visit_told_at IS NOT NULL FROM lead.visits WHERE id = ?",
+                Boolean.class, visit)).isTrue();
+        assertThat(mailKinds(prospects.get(1))).contains("VISIT_AFTER");
+
+        assertThat(AfterVisitTelling.isQuiet(today.atTime(21, 0).atZone(IST).toInstant())).isTrue();
+        assertThat(AfterVisitTelling.isQuiet(today.atTime(8, 59).atZone(IST).toInstant())).isTrue();
+        assertThat(AfterVisitTelling.isQuiet(today.atTime(9, 0).atZone(IST).toInstant())).isFalse();
+    }
+
+    private void verifiedEmail(UUID user) {
+        jdbc.update("UPDATE auth.users SET email = ?, is_email_verified = true WHERE id = ?",
+                "visitor-" + user + "@example.test", user);
+    }
+
+    private List<String> mailKinds(UUID user) {
+        return jdbc.queryForList("SELECT kind FROM mail.outbox WHERE user_id = ? ORDER BY created_at", String.class, user);
+    }
+
+    private String mailSubject(UUID user, String kind) {
+        return jdbc.queryForObject("SELECT subject FROM mail.outbox WHERE user_id = ? AND kind = ?", String.class, user, kind);
+    }
+
+    private String mailText(UUID user, String kind) {
+        return jdbc.queryForObject("SELECT text_body FROM mail.outbox WHERE user_id = ? AND kind = ?", String.class, user, kind);
     }
 
     // ---- The screen --------------------------------------------------------
+
+    @Test
+    void historyKeepsAttendedMissedAndCancelledVisitsAndPagesNewestFirst() {
+        UUID attended = visitOn(prospects.get(0), today, TEN);
+        itIs(10, 5);
+        VisitPassResponse pass = visitDay.pass(prospects.get(0), attended);
+        visitDay.checkIn(manager, attended, new CheckInVisitRequest(pass.token(), null));
+        jdbc.update("UPDATE lead.visits SET visit_date = ? WHERE id = ?", java.sql.Date.valueOf(today.minusDays(1)), attended);
+        itIs(9, 0);
+
+        UUID missed = visitOn(prospects.get(1), today.minusDays(2), FOUR);
+        sweep.markNoVisits();
+        jdbc.update("UPDATE enquiry.enquiries SET status = 'EXPIRED', expires_at = now() - interval '1 day' WHERE id = ?", enquiryOf(missed));
+        UUID cancelled = visitOn(prospects.get(2), tomorrow, TEN);
+        visits.cancel(prospects.get(2), cancelled, new CancelVisitRequest(true, "Plans changed"));
+
+        var first = visitDay.propertyHistory(otherManager, property, 0, 2);
+        assertThat(first.totalElements()).isEqualTo(3);
+        assertThat(first.hasNext()).isTrue();
+        assertThat(first.items()).extracting(VisitCardResponse::visitId, VisitCardResponse::state)
+                .containsExactly(tuple(cancelled, VisitCardState.CANCELLED), tuple(attended, VisitCardState.VISITED));
+        assertThat(first.items()).allSatisfy(card -> assertThat(card.prospectName()).isNotBlank());
+        assertThat(visitDay.propertyHistory(owner, property, 1, 2).items())
+                .extracting(VisitCardResponse::visitId).containsExactly(missed);
+
+        // Narrowed by status, All when not given (user, 2026-10-19).
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12, "VISITED").items())
+                .extracting(VisitCardResponse::visitId).containsExactly(attended);
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12, "NO_VISIT").items())
+                .extracting(VisitCardResponse::visitId).containsExactly(missed);
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12, "cancelled").items())
+                .extracting(VisitCardResponse::visitId).containsExactly(cancelled);
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12, null).totalElements()).isEqualTo(3);
+        assertThatThrownBy(() -> visitDay.propertyHistory(owner, property, 0, 12, "LATE"))
+                .isInstanceOf(com.khatiyan.c_shared.exception.ValidationException.class);
+
+        // Each visitor sees their own records, including their cancellation.
+        assertThat(visitDay.myHistory(prospects.get(2), 0, 12).items())
+                .singleElement().satisfies(card -> {
+                    assertThat(card.visitId()).isEqualTo(cancelled);
+                    assertThat(card.state()).isEqualTo(VisitCardState.CANCELLED);
+                });
+        assertThat(visitDay.myHistory(prospects.get(0), 0, 12).items())
+                .singleElement().satisfies(card -> assertThat(card.visitId()).isEqualTo(attended));
+        assertThat(visitDay.myHistory(owner, 0, 12).items()).isEmpty();
+        assertThatThrownBy(() -> visitDay.propertyHistory(prospects.get(0), property, 0, 12))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void historyExcludesTodaysAndUpcomingScheduledVisits() {
+        UUID todays = visitOn(prospects.get(0), today, TEN);
+        UUID upcoming = visitOn(prospects.get(1), tomorrow, FOUR);
+        UUID past = visitOn(prospects.get(2), today.minusDays(1), TEN);
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12).items())
+                .extracting(VisitCardResponse::visitId).containsExactly(past);
+        assertThat(visitDay.myHistory(prospects.get(0), 0, 12).items()).isEmpty();
+        assertThat(visitDay.myHistory(prospects.get(1), 0, 12).items()).isEmpty();
+        assertThat(visitDay.propertyVisits(owner, property).today())
+                .extracting(VisitCardResponse::visitId).containsExactly(todays);
+        assertThat(visitDay.propertyVisits(owner, property).upcoming())
+                .extracting(VisitCardResponse::visitId).containsExactly(upcoming);
+    }
 
     /** Every manager sees the property's visits: today's, the ones to come, and the missed. */
     @Test
@@ -869,6 +1046,299 @@ class VisitDayIntegrationTest {
                 .noneMatch(day -> day.date().equals(today));
     }
 
+    // ---- Post-visit booking eligibility -----------------------------------
+
+    @Test
+    void recordedCheckInOpensThirtyDaysAndUpdatesBothEnquiryCards() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        Instant oldExpiry = jdbc.queryForObject("SELECT expires_at FROM enquiry.enquiries WHERE id = ?",
+                Timestamp.class, enquiry).toInstant();
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospect, visit).token(), null));
+
+        PostVisitBookingEligibility eligible = enquiries.bookingEligibilityFor(prospect, enquiry);
+        assertThat(eligible.eligible()).isTrue();
+        assertThat(eligible.visitId()).isEqualTo(visit);
+        assertThat(eligible.visitedOn()).isEqualTo(today);
+        assertThat(eligible.windowExpiresAt()).isEqualTo(PostVisitBookingWindow.expiresAt(today));
+        assertThat(jdbc.queryForObject("SELECT pre_visit_expires_at FROM enquiry.enquiries WHERE id = ?",
+                Timestamp.class, enquiry).toInstant()).isEqualTo(oldExpiry);
+        assertThat(enquiryService.myEnquiries(prospect).get(0).bookingEligibility().eligible()).isTrue();
+        assertThat(enquiryService.listForProperty(manager, property)).singleElement()
+                .satisfies(card -> assertThat(card.bookingEligibility().eligible()).isTrue());
+    }
+
+    /** Coming to the visit is what makes an early lead an advanced one (user, 2026-10-11). */
+    @Test
+    void aCheckInMakesTheEarlyLeadAnAdvancedLead() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        String stageOfItsLead = "SELECT stage FROM lead.leads WHERE id = (SELECT lead_id FROM lead.visits WHERE id = ?)";
+        assertThat(jdbc.queryForObject(stageOfItsLead, String.class, visit)).isEqualTo("EARLY_LEAD");
+
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospect, visit).token(), null));
+        // Nothing tells the lead but the window the check-in opened on its enquiry.
+        PublishedEvents.awaitHandled(jdbc, "LeadEnquiryEventListener", property);
+
+        assertThat(jdbc.queryForObject(stageOfItsLead, String.class, visit)).isEqualTo("ADVANCED_LEAD");
+        assertThat(jdbc.queryForObject("SELECT advanced_lead_at IS NOT NULL AND became_lead_at IS NOT NULL"
+                + " FROM lead.leads WHERE id = (SELECT lead_id FROM lead.visits WHERE id = ?)",
+                Boolean.class, visit)).isTrue();
+    }
+
+    @Test
+    void ownersValidMissedCheckInAlsoOpensTheWindowWithoutAVisitForm() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        itIs(12, 0);
+        visitDay.missedCheckIn(owner, visit);
+        assertThat(enquiries.bookingEligibilityFor(prospect, enquiryOf(visit)).eligible()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT form_completed_at FROM lead.visits WHERE id = ?",
+                Timestamp.class, visit)).isNull();
+    }
+
+    @Test
+    void scheduledMissedAndCancelledVisitsNeverGrantBookingEligibility() {
+        UUID scheduled = visitOn(prospects.get(0), today, TEN);
+        UUID missed = visitOn(prospects.get(1), today.minusDays(1), TEN);
+        UUID cancelled = visitOn(prospects.get(2), tomorrow, TEN);
+        visits.cancel(prospects.get(2), cancelled, new CancelVisitRequest(true, "Cannot come"));
+        sweep.markNoVisits();
+        for (int i = 0; i < 3; i++) {
+            UUID enquiry = enquiryOf(List.of(scheduled, missed, cancelled).get(i));
+            assertThat(enquiries.bookingEligibilityFor(prospects.get(i), enquiry).reason())
+                    .isEqualTo("ATTENDED_VISIT_REQUIRED");
+            UUID visit = List.of(scheduled, missed, cancelled).get(i);
+            assertThatThrownBy(() -> enquiries.visitAttended(enquiry, visit)).isInstanceOf(ValidationException.class);
+        }
+    }
+
+    @Test
+    void anotherPersonCannotReadEligibilityAndAnotherVisitCannotEstablishIt() {
+        UUID visit = visitOn(prospects.get(0), today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospects.get(0), visit).token(), null));
+        for (UUID outsider : List.of(prospects.get(1), manager, owner)) {
+            assertThatThrownBy(() -> enquiries.bookingEligibilityFor(outsider, enquiry))
+                    .isInstanceOf(NotFoundException.class);
+        }
+        assertThatThrownBy(() -> enquiries.visitAttended(enquiry, UUID.randomUUID()))
+                .isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    void attendanceReplayPreservesTheOriginalDateAndVersion() {
+        UUID visit = visitOn(prospects.get(0), today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospects.get(0), visit).token(), null));
+        Long version = jdbc.queryForObject("SELECT version FROM enquiry.enquiries WHERE id = ?", Long.class, enquiry);
+        clock.set(today.plusDays(29).atTime(12, 0).atZone(IST).toInstant());
+        assertThat(enquiries.visitAttended(enquiry, visit)).isFalse();
+        assertThat(enquiries.bookingEligibilityFor(prospects.get(0), enquiry).windowExpiresAt())
+                .isEqualTo(PostVisitBookingWindow.expiresAt(today));
+        assertThat(jdbc.queryForObject("SELECT version FROM enquiry.enquiries WHERE id = ?", Long.class, enquiry))
+                .isEqualTo(version);
+    }
+
+    @Test
+    void thePostVisitWindowSurvivesTheOldDeadlineThenClosesAtItsOwnBoundary() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(today.atTime(11, 0).atZone(IST).toInstant()), enquiry);
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospect, visit).token(), null));
+        reset(chat);
+        clock.set(today.plusDays(1).atTime(12, 0).atZone(IST).toInstant());
+        runEnquiryExpiry();
+        assertThat(enquiries.bookingEligibilityFor(prospect, enquiry).eligible()).isTrue();
+        verify(chat, never()).closeEnquiryThread(enquiry);
+        // A late pre-visit expiry prompt must read the extended window, not
+        // close the lead from the stale deadline carried by that prompt.
+        pipeline.syncFromEnquiry(enquiry, property, prospect);
+        assertThat(jdbc.queryForObject("SELECT state FROM lead.leads WHERE id = "
+                + "(SELECT lead_id FROM lead.visits WHERE id = ?)", String.class, visit)).isEqualTo("OPEN");
+        assertThat(jdbc.queryForObject("SELECT window_closed_at FROM enquiry.enquiries WHERE id = ?",
+                Timestamp.class, enquiry)).isNull();
+
+        Instant expires = PostVisitBookingWindow.expiresAt(today);
+        clock.set(expires.minusNanos(1));
+        assertThat(enquiries.bookingEligibilityFor(prospect, enquiry).eligible()).isTrue();
+        clock.set(expires);
+        assertThat(enquiries.bookingEligibilityFor(prospect, enquiry).reason()).isEqualTo("BOOKING_WINDOW_EXPIRED");
+        assertThat(enquiryService.myEnquiries(prospect).get(0).state()).isEqualTo(MyEnquiryState.EXPIRED);
+        runEnquiryExpiry();
+        runEnquiryExpiry();
+        verify(chat, times(1)).closeEnquiryThread(enquiry);
+    }
+
+    private void runEnquiryExpiry() {
+        // Exercise the real worker at each simulated date, not ShedLock's
+        // real database-time minimum interval between scheduler invocations.
+        EnquiryExpirySchedulerService worker = org.springframework.test.util.AopTestUtils
+                .getTargetObject(enquiryExpiry);
+        worker.expireStaleEnquiries();
+    }
+
+    @Test
+    void attendanceOfAnAlreadyBookedVisitCanRestoreAnOldTimerClosedChat() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        jdbc.update("UPDATE enquiry.enquiries SET expires_at = ? WHERE id = ?",
+                Timestamp.from(today.atTime(9, 30).atZone(IST).toInstant()), enquiry);
+        itIs(10, 0);
+        runEnquiryExpiry();
+        reset(chat);
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospect, visit).token(), null));
+        assertThat(enquiries.bookingEligibilityFor(prospect, enquiry).eligible()).isTrue();
+        verify(chat, times(1)).reopenEnquiryThread(enquiry);
+        assertThat(jdbc.queryForObject("SELECT window_closed_at FROM enquiry.enquiries WHERE id = ?",
+                Timestamp.class, enquiry)).isNull();
+    }
+
+    @Test
+    void negativeSentimentAndFeedbackDoNotShortenAnAttendedWindow() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        jdbc.update("UPDATE enquiry.enquiries SET sentiment = 'NOT_INTERESTED', "
+                + "sentiment_set_at = ?, sentiment_set_by_user_id = ? WHERE id = ?",
+                Timestamp.from(clock.instant()), owner, enquiry);
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospect, visit).token(), null));
+        visitDay.completeForm(manager, visit, new VisitFormRequest(
+                LocalTime.of(10, 30), 1, VisitImpression.DISLIKED));
+        reset(chat);
+        clock.set(today.plusDays(8).atTime(12, 0).atZone(IST).toInstant());
+        runEnquiryExpiry();
+        assertThat(enquiries.bookingEligibilityFor(prospect, enquiry).eligible()).isTrue();
+        assertThat(enquiryService.myEnquiries(prospect).get(0).notInterestedClosesAt()).isNull();
+        verify(chat, never()).closeEnquiryThread(enquiry);
+    }
+
+    @Test
+    void aRejectedAttendanceBridgeRollsBackTheVisitAndItsActivity() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        // An inconsistent pre-existing source is refused, never silently
+        // overwritten. The synchronous bridge must roll back check-in too.
+        jdbc.update("UPDATE enquiry.enquiries SET booking_visit_id = ?, booking_visit_date = ?, "
+                + "pre_visit_expires_at = expires_at WHERE id = ?",
+                UUID.randomUUID(), java.sql.Date.valueOf(today), enquiry);
+        itIs(10, 5);
+        String token = visitDay.pass(prospect, visit).token();
+        assertThatThrownBy(() -> visitDay.checkIn(manager, visit, new CheckInVisitRequest(token, null)))
+                .isInstanceOf(ValidationException.class);
+        assertThat(status(visit)).isEqualTo("SCHEDULED");
+        assertThat(jdbc.queryForObject("SELECT checked_in_at FROM lead.visits WHERE id = ?",
+                Timestamp.class, visit)).isNull();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM lead.lead_activities "
+                + "WHERE enquiry_id = ? AND type = 'VISIT_ATTENDED'", Integer.class, enquiry)).isZero();
+    }
+
+    @Test
+    void manuallyClosedEnquiriesAreNotReopenedByCheckIn() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        jdbc.update("UPDATE enquiry.enquiries SET ended_at = now(), ended_by_user_id = ?, end_reason = 'NOT_INTERESTED' WHERE id = ?",
+                owner, enquiry);
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospect, visit).token(), null));
+        assertThat(enquiries.bookingEligibilityFor(prospect, enquiry).reason()).isEqualTo("ENQUIRY_CLOSED");
+        assertThat(jdbc.queryForObject("SELECT booking_visit_id FROM enquiry.enquiries WHERE id = ?", UUID.class, enquiry))
+                .isNull();
+    }
+
+    @Test
+    void tenantCancellationClosureSurvivesAttendanceReplayAndIsScopedToItsSource() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, TEN);
+        UUID enquiry = enquiryOf(visit);
+        itIs(10, 5);
+        visitDay.checkIn(manager, visit, new CheckInVisitRequest(visitDay.pass(prospect, visit).token(), null));
+        assertThatThrownBy(() -> enquiries.closeBookingWindowForTenantCancellation(enquiry, prospects.get(1), visit))
+                .isInstanceOf(ValidationException.class);
+        assertThat(enquiries.closeBookingWindowForTenantCancellation(enquiry, prospect, visit)).isTrue();
+        assertThat(enquiries.closeBookingWindowForTenantCancellation(enquiry, prospect, visit)).isFalse();
+        assertThat(enquiries.visitAttended(enquiry, visit)).isFalse();
+        assertThat(enquiries.bookingEligibilityFor(prospect, enquiry).reason()).isEqualTo("BOOKING_WINDOW_CLOSED");
+    }
+
+    @Test
+    void migrationBackfillsOnlyExistingOpenAttendanceAndRetainsOldDeadline() throws Exception {
+        String schema = "booking_window_test_" + UUID.randomUUID().toString().replace("-", "");
+        if (!schema.matches("booking_window_test_[a-f0-9]{32}")) {
+            throw new IllegalStateException("Invalid isolated upgrade schema");
+        }
+        jdbc.execute("CREATE SCHEMA " + schema);
+        try {
+            jdbc.execute("CREATE TABLE " + schema + ".enquiries (id UUID PRIMARY KEY, property_id UUID NOT NULL, "
+                    + "enquirer_user_id UUID NOT NULL, status VARCHAR(20) NOT NULL, expires_at TIMESTAMPTZ NOT NULL, "
+                    + "ended_at TIMESTAMPTZ, replaced_at TIMESTAMPTZ, chat_closed_at TIMESTAMPTZ, "
+                    + "window_closed_at TIMESTAMPTZ, end_reason VARCHAR(30), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), "
+                    + "version BIGINT NOT NULL DEFAULT 0)");
+            jdbc.execute("CREATE TABLE " + schema + ".visits (id UUID PRIMARY KEY, enquiry_id UUID, "
+                    + "property_id UUID NOT NULL, prospect_user_id UUID NOT NULL, status VARCHAR(20) NOT NULL, "
+                    + "visit_date DATE NOT NULL, checked_in_at TIMESTAMPTZ)");
+            List<UUID> fixtures = new java.util.ArrayList<>();
+            Instant actualNow = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+            LocalDate actualToday = actualNow.atZone(IST).toLocalDate();
+            Instant originalExpiry = actualNow.plus(Duration.ofDays(10));
+            for (int kind = 0; kind < 11; kind++) {
+                UUID enquiry = UUID.randomUUID();
+                fixtures.add(enquiry);
+                jdbc.update("INSERT INTO " + schema + ".enquiries "
+                                + "(id, property_id, enquirer_user_id, status, expires_at, ended_at, replaced_at, chat_closed_at) "
+                                + "VALUES (?, ?, ?, 'RESPONDED', ?, ?, ?, ?)",
+                        enquiry, property, prospects.get(0),
+                        Timestamp.from(kind == 1 ? actualNow.minusSeconds(1) : originalExpiry),
+                        kind == 2 ? Timestamp.from(actualNow) : null,
+                        kind == 3 ? Timestamp.from(actualNow) : null,
+                        kind == 8 ? Timestamp.from(actualNow) : null);
+                LocalDate date = kind == 7 ? actualToday.minusDays(31)
+                        : kind == 9 ? actualToday.plusDays(1) : actualToday.minusDays(5);
+                jdbc.update("INSERT INTO " + schema + ".visits "
+                                + "(id, enquiry_id, property_id, prospect_user_id, status, visit_date, checked_in_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        UUID.randomUUID(), enquiry, kind == 10 ? UUID.randomUUID() : property,
+                        kind == 6 ? prospects.get(1) : prospects.get(0),
+                        kind == 4 ? "SCHEDULED" : "VISITED", java.sql.Date.valueOf(date),
+                        kind == 4 || kind == 5 ? null : Timestamp.from(actualNow.minus(Duration.ofDays(5))));
+            }
+            // Execute the exact immutable migration against old-shape fixture tables
+            // in this test-owned schema. Fresh application boot checks the real schema.
+            String migration;
+            try (var input = new org.springframework.core.io.ClassPathResource(
+                    "db/migration/enquiry/V6206__post_visit_booking_window.sql").getInputStream()) {
+                migration = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            }
+            jdbc.execute(migration.replace("enquiry.enquiries", schema + ".enquiries")
+                    .replace("lead.visits", schema + ".visits"));
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema
+                    + ".enquiries WHERE booking_visit_id IS NOT NULL", Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT pre_visit_expires_at FROM " + schema + ".enquiries WHERE id = ?",
+                    Timestamp.class, fixtures.get(0)).toInstant()).isEqualTo(Timestamp.from(originalExpiry).toInstant());
+            assertThat(jdbc.queryForObject("SELECT expires_at FROM " + schema + ".enquiries WHERE id = ?",
+                    Timestamp.class, fixtures.get(0)).toInstant())
+                    .isEqualTo(PostVisitBookingWindow.expiresAt(actualToday.minusDays(5)));
+            assertThat(jdbc.queryForObject("SELECT version FROM " + schema + ".enquiries WHERE id = ?",
+                    Long.class, fixtures.get(0))).isEqualTo(1L);
+        } finally {
+            // Only the validated UUID-named fixture schema in the throwaway database.
+            jdbc.execute("DROP SCHEMA " + schema + " CASCADE");
+        }
+    }
+
     // ---- Helpers -----------------------------------------------------------
 
     /** The clock reads this time today, in India. */
@@ -932,6 +1402,22 @@ class VisitDayIntegrationTest {
                     is_active, reference_code, created_at, updated_at)
                 VALUES (?, ?, ?, ?, true, ?, now(), now())
                 """, UUID.randomUUID(), property, id, owner, "MGR-V-" + id.toString().substring(0, 12));
+        return id;
+    }
+
+    /**
+     * Someone with an account who does not stay at the property: no visit is
+     * booked for a tenant of the place (user, 2026-10-17), and the seeded
+     * users all stay there.
+     */
+    private UUID visitor(String name) {
+        UUID id = UUID.randomUUID();
+        String phone = "+9194" + String.format("%08d", ThreadLocalRandom.current().nextInt(100_000_000));
+        jdbc.update("""
+                INSERT INTO auth.users (id, phone, full_name, role, is_active, is_phone_verified,
+                    credential_version, gender, date_of_birth, created_at, updated_at)
+                VALUES (?, ?, ?, 'USER', true, true, 0, 'FEMALE', DATE '1999-01-01', now(), now())
+                """, id, phone, name);
         return id;
     }
 }

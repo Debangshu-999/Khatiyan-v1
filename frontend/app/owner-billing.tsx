@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
@@ -73,6 +74,7 @@ import { downloadBillReceipt } from "@/features/billing/download-bill-receipt";
 import { BillReceiptSheet } from "@/features/billing/bill-receipt-sheet";
 import { PaymentDetailsSheet } from "@/features/billing/payment-details-sheet";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
+import { softShadow } from "@/theme/shadows";
 import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
@@ -80,7 +82,6 @@ import {
   OwnerBillingCycleListSkeleton,
   OwnerBillingOverviewSkeleton,
 } from "@/components/skeletons/owner";
-import { HeaderGradient } from "@/components/header-gradient";
 import { HowItWorksSheet, type HowItWorksStep } from "@/components/how-it-works-sheet";
 
 const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
@@ -102,14 +103,14 @@ type BillingStatusFilter =
 /**
  * The status picker shows each status as the chip its bill card shows (user,
  * 2026-09-30), drawn by BillStatusPill from a minimal bill in that state, the
- * way the status legend does. "Any status" has no chip and stays text.
+ * way the status legend does. "All status" has no chip and stays text.
  */
 const BILLING_STATUS_FILTER_OPTIONS: {
   label: string;
   sample?: Pick<BillingCycle, "paidAt" | "rentDueDate" | "status">;
   value: BillingStatusFilter;
 }[] = [
-  { label: "Any status", value: "ALL" },
+  { label: "All status", value: "ALL" },
   { label: "Upcoming", sample: { paidAt: null, rentDueDate: "2026-01-05", status: "UPCOMING" }, value: "UPCOMING" },
   { label: "Unpaid", sample: { paidAt: null, rentDueDate: "2026-01-05", status: "UNPAID" }, value: "UNPAID" },
   { label: "Overdue", sample: { paidAt: null, rentDueDate: "2026-01-05", status: "OVERDUE" }, value: "OVERDUE" },
@@ -130,7 +131,6 @@ const BILLING_STATUS_FILTER_OPTIONS: {
 // can never render larger than the button beside it.
 const BILL_ACTION_ROW_HEIGHT = 48;
 const CYCLE_PAGE_SIZE = 8;
-const BILLING_HEADER_ILLUSTRATION = require("../assets/images/workspace/billing-header.png");
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // Client-side pager: a single month's cycles are bounded, and the summary tiles
@@ -471,7 +471,6 @@ export default function OwnerBillingScreen() {
 
   return (
     <ScreenScrollView
-      background={<HeaderGradient />}
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
       onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
@@ -480,7 +479,6 @@ export default function OwnerBillingScreen() {
       scrollEventThrottle={16}
     >
       <ScreenHeader
-        artwork={BILLING_HEADER_ILLUSTRATION}
         badge={!canManageBilling ? <ViewOnlyChip /> : null}
         italicTail="control."
         subtitle={selectedProperty ? `Billing workspace for ${selectedProperty.name}.` : "Select a property on Home first."}
@@ -943,32 +941,35 @@ function BillingStatusFilterDialog({
               alignItems: "center",
               flexDirection: "row",
               gap: spacing.sm,
+              justifyContent: "space-between",
               paddingLeft: spacing.lg,
               paddingRight: spacing.md,
               paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Bill status
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 
-          <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
             {BILLING_STATUS_FILTER_OPTIONS.map((option) => {
               const Icon = option.value === "ALL" ? null : option.value === "UNPAID" ? CircleAlert : option.value === "OVERDUE" ? AlertTriangle : option.value === "PAID" ? CheckCircle2 : Clock3;
               return (
-              <PickerOptionRow
-                icon={Icon ? <Icon color={colors.inkSoft} size={18} strokeWidth={2.3} /> : undefined}
-                key={option.value}
-                label={option.label}
-                onPress={() => {
-                  onSelect(option.value);
-                  onClose();
-                }}
-                selected={option.value === value}
-              />
-            ); })}
+                <View key={option.value} style={{ width: option.value === "ALL" ? "100%" : "50%" }}>
+                  <PickerOptionRow
+                    icon={Icon ? <Icon color={colors.inkSoft} size={18} strokeWidth={2.3} /> : undefined}
+                    label={option.label}
+                    onPress={() => {
+                      onSelect(option.value);
+                      onClose();
+                    }}
+                    selected={option.value === value}
+                  />
+                </View>
+              );
+            })}
           </View>
         </View>
       </View>
@@ -1014,9 +1015,9 @@ function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
               </Text>
               <PaymentStatusBadge cycle={cycle} />
             </View>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
-              {tenantName}
-            </Text>
+            <FitText style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
+              {cardName(tenantName)}
+            </FitText>
             <Text style={[type.caption, { color: colors.muted }]}>
               {billTitle(cycle)} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
             </Text>
@@ -1089,7 +1090,7 @@ function InfoBlock({ label, strong = false, value }: { label: string; strong?: b
       <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
-      <Text
+      <FitText
         style={{
           color: strong ? colors.primary : colors.ink,
           fontFamily: strong ? fonts.display : fonts.sans,
@@ -1100,7 +1101,7 @@ function InfoBlock({ label, strong = false, value }: { label: string; strong?: b
         numberOfLines={1}
       >
         {value}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -1192,12 +1193,12 @@ function BillToolTile({
       }}
     >
       <Icon color={colors.primary} size={32} strokeWidth={1.9} />
-      <Text
+      <FitText
         numberOfLines={2}
         style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
       >
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }
@@ -1354,9 +1355,9 @@ function MonthlyReportModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Monthly report
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
                 {mode === "month-picker" ? "Choose month" : "Report actions"}
-              </Text>
+              </ModalTitle>
             </View>
             <IconButton accessibilityLabel="Close monthly report" filled icon={X} onPress={() => dismiss()} />
           </View>
@@ -1540,9 +1541,9 @@ function BillingCycleCard({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 {cycle.referenceCode}
               </Text>
-              <Text numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
-                {tenantName}
-              </Text>
+              <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}>
+                {cardName(tenantName)}
+              </FitText>
             </View>
             {/* One right-hand column keeps the date centred under its status
                 chip, even when the status label or formatted date is wider. */}
@@ -1661,9 +1662,9 @@ function SummaryCyclesModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 {cycles.length} cycle{cycles.length === 1 ? "" : "s"}
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
                 {title}
-              </Text>
+              </ModalTitle>
             </View>
             <IconButton accessibilityLabel="Close cycle list" filled icon={X} onPress={() => dismiss()} />
           </View>
@@ -2226,9 +2227,9 @@ function BillingActionModal({
                 <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   {cycle.referenceCode}
                 </Text>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
+                <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
                   {cashCode ? "Tenant's code" : title}
-                </Text>
+                </ModalTitle>
               </View>
             </View>
             <IconButton accessibilityLabel="Close billing action" filled icon={X} onPress={() => dismiss()} />
@@ -2626,9 +2627,9 @@ function ConfirmDialog({
             width: "100%",
           }}
         >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
+          <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {title}
-          </Text>
+          </ModalTitle>
           <Text style={[type.modalDescription, { color: colors.muted }]}>
             {message}
           </Text>
@@ -2865,18 +2866,14 @@ function CollectionSummaryCard({
         flexDirection: "row",
         gap: spacing.md,
         padding: spacing.lg,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 4, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 12,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ flex: 1, gap: spacing.xs }}>
         <Text style={[type.body, { color: colors.muted, fontSize: 16 }]}>
           Collectable amount
         </Text>
-        <Text
-          adjustsFontSizeToFit
+        <FitText
           minimumFontScale={0.65}
           numberOfLines={1}
           style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 31, lineHeight: 37 }}
@@ -2885,7 +2882,7 @@ function CollectionSummaryCard({
           <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 21 }}>
             {" / " + formatMoney(displayBilledPaise)}
           </Text>
-        </Text>
+        </FitText>
         <Text style={[type.body, { color: colors.muted }]}>Collected / billed</Text>
       </View>
 
@@ -2963,39 +2960,36 @@ function SummaryTile({
         gap: spacing.sm,
         minHeight: 104,
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 3, width: 0 },
-        shadowOpacity: 0.75,
-        shadowRadius: 9,
+        ...softShadow(colors.shadow, 3, 9, 0.75),
       }}
     >
       <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
         <Icon color={colors.ink} size={38} strokeWidth={1.75} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <Text
+        <FitText
           numberOfLines={2}
           style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
           {label}
-        </Text>
-        <Text
+        </FitText>
+        <FitText
           numberOfLines={1}
           style={{
             color: colors.ink,
             fontFamily: fonts.display,
-            // Shrinks with the figure's length. adjustsFontSizeToFit does
+            // Shrinks with the figure's length. does
             // nothing on web, so a long amount ellipsised there.
             fontSize: metricFontSize(value, 23),
             lineHeight: metricFontSize(value, 23) + 5,
           }}
         >
           {value}
-        </Text>
-        <Text
+        </FitText>
+        <FitText
           numberOfLines={2}
           style={[type.description, { color: colors.muted }]}>
           {hint}
-        </Text>
+        </FitText>
       </View>
     </AnimatedPressable>
   );
@@ -3711,3 +3705,5 @@ function dateOnlyKey(value: string) {
 import { BillingCyclesIcon, OverdueBillIcon, OtherBillsIcon, PaidBillIcon, UnpaidBillIcon, DiscountBillIcon, PaymentHistoryIcon, TenantBillsIcon, MonthlyReportIcon, PaymentSetupIcon } from "@/components/billing-vector-icons";
 import { CircleHelp } from "lucide-react-native";
 import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";

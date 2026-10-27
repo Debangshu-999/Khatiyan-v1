@@ -1,5 +1,6 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Plus, X } from "lucide-react-native";
 
@@ -61,9 +62,9 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
             }}
           >
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }} numberOfLines={1}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }} >
                 New clause
-              </Text>
+              </ModalTitle>
               <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
             <ScrollView

@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Switch, Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { CircleCheck } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
@@ -238,17 +237,6 @@ export default function OwnerPaymentDetailsScreen() {
   if (!hydrated) {
     return (
       <ScreenScrollView
-        background={
-          <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-            <LinearGradient
-              colors={[colors.primarySoft, colors.surface]}
-              end={{ x: 0.5, y: 1 }}
-              locations={[0, 1]}
-              start={{ x: 0.5, y: 0 }}
-              style={{ height: 260 }}
-            />
-          </View>
-        }
         safeAreaEdges={["top", "bottom"]}
         surface={colors.surface}
       >
@@ -275,17 +263,6 @@ export default function OwnerPaymentDetailsScreen() {
 
   return (
     <ScreenScrollView
-      background={
-        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-          <LinearGradient
-            colors={[colors.primarySoft, colors.surface]}
-            end={{ x: 0.5, y: 1 }}
-            locations={[0, 1]}
-            start={{ x: 0.5, y: 0 }}
-            style={{ height: 260 }}
-          />
-        </View>
-      }
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
     >

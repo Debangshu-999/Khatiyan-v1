@@ -5,6 +5,7 @@ import { Timer, type LucideProps } from "lucide-react-native";
 import { GhostPill } from "@/components/skeletons/boundary";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The tags an enquiry card wears, shared by the owner's Enquiries card and the
@@ -18,12 +19,14 @@ export function TagPill({
   icon: Icon,
   iconColor,
   iconFaded = false,
+  backgroundColor,
   label,
 }: {
   icon?: ComponentType<LucideProps>;
   iconColor?: string;
   /** Drawn at half strength, as the Closes in timer is. */
   iconFaded?: boolean;
+  backgroundColor?: string;
   label: string;
 }) {
   const { colors, fonts } = useTheme();
@@ -31,7 +34,7 @@ export function TagPill({
     <View
       style={{
         alignItems: "center",
-        backgroundColor: colors.neutralSoft,
+        backgroundColor: backgroundColor ?? colors.neutralSoft,
         borderRadius: 999,
         flexDirection: "row",
         gap: 3,
@@ -59,16 +62,19 @@ export function TagPill({
  */
 export function CountPill({
   count,
+  emptyLabel,
   kind,
   noun = ["enquiry", "enquiries"],
 }: {
   count: number;
+  /** Opt in to a visible zero count; other queues still hide it by default. */
+  emptyLabel?: string;
   kind?: string;
   noun?: [string, string];
 }) {
   const { colors, fonts } = useTheme();
-  // Nothing at all for none: the list's empty state already says so (user, 2026-10-03).
-  if (count === 0) {
+  // Preserve the existing enquiry behavior unless a queue requests a zero label.
+  if (count === 0 && !emptyLabel) {
     return null;
   }
   return (
@@ -82,7 +88,7 @@ export function CountPill({
       }}
     >
       <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 12 }}>
-        {[String(count), kind, count === 1 ? noun[0] : noun[1]].filter(Boolean).join(" ")}
+        {count === 0 ? emptyLabel : [String(count), kind, count === 1 ? noun[0] : noun[1]].filter(Boolean).join(" ")}
       </Text>
     </View>
   );
@@ -245,13 +251,13 @@ export function InitialsAvatar({ name }: { name: string | null }) {
 
 export type Tone = "danger" | "warning" | "neutral" | "success";
 
-function useTonePalette(): Record<Tone, { background: string; text: string }> {
+function useTonePalette(neutralBackground = false): Record<Tone, { background: string; text: string }> {
   const { colors } = useTheme();
   return {
-    danger: { background: colors.dangerSoft, text: colors.danger },
+    danger: { background: neutralBackground ? colors.neutralSoft : colors.dangerSoft, text: colors.danger },
     neutral: { background: colors.neutralSoft, text: colors.neutralText },
-    success: { background: colors.successSoft, text: colors.successText },
-    warning: { background: colors.warningSoft, text: colors.warningText },
+    success: { background: neutralBackground ? colors.neutralSoft : colors.successSoft, text: colors.successText },
+    warning: { background: neutralBackground ? colors.neutralSoft : colors.warningSoft, text: colors.warningText },
   };
 }
 
@@ -260,9 +266,23 @@ function useTonePalette(): Record<Tone, { background: string; text: string }> {
  * called off, red for a countdown to closing. Sentence case, like the rest of
  * the card (user, 2026-10-03).
  */
-export function StateChip({ icon: Icon, label, tone }: { icon?: ComponentType<LucideProps>; label: string; tone: Tone }) {
+export function StateChip({
+  icon: Icon,
+  label,
+  neutralBackground = false,
+  stretch = false,
+  tone,
+}: {
+  icon?: ComponentType<LucideProps>;
+  label: string;
+  /** Keep the pill grey while its text and icon convey the outcome. */
+  neutralBackground?: boolean;
+  /** Fill its share of a row, its words in the middle (user, 2026-10-17). */
+  stretch?: boolean;
+  tone: Tone;
+}) {
   const { fonts } = useTheme();
-  const palette = useTonePalette()[tone];
+  const palette = useTonePalette(neutralBackground)[tone];
   return (
     <View
       style={{
@@ -271,12 +291,13 @@ export function StateChip({ icon: Icon, label, tone }: { icon?: ComponentType<Lu
         borderRadius: 999,
         flexDirection: "row",
         gap: 4,
+        justifyContent: stretch ? "center" : undefined,
         paddingHorizontal: spacing.sm,
-        paddingVertical: 3,
+        paddingVertical: stretch ? 6 : 3,
       }}
     >
       {Icon ? <Icon color={palette.text} size={12} strokeWidth={2.5} /> : null}
-      <Text style={{ color: palette.text, fontFamily: fonts.sansBold, fontSize: 11 }}>{label}</Text>
+      <FitText numberOfLines={stretch ? 1 : undefined} style={{ color: palette.text, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 11 }}>{label}</FitText>
     </View>
   );
 }
@@ -289,16 +310,26 @@ export function StateChip({ icon: Icon, label, tone }: { icon?: ComponentType<Lu
 export function StatusNote({
   icon: Icon,
   label,
+  neutralBackground = false,
+  tinted = false,
   text,
   tone,
 }: {
   icon: ComponentType<LucideProps>;
   label: string;
+  /** Matches the enquiry message preview without losing the outcome colour. */
+  neutralBackground?: boolean;
+  /**
+   * The tone's own pale fill, with no edge, for a warning about the person
+   * rather than a state (user, 2026-10-17: the Duplicate box keeps its fill,
+   * the border it had for a moment is gone).
+   */
+  tinted?: boolean;
   text: string | null;
   tone: Tone;
 }) {
   const { fonts, type } = useTheme();
-  const palette = useTonePalette()[tone];
+  const palette = useTonePalette(neutralBackground && !tinted)[tone];
   return (
     <View
       style={{

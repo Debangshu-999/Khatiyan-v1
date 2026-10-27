@@ -1,6 +1,6 @@
-import { useEffect, type ComponentProps, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import { Redirect, Tabs } from "expo-router";
-import { Pressable, Text, View, type ColorValue } from "react-native";
+import { AccessibilityInfo, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { type LucideProps } from "lucide-react-native";
@@ -8,6 +8,7 @@ import { type LucideProps } from "lucide-react-native";
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { BrandLoadingScreen } from "@/components/brand-logo";
+import { BottomNavigationTab } from "@/components/bottom-navigation-tab";
 import { loadPinnedOwnerModulesForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { NotificationOptInPrompt } from "@/features/notifications/notification-opt-in-prompt";
@@ -23,9 +24,8 @@ import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { useTheme } from "@/theme/use-theme";
 
 // Custom bottom bar stuck to the screen's bottom edge, spanning the full width
-// with a hairline top border and a soft top shadow. The active tab is a
-// soft-tinted contained pill with its icon + label; inactive tabs use a muted
-// tone. Honours the bottom safe-area inset via padding so the row clears the
+// with a hairline top border. Selection cross-fades the outlined/solid icon
+// and label, keeping all tap targets steady. Honours the safe-area inset so the row clears the
 // home indicator. Routes hidden via `href: null` get a no-op `tabBarButton`
 // from expo-router, which is how we skip them here.
 type TabBarProps = {
@@ -105,9 +105,17 @@ function TabIcon({
 }
 
 function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: TabBarProps) {
-  const { colors, fonts, isDark } = useTheme();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const focusedKey = state.routes[state.index]?.key;
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    const update = (enabled: boolean) => { if (mounted) setReduceMotion(enabled); };
+    void AccessibilityInfo.isReduceMotionEnabled().then(update).catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", update);
+    return () => { mounted = false; subscription.remove(); };
+  }, []);
 
   return (
     <View
@@ -131,8 +139,6 @@ function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: Ta
           }
           const focused = route.key === focusedKey;
           const blocked = blockedRoutes.includes(route.name) && !focused;
-          // Ink, not the blue accent — same selection language as TabSwitcher.
-          const color = focused ? colors.ink : colors.kicker;
           const label = typeof options.tabBarLabel === "string" ? options.tabBarLabel : options.title ?? route.name;
 
           function onPress() {
@@ -147,39 +153,15 @@ function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: Ta
           }
 
           return (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: blocked, selected: focused }}
+            <BottomNavigationTab
+              disabled={blocked}
+              focused={focused}
               key={route.key}
+              label={label}
               onPress={onPress}
-              style={{
-                alignItems: "center",
-                flex: 1,
-                gap: 3,
-                height: "100%",
-                justifyContent: "center",
-                opacity: blocked ? 0.35 : 1,
-              }}
-            >
-              {/* Selection is carried by the icon itself — a solid glyph rather
-                  than a tinted cell or a rail. One signal, and it sits on the
-                  thing you actually looked at. */}
-              {options.tabBarIcon?.({ color, focused, size: 22 })}
-              <Text
-                numberOfLines={1}
-                style={{
-                  color,
-                  // The weight lives in the FILE — a fontWeight on top of a
-                  // loaded family makes Android synthesise a second bolding.
-                  fontFamily: focused ? fonts.sansBold : fonts.sansMedium,
-                  fontSize: 9,
-                  letterSpacing: 0,
-                  textAlign: "center",
-                }}
-              >
-                {label}
-              </Text>
-            </Pressable>
+              reduceMotion={reduceMotion}
+              renderIcon={options.tabBarIcon}
+            />
           );
         })}
       </View>

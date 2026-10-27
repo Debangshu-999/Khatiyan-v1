@@ -24,6 +24,10 @@ public interface TenancyRepository extends JpaRepository<Tenancy, UUID> {
 
     Optional<Tenancy> findByReferenceCode(String referenceCode);
 
+    /** Scalar only: do not attach a potentially stale entity before the inventory gate. */
+    @Query("SELECT t.propertyId FROM Tenancy t WHERE t.id = :tenancyId")
+    Optional<UUID> findPropertyIdById(UUID tenancyId);
+
     /** Locks one tenancy while a scheduled workflow re-validates its state. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT tenancy FROM Tenancy tenancy WHERE tenancy.id = :tenancyId")

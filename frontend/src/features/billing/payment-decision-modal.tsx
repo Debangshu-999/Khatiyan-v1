@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
@@ -197,9 +198,9 @@ export function PaymentDecisionModal({
                   <ArrowLeft color={colors.ink} size={19} strokeWidth={2.4} />
                 </AnimatedPressable>
               ) : null}
-              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20 }}>
+              <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20 }}>
                 {step === "ask" ? "Did the payment go through?" : "Anything to add?"}
-              </Text>
+              </ModalTitle>
               <AnimatedPressable
                 accessibilityLabel="Close"
                 accessibilityRole="button"

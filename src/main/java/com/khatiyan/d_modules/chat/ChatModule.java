@@ -62,6 +62,27 @@ public class ChatModule {
         chatService.closeEnquiryThread(enquiryId);
     }
 
+    /**
+     * The conversation about a booking made in the app, opened or created, and
+     * brought up to date (user, 2026-10-27). The booking module decides who may
+     * open it and passes who is on the property's side.
+     *
+     * @return the thread id, for the screen that has to open it
+     */
+    public UUID openBookingThread(
+            UUID propertyId, UUID bookingId, UUID bookerUserId, UUID propertySideUserId, boolean ended) {
+        return chatService.openBookingThread(propertyId, bookingId, bookerUserId, propertySideUserId, ended).getId();
+    }
+
+    /**
+     * Brings a booking's conversation up to date when the booking changes: a
+     * new handler takes it over, an ended booking leaves it read-only. Does
+     * nothing when the booking has no conversation.
+     */
+    public void syncBookingThread(UUID bookingId, UUID bookerUserId, UUID propertySideUserId, boolean ended) {
+        chatService.syncBookingThread(bookingId, bookerUserId, propertySideUserId, ended);
+    }
+
     /** Opens an enquiry's conversation again, when the enquirer reopens it. */
     public void reopenEnquiryThread(UUID enquiryId) {
         chatService.reopenEnquiryThread(enquiryId);

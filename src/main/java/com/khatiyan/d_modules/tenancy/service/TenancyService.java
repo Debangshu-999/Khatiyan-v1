@@ -74,6 +74,7 @@ public class TenancyService {
     private final BillingModule billingModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
     private final FutureVacancies futureVacancies;
+    private final BookingBedInventory bookingInventory;
 
     public TenancyService(
             TenancyRepository tenancyRepository,
@@ -84,7 +85,7 @@ public class TenancyService {
             AuthModule authModule,
             @Lazy BillingModule billingModule,
             ReferenceCodeGenerator referenceCodeGenerator,
-            FutureVacancies futureVacancies) {
+            FutureVacancies futureVacancies, BookingBedInventory bookingInventory) {
         this.tenancyRepository = tenancyRepository;
         this.roomChangeRequestRepository = roomChangeRequestRepository;
         this.eventPublisher = eventPublisher;
@@ -94,6 +95,7 @@ public class TenancyService {
         this.billingModule = billingModule;
         this.referenceCodeGenerator = referenceCodeGenerator;
         this.futureVacancies = futureVacancies;
+        this.bookingInventory = bookingInventory;
     }
 
     private String placeholderTenantName(String tenantPhone) {
@@ -105,9 +107,16 @@ public class TenancyService {
         return "Tenant " + digitsOnly.substring(digitsOnly.length() - 4);
     }
 
-    private Tenancy getActiveTenancy(UUID tenancyId) {
-        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+    private Tenancy inventoryTenancy(UUID tenancyId) {
+        UUID propertyId = tenancyRepository.findPropertyIdById(tenancyId)
                 .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        propertyModule.lockRoomInventory(propertyId);
+        return tenancyRepository.findByIdForUpdate(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+    }
+
+    private Tenancy getActiveTenancy(UUID tenancyId) {
+        Tenancy tenancy = inventoryTenancy(tenancyId);
 
         if (!tenancy.isCurrentlyActive()) {
             throw new ValidationException("Tenancy is not active");
@@ -197,6 +206,8 @@ public class TenancyService {
         if (resolvedBillingType == TenancyBillingType.DAILY) {
             throw new ValidationException("Daily stays are onboarded as guest records, not accounts");
         }
+
+        propertyModule.lockRoomInventory(propertyId);
 
         String provisionName = (tenantName != null && !tenantName.isBlank())
                 ? tenantName.trim()
@@ -375,6 +386,7 @@ public class TenancyService {
 
         tenancyAccessPolicy.ensureCanCreateTenancy(actorUserId, propertyId);
 
+        propertyModule.lockRoomInventory(propertyId);
         if (!propertyModule.hasAvailableVacancy(propertyId, roomId)) {
             throw new ValidationException("Room has no available vacancy");
         }
@@ -457,8 +469,7 @@ public class TenancyService {
      */
     @Transactional
     public Tenancy acceptTermsAndActivate(UUID tenancyId, UUID tenantUserId) {
-        Tenancy tenancy = tenancyRepository.findById(tenancyId)
-                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        Tenancy tenancy = inventoryTenancy(tenancyId);
         if (!tenancy.getUserId().equals(tenantUserId)) {
             throw new ValidationException("Tenancy does not belong to current user");
         }
@@ -505,8 +516,7 @@ public class TenancyService {
      */
     @Transactional
     public boolean activateScheduledBooking(UUID tenancyId, LocalDate today) {
-        Tenancy tenancy = tenancyRepository.findByIdForUpdate(tenancyId)
-                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        Tenancy tenancy = inventoryTenancy(tenancyId);
         if (activateScheduledIfReady(tenancy, today)) {
             return true;
         }
@@ -626,8 +636,7 @@ public class TenancyService {
      */
     @Transactional
     public void stampAgreementTerms(UUID tenancyId, Integer validityMonths, String earlyExitRule) {
-        Tenancy tenancy = tenancyRepository.findById(tenancyId)
-                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        Tenancy tenancy = inventoryTenancy(tenancyId);
         tenancy.stampAgreementTerms(validityMonths, earlyExitRule);
 
         log.info(
@@ -642,8 +651,7 @@ public class TenancyService {
      */
     @Transactional
     public void cancelPendingAsTenant(UUID tenancyId, UUID tenantUserId, String reason) {
-        Tenancy tenancy = tenancyRepository.findById(tenancyId)
-                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        Tenancy tenancy = inventoryTenancy(tenancyId);
         if (!tenancy.getUserId().equals(tenantUserId)) {
             throw new ValidationException("Tenancy does not belong to current user");
         }
@@ -661,8 +669,7 @@ public class TenancyService {
      */
     @Transactional
     public void cancelPendingAsManager(UUID actorUserId, UUID tenancyId, String reason) {
-        Tenancy tenancy = tenancyRepository.findById(tenancyId)
-                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        Tenancy tenancy = inventoryTenancy(tenancyId);
         tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
         cancelPendingInternal(tenancy, TenancyCancellationRoute.MANAGEMENT_WITHDREW, actorUserId, reason);
     }
@@ -672,8 +679,7 @@ public class TenancyService {
      */
     @Transactional
     public void cancelPendingAsSystem(UUID tenancyId, String reason) {
-        Tenancy tenancy = tenancyRepository.findById(tenancyId)
-                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        Tenancy tenancy = inventoryTenancy(tenancyId);
         cancelPendingInternal(tenancy, TenancyCancellationRoute.ACCEPTANCE_EXPIRED, null, reason);
     }
 
@@ -792,8 +798,7 @@ public class TenancyService {
     public void end(UUID actorUserId, UUID tenancyId, LocalDate endDate, String reason) {
         // Not getActiveTenancy: a stay past its checkout (PENDING_EXIT) is
         // exactly the one waiting to be ended, and that getter refuses it.
-        Tenancy tenancy = tenancyRepository.findById(tenancyId)
-                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        Tenancy tenancy = inventoryTenancy(tenancyId);
         if (!tenancy.isCurrentlyActive() && tenancy.getStatus() != TenancyStatus.PENDING_EXIT) {
             throw new ValidationException("Tenancy is not active");
         }
@@ -805,6 +810,8 @@ public class TenancyService {
         // the bed as surely as moving does, and refusing it left a mover past
         // their checkout (who can no longer move) impossible to end at all.
         Tenancy waitingBooking = futureVacancies.bookingWaitingOn(tenancy);
+        boolean holdForBooking = bookingInventory.materializeDeparture(
+                tenancy.getPropertyId(), tenancy.getRoomId(), tenancyId, null);
 
         tenancy.end(endDate, reason);
         tenancyRepository.save(tenancy);
@@ -816,7 +823,7 @@ public class TenancyService {
                 tenancy.getPropertyId(),
                 tenancy.getRoomId(),
                 endDate,
-                waitingBooking != null));
+                waitingBooking != null || holdForBooking));
 
         // Due already: the new tenant moves in now. Otherwise the bed stays
         // held and the hourly run starts the booking on its date.
@@ -887,7 +894,8 @@ public class TenancyService {
             UUID newRoomId,
             LocalDate transferDate,
             boolean holdOldRoomForFutureBooking) {
-        Tenancy tenancy = getActiveTenancy(tenancyId);
+        Tenancy tenancy = inventoryTenancy(tenancyId);
+        if (!tenancy.isCurrentlyActive()) throw new ValidationException("Tenancy is not active");
         UUID propertyId = tenancy.getPropertyId();
         UUID oldRoomId = tenancy.getRoomId();
         tenancyAccessPolicy.ensureCanManageRoomChanges(actorUserId, propertyId);
@@ -914,6 +922,12 @@ public class TenancyService {
         }
 
         try {
+            if (holdOldRoomForFutureBooking) {
+                UUID moveId = roomChangeRequestRepository.findOpenByTenancyId(
+                        tenancyId, List.of(TenancyRoomChangeRequestStatus.APPROVED))
+                        .map(request -> request.getId()).orElse(null);
+                bookingInventory.materializeDeparture(propertyId, oldRoomId, tenancyId, moveId);
+            }
             tenancy.transferRoom(newRoomId, newRoom.baseRentPaise());
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ValidationException(e.getMessage());
@@ -946,6 +960,9 @@ public class TenancyService {
 
     /** Do not invalidate an approved outgoing move after its bed was sold forward. */
     private void ensureNoPromisedDeparture(Tenancy tenancy) {
+        if (bookingInventory.departureClaimed(tenancy.getId())) {
+            throw new ValidationException("This bed is already promised to an incoming booking");
+        }
         roomChangeRequestRepository.findOpenByTenancyId(
                 tenancy.getId(), List.of(TenancyRoomChangeRequestStatus.APPROVED))
                 .filter(request -> request.getCurrentRoomId().equals(tenancy.getRoomId()))

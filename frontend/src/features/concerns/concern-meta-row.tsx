@@ -6,6 +6,7 @@ import { humanizeToken } from "@/features/owner/owner-ui";
 import type { ConcernSummary } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The facts line on a concern card, shared by the tenant and owner queues:
@@ -50,9 +51,9 @@ function MetaPill({ icon: Icon, label }: { icon: ComponentType<LucideProps>; lab
       }}
     >
       <Icon color={colors.neutralText} size={13} strokeWidth={2.2} />
-      <Text numberOfLines={1} style={[type.caption, { color: colors.neutralText }]}>
+      <FitText numberOfLines={1} style={[type.caption, { color: colors.neutralText }]}>
         {label}
-      </Text>
+      </FitText>
     </View>
   );
 }

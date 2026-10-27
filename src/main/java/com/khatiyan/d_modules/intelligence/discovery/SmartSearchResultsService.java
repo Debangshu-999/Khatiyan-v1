@@ -10,6 +10,7 @@ import java.util.stream.Stream;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import com.khatiyan.c_shared.valkey.SingleFlight;
 import com.khatiyan.c_shared.api.PageResponse;
 import com.khatiyan.d_modules.discovery.DiscoveryModule;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
@@ -67,6 +68,7 @@ public class SmartSearchResultsService {
     private final SmartSearchRanker ranker;
     private final SmartSearchReasonWriter reasonWriter;
     private final SmartSearchCache cache;
+    private final SingleFlight answers = new SingleFlight();
     private final AiInvocationAuditService auditService;
 
     public SmartSearchResultsService(
@@ -102,7 +104,17 @@ public class SmartSearchResultsService {
                     (int) Math.min(Integer.MAX_VALUE, System.currentTimeMillis() - startedAt)));
             return repeat;
         }
-        return answer(actorUserId, request);
+        // The same search arriving twice at once (a double tap, or two people
+        // tapping one suggested sentence) asks the model once (2026-10-18).
+        // The second caller gets the first one's answer, recorded as the cache
+        // hit it effectively is.
+        return answers.run(
+                cache.answerKey(request),
+                () -> answer(actorUserId, request),
+                () -> auditService.record(AiInvocation.fromCache(
+                        AiCapability.SMART_SEARCH,
+                        actorUserId,
+                        (int) Math.min(Integer.MAX_VALUE, System.currentTimeMillis() - startedAt))));
     }
 
     private SmartSearchResponse answer(UUID actorUserId, InterpretSearchRequest request) {

@@ -1,10 +1,12 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ActivityIndicator, Keyboard, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Keyboard, KeyboardAvoidingView, LayoutAnimation, Platform, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { X } from "lucide-react-native";
 import { saveWalletAccess, subscribeWalletAccess, walletAccessToken } from "@/auth/wallet-access";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { api } from "@/store/api";
@@ -108,14 +110,18 @@ export function WalletPinModal({ onCancel, onUnlocked, disableLock = false }: { 
       dismissKeyboardSmoothly();
     } finally { pending.current = false; }
   }
-  return <Modal transparent visible={visible} animationType="slide" onRequestClose={cancel} onShow={focusAfterShow}>
-    <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }}>
+  return <BottomSheetModal visible={visible} onRequestClose={cancel} onShow={focusAfterShow} onDismissStart={() => {
+    active.current = false;
+    clearTimeout(focusTimer.current);
+    Keyboard.dismiss();
+  }}>
+    {(dismiss) => <View style={{ flex: 1 }}>
     {/* Android's modal window already resizes for the IME. Adding measured
         padding also moved the sheet, then reversed it after the next layout. */}
     <KeyboardAvoidingView enabled={Platform.OS === "ios"} behavior="padding" style={{ flex: 1, justifyContent: "flex-end" }}>
-      <AnimatedPressable accessibilityRole="button" accessibilityLabel="Cancel PIN entry" onPress={cancel} style={{ alignSelf: "center", marginBottom: 14, backgroundColor: colors.surface, borderRadius: 24, width: 46, height: 46, alignItems: "center", justifyContent: "center" }}><X color={colors.ink} size={23} /></AnimatedPressable>
+      <AnimatedPressable accessibilityRole="button" accessibilityLabel="Cancel PIN entry" onPress={() => dismiss()} style={{ alignSelf: "center", marginBottom: 14, backgroundColor: colors.surface, borderRadius: 24, width: 46, height: 46, alignItems: "center", justifyContent: "center" }}><X color={colors.ink} size={23} /></AnimatedPressable>
       <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 24, paddingTop: 28, paddingBottom: Math.max(insets.bottom, 16) + 6, gap: 22, width: "100%", maxWidth: 520, alignSelf: "center" }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: "center" }}>Enter Account PIN</Text>
+        <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: "center" }}>Enter Account PIN</ModalTitle>
         <View>
           <AnimatedPressable onPress={focusPin} accessible={false} style={{ flexDirection: "row", gap: 8 }}>
             {Array.from({ length: 6 }, (_, index) => <View key={index} style={{ flex: 1, height: 54, borderRadius: 9, borderWidth: 1.5, borderColor: error ? colors.danger : index === Math.min(pin.length, 5) ? colors.ink : colors.borderStrong, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface }}><Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 20, lineHeight: 24 }}>{pin[index] ? "*" : ""}</Text></View>)}
@@ -125,8 +131,8 @@ export function WalletPinModal({ onCancel, onUnlocked, disableLock = false }: { 
         </View>
       </View>
     </KeyboardAvoidingView>
-    </View>
-  </Modal>;
+    </View>}
+  </BottomSheetModal>;
 }
 
 /**

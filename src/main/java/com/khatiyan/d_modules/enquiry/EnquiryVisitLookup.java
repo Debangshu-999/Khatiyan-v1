@@ -32,6 +32,11 @@ public interface EnquiryVisitLookup {
      */
     Map<UUID, StandingVisit> standingOn(Collection<UUID> enquiryIds);
 
+    /** Recorded attended visits, not scheduled, cancelled or merely elapsed slots. */
+    Map<UUID, AttendedVisit> attendedOn(Collection<UUID> enquiryIds);
+
+    record AttendedVisit(UUID visitId, UUID propertyId, UUID prospectUserId, LocalDate date, Instant checkedInAt) {}
+
     record BookedVisit(LocalDate date, LocalTime start) {}
 
     /**

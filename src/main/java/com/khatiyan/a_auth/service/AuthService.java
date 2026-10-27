@@ -108,8 +108,10 @@ public class AuthService {
     /** Where this account is signed in, current session flagged. */
     @Transactional(readOnly = true)
     public List<UserSessionResponse> listSessions(UUID userId, UUID callerSessionId) {
-        return userSessionService.listLive(userId, Instant.now()).stream()
-                .map(session -> UserSessionResponse.from(session, callerSessionId))
+        List<com.khatiyan.a_auth.model.UserSession> live = userSessionService.listLive(userId, Instant.now());
+        java.util.Map<UUID, Instant> seen = userSessionService.lastSeen(live);
+        return live.stream()
+                .map(session -> UserSessionResponse.from(session, callerSessionId, seen.get(session.getJti())))
                 .toList();
     }
 
@@ -348,6 +350,26 @@ public class AuthService {
     @Transactional
     public void completeCashPaymentConfirmation(String phone, String otp) {
         otpService.verifyAndConsumeOTP(phone, OtpPurpose.CASH_PAYMENT, otp);
+    }
+
+    /**
+     * Sends a code that confirms a booking token was handed over in cash.
+     * As {@link #startCashPaymentConfirmation}, with its own purpose so that
+     * a code sent for a token cannot be spent on a bill.
+     *
+     * @param detail what the code confirms: the amount and the booking
+     * @return the destination, masked to its last four digits
+     */
+    @Transactional
+    public String startBookingTokenCashConfirmation(String phone, String requestIpAddress, String detail) {
+        otpService.issue(phone, null, requestIpAddress, OtpPurpose.BOOKING_TOKEN_CASH, OtpDeliveryChannel.SMS, detail);
+        return maskPhone(phone);
+    }
+
+    /** Checks a booking-token cash code and spends it. */
+    @Transactional
+    public void completeBookingTokenCashConfirmation(String phone, String otp) {
+        otpService.verifyAndConsumeOTP(phone, OtpPurpose.BOOKING_TOKEN_CASH, otp);
     }
 
     /**
@@ -753,7 +775,6 @@ public class AuthService {
 
         Optional<User> maybeUser = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
         if (maybeUser.isEmpty()) {
-            phoneLoginLockService.recordFailure(normalizedPhone);
             loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.USER_NOT_FOUND);
             throw new ValidationException("Invalid phone or PIN");
         }
@@ -777,7 +798,6 @@ public class AuthService {
                     loginRateLimitProperties.progressiveLockFailedAttempts(),
                     loginRateLimitProperties.lockDurationForFailedAttempt(nextFailedAttempts),
                     now);
-            phoneLoginLockService.recordFailure(normalizedPhone);
             loginAttemptService.recordFailure(normalizedPhone, ipAddress, LoginFailureReason.INVALID_PIN);
 
             if (user.isLoginTemporarilyLocked(now)) {
@@ -793,7 +813,6 @@ public class AuthService {
         }
 
         user.recordSuccessfulLogin(now);
-        phoneLoginLockService.clear(normalizedPhone);
         loginAttemptService.recordSuccess(normalizedPhone, ipAddress);
 
         return tokenFor(user, signOutSessionId);
@@ -1170,12 +1189,10 @@ public class AuthService {
         if (!user.hasPin() || !pinService.matches(pin, user.getPinHash())) {
             int attempts = user.getFailedLoginAttempts() + 1;
             user.recordFailedLoginAttempt(loginRateLimitProperties.progressiveLockFailedAttempts(), loginRateLimitProperties.lockDurationForFailedAttempt(attempts), now);
-            phoneLoginLockService.recordFailure(phone);
             loginAttemptService.recordFailure(phone, ipAddress, LoginFailureReason.INVALID_PIN);
             throw new ValidationException("Incorrect wallet PIN");
         }
         user.recordSuccessfulLogin(now);
-        phoneLoginLockService.clear(phone);
         loginAttemptService.recordSuccess(phone, ipAddress);
     }
 }

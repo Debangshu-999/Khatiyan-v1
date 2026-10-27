@@ -2,6 +2,7 @@ import { View } from "react-native";
 
 import { Card } from "@/components/card";
 import { Skeleton } from "@/components/skeletons/primitives";
+import { useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -44,6 +45,7 @@ export function OwnerMetricGridSkeleton({
 }
 
 export function OwnerMetricTileSkeleton({ square = false }: { square?: boolean }) {
+  const softShadow = useSoftShadow();
   const { colors } = useTheme();
 
   return (
@@ -63,10 +65,7 @@ export function OwnerMetricTileSkeleton({ square = false }: { square?: boolean }
         justifyContent: "center",
         minHeight: square ? 102 : 100,
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
+        ...softShadow(colors.shadow, 2, 6),
       }}
     >
       {square ? (

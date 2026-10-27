@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Image, Linking, Platform, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { LinearGradient } from "expo-linear-gradient";
 import { ArrowLeft, ArrowRight, ChartNoAxesCombined, Download, FileText, Plus, Receipt, ReceiptIndianRupee, Scale, TrendingUp, Undo2, Wallet, WalletCards } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -44,11 +43,11 @@ import {
 } from "@/store/services/pnl-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const NO_EXPENSE_ILLUSTRATION = require("../assets/empty-states/No-Expense_512x512.png");
 
 const PAGE_SIZE = 20;
-const PNL_HEADER_ILLUSTRATION = require("../assets/images/workspace/pnl-header.png");
 const PNL_PROFIT_ILLUSTRATION = require("../assets/images/workspace/pnl-profit.png");
 const PNL_LOSS_ILLUSTRATION = require("../assets/images/workspace/pnl-loss.png");
 
@@ -104,23 +103,11 @@ export default function OwnerPnlScreen() {
   return (
     <>
       <ScreenScrollView
-        background={
-          <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-            <LinearGradient
-              colors={[colors.primarySoft, colors.surface]}
-              end={{ x: 0.5, y: 1 }}
-              locations={[0, 1]}
-              start={{ x: 0.5, y: 0 }}
-              style={{ height: 230 }}
-            />
-          </View>
-        }
         contentContainerStyle={{ paddingTop: spacing.xs }}
         safeAreaEdges={["top", "bottom"]}
         surface={colors.surface}
       >
         <ScreenHeader
-          artwork={PNL_HEADER_ILLUSTRATION}
           italicTail="& loss."
           subtitle={property ? `Income, expenses and net for ${property.name}.` : "Select a property from Home to view P&L."}
           title="Profit"
@@ -345,16 +332,15 @@ function PnlSummaryRow({
         <Text style={[type.caption, { color: colors.kicker, fontSize: 11, fontWeight: "800", letterSpacing: 1.1, textTransform: "uppercase" }]}>
           {title}
         </Text>
-        <Text
-          adjustsFontSizeToFit
+        <FitText
           numberOfLines={1}
           style={{ color: valueColor, fontFamily: fonts.sansBold, fontSize: 20, fontVariant: ["tabular-nums"] }}
         >
           {value}
-        </Text>
-        <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+        </FitText>
+        <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
           {sub}
-        </Text>
+        </FitText>
       </View>
 
       <View style={{ alignItems: "center", justifyContent: "center", width: 38 }}>
@@ -447,9 +433,9 @@ function Breakdown({
             {lines.map((item) => (
               <View key={item.label} style={{ gap: spacing.xs }}>
                 <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={1}>
+                  <FitText style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={1}>
                     {item.label}
-                  </Text>
+                  </FitText>
                   <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13, fontVariant: ["tabular-nums"], }}>
                     {formatMoneyPaise(item.amountPaise)}
                   </Text>
@@ -517,12 +503,12 @@ function PnlToolTile({ icon: Icon, label, onPress }: { icon: typeof Plus; label:
       style={{ alignItems: "center", flex: 1, gap: spacing.xs, justifyContent: "center", minHeight: 88, paddingHorizontal: spacing.xs, paddingVertical: spacing.sm }}
     >
       <Icon color={colors.primary} size={32} strokeWidth={1.9} />
-      <Text
+      <FitText
         numberOfLines={2}
         style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
       >
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }
@@ -544,12 +530,12 @@ function IncomeRow({
     <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 14, borderWidth: 1, gap: spacing.sm, opacity: entry.reversed ? 0.6 : 1, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+          <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
             {entry.source}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+          </FitText>
+          <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {entry.receivedFrom ? `${entry.receivedFrom} · ` : ""}{formatDate(entry.receivedDate)}
-          </Text>
+          </FitText>
         </View>
         <MoneyText color={negative ? colors.danger : colors.jade} paise={entry.amountPaise} weight="700" />
       </View>
@@ -597,9 +583,9 @@ function IncomeRow({
                 Reversed {formatDate(reversal.receivedDate)}
               </Text>
               {reversal.description ? (
-                <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>
+                <FitText style={[type.description, { color: colors.muted }]} numberOfLines={2}>
                   {reversal.description}
-                </Text>
+                </FitText>
               ) : null}
             </View>
             <MoneyText color={colors.danger} paise={reversal.amountPaise} weight="700" />
@@ -833,9 +819,9 @@ function ReportRow({ bold = false, label, paise, signed = false }: { bold?: bool
   const negative = signed && paise < 0;
   return (
     <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-      <Text style={[type.caption, { color: bold ? colors.ink : colors.muted, fontWeight: bold ? "800" : "500" }]} numberOfLines={1}>
+      <FitText style={[type.caption, { color: bold ? colors.ink : colors.muted, fontWeight: bold ? "800" : "500" }]} numberOfLines={1}>
         {label}
-      </Text>
+      </FitText>
       <Text style={{ color: negative ? colors.danger : bold ? colors.ink : colors.inkSoft, fontFamily: fonts.sans, fontSize: 13, fontVariant: ["tabular-nums"], fontWeight: bold ? "800" : "700" }}>
         {signed && paise < 0 ? "−" : ""}{formatMoneyPaise(Math.abs(paise))}
       </Text>

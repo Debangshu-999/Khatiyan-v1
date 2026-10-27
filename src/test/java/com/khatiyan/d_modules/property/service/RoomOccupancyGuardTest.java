@@ -75,6 +75,7 @@ class RoomOccupancyGuardTest {
     private Property property;
 
     private RoomService roomService;
+    @Mock private RoomInventoryLock inventoryLock;
 
     @BeforeEach
     void setUp() {
@@ -86,7 +87,7 @@ class RoomOccupancyGuardTest {
                 propertyManagerService,
                 propertyAccessPolicy,
                 authModule,
-                eventPublisher);
+                eventPublisher, inventoryLock);
     }
 
     @Test

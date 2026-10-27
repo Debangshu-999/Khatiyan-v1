@@ -11,6 +11,7 @@ import { ROOM_AMENITY_ICONS, type AmenityIconProps } from "@/features/property/r
 import { type RoomAmenity, type RoomConditioning } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 export const MAX_CUSTOM_AMENITIES = 10;
 export const MAX_CUSTOM_AMENITY_LENGTH = 80;
@@ -316,12 +317,12 @@ function AmenityCell({
           longest label fits at every screen width, and "Attached toile…" is a
           worse answer than a word wrapping. The cell's fixed height keeps the
           grid aligned when one does. */}
-      <Text
+      <FitText
         numberOfLines={2}
         style={{ color: on ? colors.ink : colors.muted, flex: 1, fontFamily: fonts.sansBold, fontSize: 12.5, lineHeight: 15 }}
       >
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }

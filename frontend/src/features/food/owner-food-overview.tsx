@@ -27,6 +27,7 @@ import {
   formatBulkQuantity,
   formatMealWindow,
 } from "@/features/food/food-ui";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The switch that decides whether Khatiyan manages this property's food.
@@ -307,9 +308,9 @@ function SetupStep({
       )}
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>{title}</Text>
-        <Text numberOfLines={2} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
+        <FitText numberOfLines={2} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
           {description}
-        </Text>
+        </FitText>
       </View>
       <MaterialCommunityIcons color={colors.kicker} name="chevron-right" size={20} />
     </AnimatedPressable>
@@ -398,12 +399,12 @@ export function CookingPreview({
               key={item.itemId}
               style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}
             >
-              <Text
+              <FitText
                 numberOfLines={1}
                 style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sans, fontSize: 13 }}
               >
                 {item.itemName}
-              </Text>
+              </FitText>
               <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
                 {formatBulkQuantity(item.targetQuantity, item.quantityUnit)}
               </Text>

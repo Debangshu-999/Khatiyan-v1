@@ -1,4 +1,5 @@
 import { CenterModal } from "@/components/center-modal";
+import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Check, Expand, X } from "lucide-react-native";
@@ -6,6 +7,7 @@ import { Check, Expand, X } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 // The click-wrap block, shared by the owner's ID declaration at onboarding and
 // the tenant's agreement acceptance. Two consents with the same shape and the
@@ -111,9 +113,9 @@ export function ClickwrapConsent({
           made the block feel like one big button (owner's call, 2026-09-27). */}
       <ConsentTick checked={checked} onToggle={onToggle} />
 
-      <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 19 }]}>
+      <FitText numberOfLines={2} style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 19 }]}>
         {statement}
-      </Text>
+      </FitText>
 
       <AnimatedPressable
         accessibilityLabel="Read the full declaration"
@@ -217,9 +219,9 @@ export function FullDeclarationModal({
               padding: spacing.md,
             }}
           >
-            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>
+            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>
               Declaration
-            </Text>
+            </ModalTitle>
             <AnimatedPressable
               accessibilityLabel="Close"
               accessibilityRole="button"

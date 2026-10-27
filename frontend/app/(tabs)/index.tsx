@@ -6,13 +6,18 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurTargetView, BlurView } from "expo-blur";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { attentionCount } from "@/features/owner/action-center";
+import { useFocusEffect } from "expo-router";
 import { Activity, AlertCircle, ChartPie, AlertTriangle, Ban, Banknote, BedDouble, Bell, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Compass, FileText, Home, Info, KeyRound, LayoutGrid, LocateFixed, Lock, LogOut, type LucideProps, MapPin, Megaphone, MessageSquareWarning, Navigation, Pin, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, UserMinus, UserPlus, UserRound, Users, Waves, Wrench, X } from "lucide-react-native";
+import { BookingsIcon } from "@/features/property/property-control-icons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Svg, { Path, Rect } from "react-native-svg";
 
 import { clearStoredSession } from "@/auth/session-storage";
 import { PropertyIcon } from "@/components/property-icon";
+import { RupeeBanknoteIcon } from "@/components/rupee-banknote-icon";
+import { LeadsInsightsIcon } from "@/components/leads-insights-icon";
 import { ScreenHeader } from "@/components/screen-header";
 import { useToast } from "@/components/toast";
 import { takeWelcome } from "@/features/auth/pending-welcome";
@@ -80,6 +85,8 @@ import { clearSession } from "@/store/slices/auth-slice";
 import { setSelectedOwnerPropertyId } from "@/store/slices/owner-workspace-slice";
 import type { PaymentIntentDigest } from "@/store/services/payment-intent-api";
 import { useGetServiceBalanceQuery } from "@/store/services/service-balance-api";
+import { useGetLeadInsightsQuery, useGetPropertyLeadCountsQuery } from "@/store/services/lead-api";
+import { leadsInPlay } from "@/features/lead/lead-display";
 import {
   useGetMyFoodAvailabilityQuery,
   useGetMyFoodSubscriptionQuery,
@@ -89,11 +96,13 @@ import {
 import { MealGlyph, MEAL_LABEL, foodIcon, formatMealTime } from "@/features/food/food-ui";
 import { DelayedChip } from "@/features/food/meal-schedule-ui";
 import { TenancyStartsSoonBubble } from "@/features/tenancy/starts-soon-bubble";
+import { tabShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
 
-const HOME_TOOL_ARTWORK: Record<"deposit" | "expenses" | "pnl" | "vacancy" | "visits", ImageSourcePropType> = {
+const HOME_TOOL_ARTWORK: Record<"bookings" | "deposit" | "expenses" | "pnl" | "vacancy" | "visits", ImageSourcePropType> = {
+  bookings: require("../../assets/icons/home-tools/bookings.png"),
   deposit: require("../../assets/icons/home-tools/deposit-manager.png"),
   expenses: require("../../assets/icons/home-tools/expense-tracker.png"),
   pnl: require("../../assets/icons/home-tools/profit-loss.png"),
@@ -180,9 +189,14 @@ export default function HomeScreen() {
   const selectedWorkspaceProperty = resolveSelectedProperty(workspaceProperties, selectedPropertyId);
   const headerDashboardQuery = useGetOwnerDashboardQuery(selectedWorkspaceProperty?.id ?? "", {
     skip: !isWorkspace || !selectedWorkspaceProperty,
+    refetchOnMountOrArgChange: true, refetchOnFocus: true, refetchOnReconnect: true,
+    pollingInterval: 60_000, skipPollingIfUnfocused: true,
   });
-  const headerRecentActivity = headerDashboardQuery.data?.recentActivity ?? [];
-  const headerAttentionCount = attentionCount(headerDashboardQuery.data);
+  useFocusEffect(useCallback(() => {
+    if (isWorkspace && selectedWorkspaceProperty && !headerDashboardQuery.isUninitialized) void headerDashboardQuery.refetch();
+  }, [isWorkspace, selectedWorkspaceProperty?.id, headerDashboardQuery.isUninitialized, headerDashboardQuery.refetch]));
+  const headerRecentActivity = headerDashboardQuery.currentData?.recentActivity ?? [];
+  const headerAttentionCount = attentionCount(headerDashboardQuery.currentData);
   const awaitingPropertyChoice = isWorkspace && !selectedWorkspaceProperty;
 
   const subtitle = isWorkspace
@@ -297,7 +311,7 @@ export default function HomeScreen() {
                     width: 4,
                   }}
                 />
-                <Text
+                <FitText
                   numberOfLines={2}
                   style={[
                     type.body,
@@ -310,7 +324,7 @@ export default function HomeScreen() {
                   ]}
                 >
                   {subtitle}
-                </Text>
+                </FitText>
               </View>
             ) : (
               <HeaderNote>{subtitle}</HeaderNote>
@@ -448,21 +462,21 @@ function HomeLocationBar({
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: compact ? spacing.xxs : spacing.xs }}>
         <Navigation color={locationIconColor} fill={locationIconColor} size={compact ? 13 : 16} strokeWidth={2} />
-        <Text
+        <FitText
           numberOfLines={1}
           style={{ color: foregroundColor, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: compact ? 16 : 20, letterSpacing: 0 }}
         >
           {locationTitle(location)}
-        </Text>
+        </FitText>
         {busy ? (
           <ActivityIndicator color={secondaryColor} size="small" />
         ) : (
           <RefreshCw color={secondaryColor} size={compact ? 12 : 14} strokeWidth={2.4} />
         )}
       </View>
-      <Text numberOfLines={1} style={[type.caption, { color: secondaryColor, fontSize: compact ? 10 : 11 }]}>
+      <FitText numberOfLines={1} style={[type.caption, { color: secondaryColor, fontSize: compact ? 10 : 11 }]}>
         {locationAddress(location)}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }
@@ -498,33 +512,6 @@ function WorkspaceMarker({ label }: { label: string }) {
   );
 }
 
-/**
- * Total open items the action centre groups — the badge on the header icon.
- *
- * <p>
- * Shared so the icon and the action centre itself cannot disagree: they were
- * two copies of the same sum, and a new attention type added to one would have
- * silently skipped the other. A budget at or over its limit counts as one item.
- */
-function attentionCount(dashboard: OwnerDashboard | undefined): number {
-  if (!dashboard) {
-    return 0;
-  }
-  const { attention, budget } = dashboard;
-  return (
-    attention.paymentsOverdue +
-    attention.concernsUnattended24h +
-    attention.escalatedConcerns +
-    attention.pendingExitRequests +
-    attention.pendingRoomChangeRequests +
-    attention.upcomingExits +
-    attention.exitsPastDue +
-    attention.tenantsOnNotice +
-    // Nullish-guarded: a cached / pre-upgrade dashboard response lacks these.
-    (attention.pendingDepositSettlements ?? 0) +
-    (budget?.level === "APPROACHING" || budget?.level === "EXCEEDED" ? 1 : 0)
-  );
-}
 
 function HomeAttentionButton({
   count,
@@ -734,6 +721,90 @@ function ServiceBalanceCard({ onPress }: { onPress: () => void }) {
     </AnimatedPressable>
     {pinOpen ? <WalletPinModal onCancel={() => setPinOpen(false)} onUnlocked={() => { setPinOpen(false); onPress(); }} /> : null}
     </>
+  );
+}
+
+/**
+ * Property Leads, under the Service Balance card (user, 2026-10-17): the way
+ * into the Leads workspace, with how many leads are in play and how many are
+ * going cold. Owner and managers alike: leads are open to everyone who
+ * manages the property, by the owner's decision.
+ */
+const PROPERTY_LEADS_ILLUSTRATION = require("../../assets/icons/home-tools/property-leads.png");
+
+function PropertyLeadsCard({ onPress, propertyId }: { onPress: () => void; propertyId: string }) {
+  const { colors, fonts } = useTheme();
+  const countsQuery = useGetPropertyLeadCountsQuery(propertyId, { refetchOnFocus: true });
+  const counts = countsQuery.currentData;
+  const inPlay = leadsInPlay(counts);
+  return (
+    <AnimatedPressable accessibilityRole="button" accessibilityLabel="Property Leads" onPress={onPress}>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderCurve: "continuous",
+          borderRadius: radii.card,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: spacing.md,
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.md,
+        }}
+      >
+        <Image
+          accessibilityIgnoresInvertColors
+          resizeMode="contain"
+          source={PROPERTY_LEADS_ILLUSTRATION}
+          style={{ height: 56, width: 56 }}
+        />
+        <View style={{ flex: 1, gap: 2 }}>
+          {/* No "Property Leads" header (user, 2026-10-27): the count says what the card is. */}
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, letterSpacing: -0.3 }}>
+            {inPlay == null ? "—" : `${inPlay} active ${inPlay === 1 ? "lead" : "leads"}`}
+          </Text>
+          {counts && counts.goingCold > 0 ? (
+            <Text style={{ color: colors.warningText, fontFamily: fonts.sansSemiBold, fontSize: 12 }}>
+              {counts.goingCold === 1 ? "1 going cold" : `${counts.goingCold} going cold`}
+            </Text>
+          ) : null}
+        </View>
+        <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
+/**
+ * Bookings to onboard today (user, 2026-10-27): confirmed, moving in today,
+ * nobody moved in yet. Pale yellow with the Bookings calendar mark, under
+ * Property Leads, and only when there is at least one. Opens the booking
+ * onboarding screen, on its Today tab.
+ */
+function MoveInsTodayCard({ count, onPress }: { count: number; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  const label = count === 1 ? "1 booking to onboard today" : `${count} bookings to onboard today`;
+  return (
+    <AnimatedPressable accessibilityLabel={label} accessibilityRole="button" onPress={onPress}>
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: colors.warningSoft,
+          borderCurve: "continuous",
+          borderRadius: radii.card,
+          flexDirection: "row",
+          gap: spacing.sm,
+          // Smaller than the two cards above it (user, 2026-10-27): one line, a small mark.
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm,
+        }}
+      >
+        <BookingsIcon size={24} />
+        <FitText numberOfLines={1} style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansSemiBold, fontSize: 14 }}>{label}</FitText>
+        <ChevronRight color={colors.warningText} size={16} strokeWidth={2.2} />
+      </View>
+    </AnimatedPressable>
   );
 }
 
@@ -1323,7 +1394,7 @@ function FoodPreferenceHomeCard({
         <View
           pointerEvents="none"
           style={[
-            StyleSheet.absoluteFillObject,
+            StyleSheet.absoluteFill,
             { backgroundColor: isDark ? "rgba(15, 23, 42, 0.34)" : "rgba(255, 255, 255, 0.38)" },
           ]}
         />
@@ -1401,12 +1472,12 @@ function FoodPreferenceHomeCard({
                     <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13.5, lineHeight: 18 }}>
                       Your plan:
                     </Text>
-                    <Text
+                    <FitText
                       numberOfLines={1}
                       style={[type.description, { color: colors.inkSoft, flex: 1, fontFamily: fonts.sansBold }]}
                     >
                       {planCopy.name}
-                    </Text>
+                    </FitText>
                   </View>
                   {planCopy.note ? (
                     <Text style={[type.description, { color: colors.muted, marginLeft: 23 }]}>
@@ -1445,11 +1516,8 @@ function FoodPreferenceHomeCard({
 function foodPlanCopy(plan: FoodPlan | null): { name: string; note: string | null } {
   const today = plan?.today ?? null;
   const next = plan?.fromTomorrow ?? null;
-  if (!today && !next) {
-    return { name: "No plan selected", note: null };
-  }
-  if (!today && next) {
-    return { name: foodPlanName(next), note: "Starts tomorrow" };
+  if (!today) {
+    return next ? { name: foodPlanName(next), note: "Starts tomorrow" } : { name: "No plan selected", note: null };
   }
   const name = foodPlanName(today);
   if (plan?.endsTonight) {
@@ -1498,14 +1566,13 @@ function TenantCurrentPropertyCard({ activeTenancy }: { activeTenancy: TenantAct
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <PropertyArtwork size={28} />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text
-            adjustsFontSizeToFit
+          <FitText
             minimumFontScale={0.78}
             numberOfLines={1}
             style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, lineHeight: 28 }}
           >
             {property.name}
-          </Text>
+          </FitText>
         </View>
       </View>
 
@@ -1550,14 +1617,13 @@ function TenantHomeFact({
         <Icon color={colors.primary} size={16} strokeWidth={2.1} />
         <Text style={[type.caption, { color: colors.kicker, flex: 1 }]}>{label}</Text>
       </View>
-      <Text
-        adjustsFontSizeToFit
+      <FitText
         minimumFontScale={0.82}
         numberOfLines={1}
         style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14, lineHeight: 18 }}
       >
         {value}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -1571,6 +1637,9 @@ type OwnerRoute =
   | "/owner-onboard-tenant"
   | "/owner-exit-requests"
   | "/owner-exits-today"
+  | "/owner-payments-today"
+  | "/owner-move-ins-today"
+  | "/owner-concerns-today"
   | "/owner-room-change-requests"
   | "/owner-property"
   | "/owner-rooms"
@@ -1584,6 +1653,9 @@ type OwnerRoute =
   | "/owner-service-balance"
   | "/owner-food"
   | "/owner-pnl"
+  | "/owner-bookings"
+  | "/owner-booking-onboarding"
+  | "/owner-leads"
   | "/owner-visits";
 
 const OWNER_CONCERNS_ROUTE: OwnerRoute = "/owner-concerns";
@@ -1968,6 +2040,11 @@ function DashboardTab({ dashboard }: { dashboard: OwnerDashboard }) {
   };
   const openConcerns = concerns.open + concerns.underReview + concerns.inProgress;
   const netLoss = Boolean(pnlStatement && pnlStatement.netPaise < 0);
+  // The same request the insights screen opens on, so it is already loaded there.
+  const leadInsights = useGetLeadInsightsQuery(
+    { period: "THIS_MONTH", propertyId: pnlPropertyId },
+    { skip: !pnlPropertyId },
+  ).data;
 
   return (
     <>
@@ -1982,7 +2059,7 @@ function DashboardTab({ dashboard }: { dashboard: OwnerDashboard }) {
           <AnalyticsRowCard
             active={lastOpened === "billing"}
             caption="Collected of billed this month"
-            icon={MoneyIcon}
+            icon={RupeeBanknoteIcon}
             label="Billing"
             onPress={() => openDivision("billing")}
             value={`${compactMoneyPaise(money.collectedThisMonthPaise)} / ${compactMoneyPaise(money.billedThisMonthPaise)}`}
@@ -2003,6 +2080,16 @@ function DashboardTab({ dashboard }: { dashboard: OwnerDashboard }) {
             label="Tenancy"
             onPress={() => openDivision("tenants")}
             value={`${occupancy.occupiedBeds} / ${occupancy.totalBeds}`}
+          />
+          {/* Every lead figure in one place (user, 2026-10-18): the listing
+              funnel from the profile events and the pipeline read. Under
+              Tenancy, by the demo the user approved. */}
+          <AnalyticsRowCard
+            caption="Moved in from listing views this month"
+            icon={LeadsInsightsIcon}
+            label="Leads"
+            onPress={() => router.push("/owner-leads-insights")}
+            value={leadInsights ? `${leadInsights.steps[5]?.people ?? 0} / ${leadInsights.steps[0]?.people ?? 0}` : "-"}
           />
           <AnalyticsRowCard
             active={lastOpened === "concerns"}
@@ -2071,16 +2158,16 @@ function AnalyticsRowCard({
     >
       <Icon color={tone === "danger" ? colors.danger : colors.primary} size={34} strokeWidth={2} />
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
+        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
           {label}
-        </Text>
-        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
+        </FitText>
+        <FitText numberOfLines={2} style={[type.description, { color: colors.muted }]}>
           {caption}
-        </Text>
+        </FitText>
       </View>
       {/* Measured, not adjustsFontSizeToFit: that prop does nothing on web. A
           money ratio like ₹1.2L / ₹1.5L is far wider than 5 / 28. */}
-      <Text
+      <FitText
         numberOfLines={1}
         style={{
           color: tone === "danger" ? colors.danger : colors.ink,
@@ -2091,7 +2178,7 @@ function AnalyticsRowCard({
         }}
       >
         {value}
-      </Text>
+      </FitText>
       <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} />
     </AnimatedPressable>
   );
@@ -2327,7 +2414,7 @@ function FrequentlyVisited({
                             <module.icon color={colors.ink} size={32} strokeWidth={1.8} />
                           )}
                         </View>
-                        <Text
+                        <FitText
                           style={{
                             color: colors.ink,
                             fontFamily: fonts.sansBold,
@@ -2338,7 +2425,7 @@ function FrequentlyVisited({
                           numberOfLines={2}
                         >
                           {module.pinnedTitle ?? module.title}
-                        </Text>
+                        </FitText>
                       </AnimatedPressable>
                     </View>
                   ))}
@@ -2401,6 +2488,17 @@ function WorkspaceTab({
         {workspaceRole === "Owner" ? (
           <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
         ) : null}
+        {dashboard.property?.propertyId ? (
+          <PropertyLeadsCard onPress={() => onNavigate("/owner-leads")} propertyId={dashboard.property.propertyId} />
+        ) : null}
+        {/* Under Property Leads, only while someone is due in today (user, 2026-10-27). */}
+        {(dashboard.bookings?.moveInsToday ?? 0) > 0 ? (
+          <MoveInsTodayCard
+            count={dashboard.bookings?.moveInsToday ?? 0}
+            // Straight to the booking onboarding screen, which opens on Today (user, 2026-10-27).
+            onPress={() => onNavigate("/owner-booking-onboarding")}
+          />
+        ) : null}
       </View>
 
       <Section title="Property Tools">
@@ -2424,8 +2522,7 @@ function WorkspaceTab({
             />
             <HomeToolBox artwork={HOME_TOOL_ARTWORK.pnl} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
           </View>
-          {/* A fifth tool, half width with the place beside it left empty
-              (user, 2026-10-04). Open to every manager, like Enquiries. */}
+          {/* Bookings sits beside VMS in both loading and loaded layouts. */}
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <HomeToolBox
               artwork={HOME_TOOL_ARTWORK.visits}
@@ -2437,7 +2534,7 @@ function WorkspaceTab({
               label="VMS"
               onPress={() => onNavigate("/owner-visits")}
             />
-            <View style={{ flex: 1 }} />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.bookings} artworkSize={60} label="Bookings" onPress={() => onNavigate("/owner-bookings")} />
           </View>
         </View>
       </Section>
@@ -2460,7 +2557,8 @@ function WorkspaceTab({
               // tile opens straight into that list.
               icon={DigestPaymentsIcon}
               label="Payments"
-              onPress={() => onNavigate("/owner-billing")}
+              // Only today's payments, the ones counted here (user, 2026-10-18).
+              onPress={() => onNavigate("/owner-payments-today")}
               value={String(today.paymentsMadeToday)}
             />
             <DigestTile
@@ -2468,7 +2566,8 @@ function WorkspaceTab({
               highlight={today.concernsRaisedToday > 0}
               icon={DigestConcernsIcon}
               label="Concerns"
-              onPress={() => onNavigate(OWNER_CONCERNS_ROUTE)}
+              // Only today's concerns, with the module a tap away (user, 2026-10-18).
+              onPress={() => onNavigate("/owner-concerns-today")}
               value={String(today.concernsRaisedToday)}
             />
           </View>
@@ -2478,7 +2577,8 @@ function WorkspaceTab({
               highlight={today.tenanciesStartedToday > 0}
               icon={DigestMoveInsIcon}
               label="Move-ins"
-              onPress={() => onNavigate("/owner-tenancy")}
+              // Only the stays that started today (user, 2026-10-18).
+              onPress={() => onNavigate("/owner-move-ins-today")}
               value={String(today.tenanciesStartedToday)}
             />
             <DigestTile
@@ -2529,6 +2629,7 @@ function WorkspaceTabLoading({
         {workspaceRole === "Owner" ? (
           <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
         ) : null}
+        <PropertyLeadsCard onPress={() => onNavigate("/owner-leads")} propertyId={propertyId} />
       </View>
 
       <Section title="Property Tools">
@@ -2541,8 +2642,7 @@ function WorkspaceTabLoading({
             <HomeToolBox artwork={HOME_TOOL_ARTWORK.deposit} label="Deposit manager" onPress={() => onNavigate("/owner-deposit-manager")} />
             <HomeToolBox artwork={HOME_TOOL_ARTWORK.pnl} label="Profit & loss" onPress={() => onNavigate("/owner-pnl")} />
           </View>
-          {/* A fifth tool, half width with the place beside it left empty
-              (user, 2026-10-04). Open to every manager, like Enquiries. */}
+          {/* Bookings sits beside VMS in both loading and loaded layouts. */}
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <HomeToolBox
               artwork={HOME_TOOL_ARTWORK.visits}
@@ -2554,7 +2654,7 @@ function WorkspaceTabLoading({
               label="VMS"
               onPress={() => onNavigate("/owner-visits")}
             />
-            <View style={{ flex: 1 }} />
+            <HomeToolBox artwork={HOME_TOOL_ARTWORK.bookings} artworkSize={60} label="Bookings" onPress={() => onNavigate("/owner-bookings")} />
           </View>
         </View>
       </Section>
@@ -2797,17 +2897,16 @@ function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: s
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, flex: 1, gap: 2, padding: spacing.sm }}>
-      <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1}>
+      <FitText style={[type.caption, { color: colors.muted, fontSize: 11 }]} numberOfLines={1}>
         {label}
-      </Text>
+      </FitText>
       {/* Serif numerals (money) keep the ledger look; word statuses use the sans
           face. adjustsFontSizeToFit shrinks a long word ("Approaching") to fit
           the narrow box, but on Android the shrunk glyph box is centred against
           the ORIGINAL font metrics and its top ascender gets clipped — so pin an
           explicit lineHeight (with font padding + centred vertical align) that
           reserves the ascender room regardless of the shrink. */}
-      <Text
-        adjustsFontSizeToFit
+      <FitText
         minimumFontScale={0.7}
         numberOfLines={1}
         style={{
@@ -2822,10 +2921,10 @@ function StaffMetricBox({ hint, label, value, valueColor, valueSans }: { hint: s
         }}
       >
         {value}
-      </Text>
-      <Text style={[type.caption, { color: colors.kicker }]} numberOfLines={1}>
+      </FitText>
+      <FitText style={[type.caption, { color: colors.kicker }]} numberOfLines={1}>
         {hint}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -2915,10 +3014,7 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
         borderWidth: 1,
         elevation: 2,
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
+        ...tabShadow(colors.shadow, 2, 6),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -2936,9 +3032,9 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
         </View>
         <View style={{ flex: 1, gap: 3 }}>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.bodyStrong, { color: colors.ink, flex: 1 }]} numberOfLines={1}>
+            <FitText style={[type.bodyStrong, { color: colors.ink, flex: 1 }]} numberOfLines={1}>
               {item.title}
-            </Text>
+            </FitText>
             <Text style={[type.caption, { color: colors.kicker }]}>
               {formatRelativeTime(item.occurredAt)}
             </Text>
@@ -2955,9 +3051,9 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
           >
             {item.subtitle}
           </Text>
-          <Text style={[type.caption, subtitleColor]} numberOfLines={expanded ? undefined : COLLAPSED_ACTIVITY_LINES}>
+          <FitText style={[type.caption, subtitleColor]} numberOfLines={expanded ? undefined : COLLAPSED_ACTIVITY_LINES}>
             {item.subtitle}
-          </Text>
+          </FitText>
 
           {canExpand ? (
             <View style={{ alignItems: "center", flexDirection: "row", gap: 3, marginTop: 1 }}>
@@ -3063,10 +3159,7 @@ function DigestTile({
         // ceiling with the spare height below it.
         justifyContent: "center",
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
+        ...tabShadow(colors.shadow, 2, 6),
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
@@ -3077,13 +3170,13 @@ function DigestTile({
         </View>
 
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+          <FitText numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
             {label}
-          </Text>
+          </FitText>
           {/* The count is always ink. Colouring it on activity made the number
               itself look like a status, when the number IS the fact — the hint
               beneath it carries whether anything happened. */}
-          <Text
+          <FitText
             numberOfLines={1}
             style={{
               color: colors.ink,
@@ -3094,12 +3187,12 @@ function DigestTile({
             }}
           >
             {value}
-          </Text>
+          </FitText>
           {/* No dot. It restated what the hint's own colour already says, and
               four of them across a grid read as status lights on a device. */}
-          <Text numberOfLines={2} style={[type.caption, { color: accent, fontSize: 11, lineHeight: 15 }]}>
+          <FitText numberOfLines={2} style={[type.caption, { color: accent, fontSize: 11, lineHeight: 15 }]}>
             {hint}
-          </Text>
+          </FitText>
         </View>
       </View>
     </AnimatedPressable>
@@ -3223,6 +3316,9 @@ function OwnerPropertyPicker({
     <View style={{ gap: spacing.sm }}>
       <AnimatedPressable
         accessibilityRole="button"
+        accessibilityLabel={selectorTitle}
+        accessibilityState={{ disabled: !hasMultipleProperties, expanded: hasMultipleProperties ? open : undefined }}
+        disabled={!hasMultipleProperties}
         onPress={hasMultipleProperties ? onToggle : undefined}
         style={{
           alignItems: "center",
@@ -3247,11 +3343,7 @@ function OwnerPropertyPicker({
           padding: spacing.md,
           // Lifted instead of outlined. A soft shadow separates it from the
           // page the way the ink border used to, without the weight.
-          elevation: 2,
-          shadowColor: colors.shadow,
-          shadowOffset: { height: 2, width: 0 },
-          shadowOpacity: 1,
-          shadowRadius: 6,
+          ...tabShadow(colors.shadow, 2, 6),
         }}
       >
         {/* Absolutely positioned so it takes no part in the row layout, and
@@ -3303,11 +3395,11 @@ function OwnerPropertyPicker({
             </View>
           ) : null}
         </View>
-        <View style={{ flex: 1, gap: spacing.xxs }}>
+        <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           {/* Ink, not the usual kicker grey. These two lines now sit on a
               photograph, and a light grey that reads fine on flat white
               dissolves into the building behind it. */}
-          <Text
+          <FitText
             numberOfLines={1}
             style={{
               color: colors.ink,
@@ -3317,11 +3409,14 @@ function OwnerPropertyPicker({
             }}
           >
             {selectorTitle}
-          </Text>
-          <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, fontSize: 11 }]}>
+          </FitText>
+          <FitText numberOfLines={2} ellipsizeMode="tail" style={[type.caption, { color: colors.inkSoft, flexShrink: 1, fontSize: 11, maxWidth: "100%" }]}>
             {selectorSubtitle}
-          </Text>
+          </FitText>
         </View>
+        {hasMultipleProperties ? <View pointerEvents="none" accessible={false} style={{ alignItems: "center", alignSelf: "center", backgroundColor: isDark ? "rgba(15, 23, 42, 0.45)" : "rgba(255, 255, 255, 0.5)", borderColor: "rgba(255, 255, 255, 0.65)", borderRadius: 999, borderWidth: 1, flexShrink: 0, height: 36, justifyContent: "center", width: 36 }}>
+          {open ? <ChevronUp color={colors.inkSoft} size={18} strokeWidth={2.2} /> : <ChevronDown color={colors.inkSoft} size={18} strokeWidth={2.2} />}
+        </View> : null}
       </AnimatedPressable>
 
       {renderOptions && open && hasMultipleProperties ? (
@@ -3477,13 +3572,13 @@ function CurrentLocationCard({
           <Text style={[type.eyebrow, { color: colors.kicker }]}>
             {label}
           </Text>
-          <Text numberOfLines={2} style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
+          <FitText numberOfLines={2} style={[type.body, { color: colors.ink, fontWeight: "800" }]}>
             {locationText}
-          </Text>
+          </FitText>
           {detailParts.length > 0 && locationText !== detailParts.join(", ") ? (
-            <Text numberOfLines={1} style={[type.description, { color: colors.muted }]}>
+            <FitText numberOfLines={1} style={[type.description, { color: colors.muted }]}>
               {detailParts.join(", ")}
-            </Text>
+            </FitText>
           ) : null}
         </View>
         <AnimatedPressable
@@ -3556,12 +3651,12 @@ function OwnerPropertyOptionContent({ property, selected }: { property: OwnerPro
       </View>
       <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <Text
+          <FitText
             numberOfLines={1}
             style={[type.bodyStrong, { color: selected ? colors.terracotta : colors.ink, flexShrink: 1 }]}
           >
             {property.name}
-          </Text>
+          </FitText>
           <View
             style={{
               backgroundColor: colors.surfaceSunken,
@@ -3576,9 +3671,9 @@ function OwnerPropertyOptionContent({ property, selected }: { property: OwnerPro
           </View>
         </View>
         <View style={{ alignItems: "center", flexDirection: "row", minWidth: 0 }}>
-          <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1, fontSize: 11 }]}>
+          <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1, fontSize: 11 }]}>
             {address}
-          </Text>
+          </FitText>
         </View>
       </View>
     </>
@@ -3664,9 +3759,9 @@ function NoticePreviewCard({
                   <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
                     {notice.title}
                   </Text>
-                  <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
+                  <FitText numberOfLines={2} style={[type.description, { color: colors.muted }]}>
                     {notice.body}
-                  </Text>
+                  </FitText>
                 </View>
               );
             })}
@@ -3724,9 +3819,9 @@ function SummaryRow({
           <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
             {title}
           </Text>
-          <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
+          <FitText numberOfLines={2} style={[type.description, { color: colors.muted }]}>
             {body}
-          </Text>
+          </FitText>
         </View>
       </View>
       </Card>
@@ -3839,3 +3934,4 @@ function initialsFor(name: string) {
     .join("");
 }
 import { useWalletUnlocked, WalletPinModal } from "@/features/billing/wallet-pin-gate";
+import { FitText } from "@/components/fit-text";

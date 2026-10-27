@@ -41,6 +41,11 @@ export const DigestPaymentsIcon = tenancyLineIcon("digest-payments-line", "#0000
 export const DigestConcernsIcon = tenancyLineIcon("digest-concerns-line", "#000000");
 export const DigestMoveInsIcon = tenancyLineIcon("digest-move-ins-line", "#000000");
 export const DigestMoveOutsIcon = tenancyLineIcon("digest-move-outs-line", "#000000");
+// Empty states reuse the Home digest artwork in the app's blue vector palette.
+export const DigestPaymentsEmptyIcon = tenancyLineIcon("digest-payments-line", "#3F6ED8");
+export const DigestConcernsEmptyIcon = tenancyLineIcon("digest-concerns-line", "#3F6ED8");
+export const DigestMoveInsEmptyIcon = tenancyLineIcon("digest-move-ins-line", "#3F6ED8");
+export const DigestMoveOutsEmptyIcon = tenancyLineIcon("digest-move-outs-line", "#3F6ED8");
 export const ActiveTenancyIcon = tenancyLineIcon("tenancy-active-line", "#000000");
 export const OnNoticeTenancyIcon = tenancyLineIcon("tenancy-on-notice-line", "#000000");
 export const StartedTenancyIcon = tenancyLineIcon("tenancy-started-line", "#000000");

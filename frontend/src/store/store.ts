@@ -5,6 +5,7 @@ import { clearWalletAccess } from "@/auth/wallet-access";
 
 import { api } from "@/store/api";
 import { accountReducer } from "@/store/slices/account-slice";
+import { agreementPreviewReducer } from "@/store/slices/agreement-preview-slice";
 import { analyticsPeriodReducer } from "@/store/slices/analytics-period-slice";
 import { appConfigReducer } from "@/store/slices/app-config-slice";
 import { authReducer } from "@/store/slices/auth-slice";
@@ -15,6 +16,7 @@ import { ownerWorkspaceReducer } from "@/store/slices/owner-workspace-slice";
 export const store = configureStore({
   reducer: {
     account: accountReducer,
+    agreementPreview: agreementPreviewReducer,
     analyticsPeriod: analyticsPeriodReducer,
     appConfig: appConfigReducer,
     auth: authReducer,

@@ -22,13 +22,25 @@ public class ExpenseModule {
 
     private final ExpenseService expenseService;
     private final ExpenseBudgetService budgetService;
+    private final com.khatiyan.d_modules.expense.service.IncomeService incomeService;
 
-    public ExpenseModule(ExpenseService expenseService, ExpenseBudgetService budgetService) {
+    public ExpenseModule(ExpenseService expenseService, ExpenseBudgetService budgetService,
+            com.khatiyan.d_modules.expense.service.IncomeService incomeService) {
+        this.incomeService = incomeService;
         this.expenseService = expenseService;
         this.budgetService = budgetService;
     }
 
     /** Net expense total (charges minus reversals) for a property in a month. */
+    /**
+     * Records income the property received outside a bill and keeps, such as a
+     * booking token. It joins the owner's income ledger, so the P&L counts it.
+     */
+    public void recordIncome(UUID propertyId, String source, String receivedFrom, long amountPaise,
+            LocalDate receivedDate, String description) {
+        incomeService.recordSystemIncome(propertyId, source, receivedFrom, amountPaise, receivedDate, description);
+    }
+
     public long monthlyExpenseTotalPaise(UUID propertyId, YearMonth month) {
         return expenseService.monthlyTotalPaise(propertyId, month);
     }

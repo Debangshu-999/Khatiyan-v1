@@ -2,6 +2,7 @@ import { Text, View } from "react-native";
 import { ChevronDown, ChevronUp, MessageSquare } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { useSoftShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -26,6 +27,7 @@ export function EnquiryMessageRow({
   onToggle: () => void;
   open: boolean;
 }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
 
   return (
@@ -69,10 +71,7 @@ export function EnquiryMessageRow({
             paddingVertical: spacing.md,
             position: "absolute",
             right: 0,
-            shadowColor: colors.shadow,
-            shadowOffset: { height: 4, width: 0 },
-            shadowOpacity: 0.12,
-            shadowRadius: 10,
+            ...softShadow(colors.shadow, 4, 10, 0.12),
             top: "100%",
           }}
         >

@@ -25,6 +25,7 @@ import {
   type FoodProfileSubscriberSummary,
   type FoodSubscriber,
 } from "@/store/services/food-api";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The diets this property offers, and how many people are on each.
@@ -187,15 +188,15 @@ function ProfileCard({
         <FoodProfileMark category={profile.category} name={profile.name} size={48} />
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
+            <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
               {profile.name}
-            </Text>
+            </FitText>
             <FoodStatusChip icon="check-circle" label="Active" tone="success" />
           </View>
           {profile.description ? (
-            <Text numberOfLines={3} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
+            <FitText numberOfLines={3} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
               {profile.description}
-            </Text>
+            </FitText>
           ) : (
             <NoDescription />
           )}

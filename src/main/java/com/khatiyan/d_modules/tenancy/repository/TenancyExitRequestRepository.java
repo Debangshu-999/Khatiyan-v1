@@ -21,6 +21,9 @@ import com.khatiyan.d_modules.tenancy.model.TenancyExitRequestStatus;
  */
 public interface TenancyExitRequestRepository extends JpaRepository<TenancyExitRequest, UUID> {
 
+    @Query("SELECT r.propertyId FROM TenancyExitRequest r WHERE r.id = :requestId")
+    Optional<UUID> findPropertyIdById(UUID requestId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT request FROM TenancyExitRequest request WHERE request.id = :requestId")
     Optional<TenancyExitRequest> findByIdForUpdate(UUID requestId);

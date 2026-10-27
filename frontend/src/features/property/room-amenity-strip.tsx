@@ -5,7 +5,8 @@ import { ROOM_AMENITIES, type RoomAmenity } from "@/store/services/property-api"
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const AMENITY_LABELS: Record<RoomAmenity, string> = {
+/** Exported for a card that names a room's amenities in words beside their glyphs (the booking form). */
+export const ROOM_AMENITY_LABELS: Record<RoomAmenity, string> = {
   ATTACHED_TOILET: "Attached toilet",
   BEDDING: "Bedding",
   CUPBOARD: "Cupboard",
@@ -44,7 +45,7 @@ export function RoomAmenityStrip({
       {ROOM_AMENITIES.map((amenity) => {
         const Icon = ROOM_AMENITY_ICONS[amenity];
         return (
-          <Glyph key={amenity} label={AMENITY_LABELS[amenity]} on={on(amenity)} tiles={tiles}>
+          <Glyph key={amenity} label={ROOM_AMENITY_LABELS[amenity]} on={on(amenity)} tiles={tiles}>
             <Icon color={on(amenity) ? colors.inkSoft : colors.border} size={tiles ? 23 : 17} />
           </Glyph>
         );

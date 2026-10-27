@@ -71,6 +71,8 @@ export type AttentionSummary = {
   pendingExitRequests: number;
   pendingRoomChangeRequests: number;
   upcomingExits: number;
+  /** Current stays due to check out today; absent on pre-upgrade cached responses. */
+  exitsDueToday?: number;
   exitsPastDue: number;
   tenantsOnNotice: number;
   pendingDepositSettlements: number;
@@ -161,6 +163,11 @@ export type OwnerDashboard = {
    * three figures, and that summary is a list of single numbers.
    */
   paymentIntents: PaymentIntentDigest;
+  /** Live property-side work queues, absent on responses cached before this upgrade. */
+  // moveInsToday: confirmed and moving in today, the Home card under Property Leads (user, 2026-10-27).
+  bookings?: { awaitingResponse: number; tokenClaims: number; awaitingConfirmation: number; moveInsDue: number; tokenDecisions: number; moveInsToday?: number };
+  visits?: { arrivalsToday: number; attendanceOverdue: number };
+  enquiries?: { unassigned: number; awaitingResponse: number; callsToRecord: number };
   recentActivity: RecentActivityItem[];
   generatedAt: string;
 };
@@ -173,7 +180,7 @@ export const dashboardApi = api.injectEndpoints({
       // "New enquiries" row. Its count rides in on `attention.newEnquiries`, so
       // without this the row keeps the old number while the property-card badge
       // — which reads the enquiry endpoint directly — already dropped.
-      providesTags: ["Tenancy", "BillingCycle", "Concern", "Staff", "Expense", "Enquiry"],
+      providesTags: ["Tenancy", "BillingCycle", "Concern", "Staff", "Expense", "Enquiry", "Booking", "EnquiryChat", "PaymentIntent", "Deposit", "Property"],
     }),
   }),
   // Fast Refresh re-runs this whole module on every edit, so injectEndpoints

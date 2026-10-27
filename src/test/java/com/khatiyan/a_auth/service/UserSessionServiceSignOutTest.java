@@ -2,8 +2,6 @@ package com.khatiyan.a_auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,8 +17,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
 import com.khatiyan.a_auth.model.UserSession;
 import com.khatiyan.a_auth.repository.UserSessionRepository;
@@ -38,18 +34,14 @@ class UserSessionServiceSignOutTest {
     private static final UUID USER = UUID.randomUUID();
 
     private UserSessionRepository repository;
-    private ValueOperations<String, String> valkeyValues;
-    private StringRedisTemplate valkey;
+    private AuthStateCache authStateCache;
     private UserSessionService service;
 
     @BeforeEach
-    @SuppressWarnings("unchecked")
     void setUp() {
         repository = mock(UserSessionRepository.class);
-        valkey = mock(StringRedisTemplate.class);
-        valkeyValues = mock(ValueOperations.class);
-        when(valkey.opsForValue()).thenReturn(valkeyValues);
-        service = new UserSessionService(repository, valkey, mock(ApplicationEventPublisher.class), 4);
+        authStateCache = mock(AuthStateCache.class);
+        service = new UserSessionService(repository, authStateCache, mock(ApplicationEventPublisher.class), 4);
     }
 
     private UserSession liveSession(UUID owner, UUID jti) {
@@ -66,7 +58,7 @@ class UserSessionServiceSignOutTest {
         service.revokeOwn(USER, jti, NOW);
 
         assertThat(session.isRevoked()).isTrue();
-        verify(valkeyValues).set(eq("khatiyan:auth:session-revoked:" + jti), eq("1"), any(Duration.class));
+        verify(authStateCache).sessionRevoked(jti, session.getExpiresAt());
     }
 
     @Test
@@ -79,7 +71,7 @@ class UserSessionServiceSignOutTest {
         service.revokeOwn(USER, jti, NOW);
 
         assertThat(someoneElses.isRevoked()).isFalse();
-        verify(valkeyValues, never()).set(anyString(), anyString(), any(Duration.class));
+        verify(authStateCache, never()).sessionRevoked(any(), any());
     }
 
     @Test

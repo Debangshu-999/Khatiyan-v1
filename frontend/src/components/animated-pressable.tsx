@@ -19,11 +19,22 @@ type AnimatedPressableProps = PropsWithChildren<
 // surface the tap target.
 const AnimatedPressableImpl = Animated.createAnimatedComponent(Pressable);
 
+// A return to a screen is a fresh interaction, even when its buttons stayed mounted.
+let interactionEpoch = 0;
+export function resetPressableTapLocks() {
+  interactionEpoch += 1;
+}
+
 export function AnimatedPressable({ children, onPress, onPressIn, onPressOut, style, tapLockMs = 500, ...props }: AnimatedPressableProps) {
   const scale = useRef(new Animated.Value(1)).current;
   const lastPressAt = useRef(0);
+  const pressEpoch = useRef(interactionEpoch);
 
   const handlePress = (event: GestureResponderEvent) => {
+    if (pressEpoch.current !== interactionEpoch) {
+      pressEpoch.current = interactionEpoch;
+      lastPressAt.current = 0;
+    }
     if (tapLockMs > 0) {
       const now = Date.now();
       if (now - lastPressAt.current < tapLockMs) {

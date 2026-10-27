@@ -439,9 +439,9 @@ function ModuleSummary({ draft, module }: { draft: Draft; module: AccessModule }
         const level = draft[screen.resource] ?? "NONE";
         return (
           <View key={screen.resource} style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
+            <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
               {screen.label}
-            </Text>
+            </FitText>
             <Text
               style={{
                 color: level === "MANAGE" ? colors.primary : level === "VIEW" ? colors.ink : colors.muted,
@@ -593,3 +593,4 @@ function LevelOption({
 }
 import { CircleHelp } from "lucide-react-native";
 import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";
+import { FitText } from "@/components/fit-text";

@@ -12,6 +12,7 @@ import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { useGetMyLocalPlacesMapQuery, type PropertyLocalPlace } from "@/store/services/discovery-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /** Below this, a search is too vague to spend a vendor call on. */
 const MIN_SUGGEST_LENGTH = 2;
@@ -318,9 +319,9 @@ function SuggestionRow({
       <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
         <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{title}</MarqueeText>
         {subtitle ? (
-          <Text numberOfLines={1} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
+          <FitText numberOfLines={1} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
             {subtitle}
-          </Text>
+          </FitText>
         ) : null}
       </View>
       {onForget ? (

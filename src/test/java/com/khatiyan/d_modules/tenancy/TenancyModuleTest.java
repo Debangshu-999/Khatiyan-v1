@@ -20,6 +20,7 @@ import com.khatiyan.d_modules.tenancy.model.Tenancy;
 import com.khatiyan.d_modules.tenancy.service.TenancyExitRequestService;
 import com.khatiyan.d_modules.tenancy.service.TenancyRoomChangeRequestService;
 import com.khatiyan.d_modules.tenancy.service.TenancyService;
+import com.khatiyan.d_modules.tenancy.service.BookingBedInventory;
 
 @ExtendWith(MockitoExtension.class)
 class TenancyModuleTest {
@@ -34,10 +35,11 @@ class TenancyModuleTest {
     private TenancyRoomChangeRequestService tenancyRoomChangeRequestService;
 
     private TenancyModule tenancyModule;
+    @Mock private BookingBedInventory bookingInventory;
 
     @BeforeEach
     void setUp() {
-        tenancyModule = new TenancyModule(tenancyService, tenancyExitRequestService, tenancyRoomChangeRequestService);
+        tenancyModule = new TenancyModule(tenancyService, tenancyExitRequestService, tenancyRoomChangeRequestService, bookingInventory);
     }
 
     @Test

@@ -33,8 +33,8 @@ export function ResetPinStep({
   return (
     <>
       <StepProgress step={2} total={2} />
-      {/* Spread into the room above the buttons, as on signup. */}
-      <View style={{ flexGrow: 1, gap: spacing.md }}>
+      {/* Clear the raised label so the indicator has balanced space on both sides. */}
+      <View style={{ flexGrow: 1, gap: spacing.md, paddingTop: spacing.sm }}>
         <CodeField label="New PIN" value={newPin} onChangeText={onNewPinChange} secureTextEntry error={newPinError} />
         <FieldSpacer />
         <CodeField label="Retype PIN" value={confirmPin} onChangeText={onConfirmPinChange} secureTextEntry error={confirmPinError} />

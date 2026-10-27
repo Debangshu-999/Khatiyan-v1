@@ -209,7 +209,8 @@ function MonthGridModal({
   );
 }
 
-function RoundIconButton({
+/** The month picker's small grey-disc arrow, shared with the slot stepper on Manage Visits. */
+export function RoundIconButton({
   disabled = false,
   icon: Icon,
   label,

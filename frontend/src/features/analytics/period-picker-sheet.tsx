@@ -10,6 +10,7 @@ import { customRangeErrors, formatDateRange, istToday, PRESET_LABELS, PRESET_ORD
 import { ActionButton } from "@/features/owner/owner-ui";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 type Picked = { preset: PeriodPreset; from?: string; to?: string };
 
@@ -95,9 +96,9 @@ export function PeriodPickerSheet({ current, dataSince, onApply, onClose }: { cu
             >
               {/* The period's dates sit to the side, so each row is one line. */}
               <Text style={{ color: colors.ink, flex: 1, fontFamily: selected ? fonts.sansBold : fonts.sans, fontSize: 15 }}>{PRESET_LABELS[preset]}</Text>
-              <Text numberOfLines={2} style={{ color: colors.muted, flexShrink: 1, fontFamily: fonts.sans, fontSize: 12, maxWidth: "60%", textAlign: "right" }}>
+              <FitText numberOfLines={2} style={{ color: colors.muted, flexShrink: 1, fontFamily: fonts.sans, fontSize: 12, maxWidth: "60%", textAlign: "right" }}>
                 {presetSubtitle(preset, today, dataSince)}
-              </Text>
+              </FitText>
             </AnimatedPressable>
           );
         })}

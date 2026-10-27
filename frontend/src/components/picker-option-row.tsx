@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * One option inside a picker modal — the app's selection style.
@@ -87,9 +88,9 @@ export function PickerOptionRow({
           {label}
         </Text>}
         {subtitle ? (
-          <Text numberOfLines={1} style={[type.description, { color: colors.muted }]}>
+          <FitText numberOfLines={1} style={[type.description, { color: colors.muted }]}>
             {subtitle}
-          </Text>
+          </FitText>
         ) : null}
       </View>
       {trailing}

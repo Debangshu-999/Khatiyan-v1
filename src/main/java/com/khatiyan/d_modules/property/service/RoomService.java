@@ -71,6 +71,7 @@ public class RoomService {
     private final PropertyAccessPolicy propertyAccessPolicy;
     private final AuthModule authModule;
     private final ApplicationEventPublisher eventPublisher;
+    private final RoomInventoryLock inventoryLock;
 
     public RoomService(
             PropertyRepository propertyRepository,
@@ -80,7 +81,7 @@ public class RoomService {
             PropertyManagerService propertyManagerService,
             PropertyAccessPolicy propertyAccessPolicy,
             AuthModule authModule,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher, RoomInventoryLock inventoryLock) {
         this.propertyRepository = propertyRepository;
         this.roomRepository = roomRepository;
         this.roomMoldService = roomMoldService;
@@ -89,6 +90,7 @@ public class RoomService {
         this.propertyAccessPolicy = propertyAccessPolicy;
         this.authModule = authModule;
         this.eventPublisher = eventPublisher;
+        this.inventoryLock = inventoryLock;
     }
 
     /**
@@ -232,6 +234,7 @@ public class RoomService {
      * Loads and locks an active room for tenancy-driven occupancy updates.
      */
     private Room getActiveRoomInPropertyForUpdate(UUID propertyId, UUID roomId) {
+        inventoryLock.acquire(propertyId);
         return roomRepository.findActiveRoomForUpdate(propertyId, roomId)
                 .orElseThrow(() -> new NotFoundException("Room", roomId));
     }
@@ -797,6 +800,17 @@ public class RoomService {
         return room.getAvailableVacancies();
     }
 
+    /** Internal inventory boundary; the caller's transaction retains this gate. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void lockInventory(UUID propertyId) {
+        inventoryLock.acquire(propertyId);
+    }
+
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public RoomResponse inventoryRoom(UUID propertyId, UUID roomId) {
+        return RoomResponse.from(getActiveRoomInPropertyForUpdate(propertyId, roomId));
+    }
+
     /**
      * Handles a tenancy-start event by locking the room and occupying one slot.
      */
@@ -886,7 +900,7 @@ public class RoomService {
             throw new ValidationException(
                     "Room " + room.getRoomNumber() + " cannot be " + verb + " while "
                             + taken + (taken == 1 ? " bed is" : " beds are")
-                            + " occupied or reserved. Move or check out the tenants first.");
+                            + " occupied or reserved. Release reservations or move/check out the tenants first.");
         }
     }
 }

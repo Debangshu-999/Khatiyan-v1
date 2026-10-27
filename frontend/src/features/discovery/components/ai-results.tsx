@@ -129,6 +129,7 @@ export function AiResults({
             }}
           >
             <Image
+              resizeMethod="resize"
               accessibilityIgnoresInvertColors
               resizeMode="contain"
               source={EMPTY_SEARCH_ILLUSTRATION}
@@ -144,9 +145,6 @@ export function AiResults({
               }}
             >
               No listings found
-            </Text>
-            <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
-              Nothing matches that search yet. Try a wider area or fewer requirements.
             </Text>
             <AnimatedPressable
               accessibilityRole="button"

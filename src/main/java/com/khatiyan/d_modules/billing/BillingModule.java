@@ -21,6 +21,8 @@ import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.DepositAccountResponse;
 import com.khatiyan.d_modules.billing.api.dto.CashPaymentCodeResponse;
 import com.khatiyan.d_modules.billing.api.dto.ManualPaymentResponse;
+import com.khatiyan.d_modules.billing.api.dto.PayeeDetailsResponse;
+import com.khatiyan.d_modules.billing.api.dto.PaymentMethodsResponse;
 import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
 import com.khatiyan.d_modules.billing.api.dto.UpcomingBillingCycleResponse;
@@ -30,6 +32,7 @@ import com.khatiyan.d_modules.billing.api.dto.PaymentIntentDigestResponse;
 import com.khatiyan.d_modules.billing.service.BillingCycleService;
 import com.khatiyan.d_modules.billing.service.CashPaymentConfirmationService;
 import com.khatiyan.d_modules.billing.service.PaymentIntentService;
+import com.khatiyan.d_modules.billing.service.PropertyPaymentDetailsService;
 import com.khatiyan.d_modules.billing.service.DepositManagerService;
 import com.khatiyan.d_modules.billing.service.ExitSettlementService;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
@@ -51,6 +54,7 @@ public class BillingModule {
     private final ExitSettlementService exitSettlementService;
     private final PaymentIntentService paymentIntentService;
     private final CashPaymentConfirmationService cashPaymentConfirmationService;
+    private final PropertyPaymentDetailsService propertyPaymentDetailsService;
 
     public BillingModule(
             BillingCycleService billingCycleService,
@@ -58,13 +62,62 @@ public class BillingModule {
             DepositManagerService depositManagerService,
             ExitSettlementService exitSettlementService,
             PaymentIntentService paymentIntentService,
-            CashPaymentConfirmationService cashPaymentConfirmationService) {
+            CashPaymentConfirmationService cashPaymentConfirmationService,
+            PropertyPaymentDetailsService propertyPaymentDetailsService) {
         this.billingCycleService = billingCycleService;
         this.billingCycleLineItemService = billingCycleLineItemService;
         this.depositManagerService = depositManagerService;
         this.exitSettlementService = exitSettlementService;
         this.paymentIntentService = paymentIntentService;
         this.cashPaymentConfirmationService = cashPaymentConfirmationService;
+        this.propertyPaymentDetailsService = propertyPaymentDetailsService;
+    }
+
+    /**
+     * The ways a property takes money and whether cash needs the payer's
+     * code. Unguarded: for a module that has already established who is
+     * asking, as booking has when it records a token.
+     */
+    public PaymentMethodsResponse paymentMethodsOf(UUID propertyId) {
+        return propertyPaymentDetailsService.methodsOf(propertyId);
+    }
+
+    /**
+     * Where someone pays a property, or null when it takes neither UPI nor a
+     * bank transfer. Unguarded, as above. Booking shows it only to a person
+     * whose terms are agreed and whose token is owed.
+     */
+    public PayeeDetailsResponse payeeDetailsOf(UUID propertyId) {
+        return propertyPaymentDetailsService.payeeOf(propertyId);
+    }
+
+    /**
+     * Where a booking token is paid: the bill details, or the token's own
+     * where the owner gave some in Payment setup. Null when there is nowhere
+     * to pay one. Unguarded, as above.
+     */
+    public PayeeDetailsResponse bookingTokenPayeeOf(UUID propertyId) {
+        return propertyPaymentDetailsService.tokenPayeeOf(propertyId);
+    }
+
+    /** The ways a person may record a booking token as paid: UPI, a bank transfer, both or neither. */
+    public List<com.khatiyan.d_modules.billing.model.ManualPaymentMethod> bookingTokenMethodsOf(UUID propertyId) {
+        return propertyPaymentDetailsService.tokenMethodsOf(propertyId);
+    }
+
+    /** Every way a booking token reaches the property, what it records at its desk included. */
+    public List<com.khatiyan.d_modules.billing.model.ManualPaymentMethod> bookingTokenAcceptedMethodsOf(
+            UUID propertyId) {
+        return propertyPaymentDetailsService.tokenAcceptedMethodsOf(propertyId);
+    }
+
+    /**
+     * Takes a booking token the property already holds off a stay's first
+     * bill, as a line of its own. For the booking module, inside the
+     * transaction that starts the stay. Returns what was taken off.
+     */
+    public long applyBookingTokenToFirstBill(UUID tenancyId, long tokenPaise, String receiptCode) {
+        return billingCycleLineItemService.applyBookingToken(tenancyId, tokenPaise, receiptCode);
     }
 
     public BillingCycleResponse createFirstCycle(UUID actorUserId, UUID tenancyId) {
@@ -98,6 +151,11 @@ public class BillingModule {
 
     public List<BillingCycleResponse> listPropertyCycles(UUID actorUserId, UUID propertyId, String query, String month) {
         return billingCycleService.listPropertyCycles(actorUserId, propertyId, query, month);
+    }
+
+    /** The bills paid today, for Home's Payments today screen. */
+    public List<BillingCycleResponse> listPropertyCyclesPaidToday(UUID actorUserId, UUID propertyId) {
+        return billingCycleService.listPropertyCyclesPaidToday(actorUserId, propertyId);
     }
 
     /** Last month's totals and this month's rent bills, for the owner dashboard, which gates itself. */

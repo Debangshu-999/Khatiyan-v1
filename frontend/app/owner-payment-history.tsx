@@ -1,13 +1,12 @@
 import { useMemo, useState, type ComponentType } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { CheckCircle2, Clock3, ReceiptText, WalletCards, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
-import { HeaderNote } from "@/components/header-note";
 import { PaginationBar } from "@/components/pagination-bar";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { OwnerPaymentListSkeleton } from "@/components/skeletons/owner";
@@ -22,6 +21,7 @@ import { useAppSelector } from "@/store/hooks";
 import { useListPropertyBillingCyclesQuery } from "@/store/services/billing-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
@@ -72,17 +72,6 @@ export default function OwnerPaymentHistoryScreen() {
 
   return (
     <ScreenScrollView
-      background={
-        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-          <LinearGradient
-            colors={[colors.primarySoft, colors.surface]}
-            end={{ x: 0.5, y: 1 }}
-            locations={[0, 1]}
-            start={{ x: 0.5, y: 0 }}
-            style={{ height: 230 }}
-          />
-        </View>
-      }
       contentContainerStyle={{ paddingTop: spacing.xs }}
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
@@ -157,25 +146,17 @@ export default function OwnerPaymentHistoryScreen() {
 }
 
 function PaymentHistoryHeader({ propertyName }: { propertyName: string | null }) {
-  const { colors, type } = useTheme();
-
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
-        numberOfLines={1}
-        style={[type.brand, { color: colors.ink, fontSize: 29, lineHeight: 35 }]}
-      >
-        Payment
-        <Text style={[type.brandItalic, { color: colors.accent, fontSize: 29, lineHeight: 35 }]}> history.</Text>
-      </Text>
-      <HeaderNote>
-        {propertyName
-          ? "Paid, late and unpaid bills for " + propertyName + "."
-          : "Select a property from Home to view payment history."}
-      </HeaderNote>
-    </View>
+    <ScreenHeader
+      italicTail="history."
+      subtitle={propertyName
+        ? "Paid, late and unpaid bills for " + propertyName + "."
+        : "Select a property from Home to view payment history."}
+      title="Payment"
+      titleAdjustsFontSizeToFit
+      titleMinimumFontScale={0.7}
+      titleNumberOfLines={1}
+    />
   );
 }
 function HistoryMetric({
@@ -207,10 +188,10 @@ function HistoryMetric({
     >
       <Icon color={colors.ink} size={22} strokeWidth={2.1} />
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, fontSize: 9 }]}>
+        <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, fontSize: 9 }]}>
           {label}
-        </Text>
-        <Text
+        </FitText>
+        <FitText
           numberOfLines={1}
           style={{
             color: colors.ink,
@@ -221,7 +202,7 @@ function HistoryMetric({
           }}
         >
           {value}
-        </Text>
+        </FitText>
       </View>
     </View>
   );
@@ -257,7 +238,7 @@ function FilterPill({
         paddingHorizontal: spacing.xs,
       }}
     >
-      <Text
+      <FitText
         numberOfLines={1}
         style={[
           type.caption,
@@ -269,7 +250,7 @@ function FilterPill({
         ]}
       >
         {label} ({count})
-      </Text>
+      </FitText>
       <View
         style={{
           backgroundColor: active ? colors.primary : "transparent",

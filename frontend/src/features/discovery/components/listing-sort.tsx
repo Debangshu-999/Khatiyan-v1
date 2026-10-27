@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react-native";
@@ -9,6 +10,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 import { DiscoveryButton } from "./discovery-button";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Which orders a list offers.
@@ -162,9 +164,9 @@ export function ListingSortModal({
             }}
           >
             <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.45 }}>
+            <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.45 }}>
               Sort listings
-            </Text>
+            </ModalTitle>
             <Text style={[type.caption, { color: colors.muted, fontSize: 13 }]}>
               {context === "ai"
                 ? "Closest to what you asked for comes first by default."
@@ -263,7 +265,7 @@ function SortGroup({
                 paddingHorizontal: spacing.sm,
               }}
             >
-              <Text
+              <FitText
                 numberOfLines={1}
                 style={{
                   color: selected ? colors.surface : colors.ink,
@@ -273,7 +275,7 @@ function SortGroup({
                 }}
               >
                 {LABELS[option]}
-              </Text>
+              </FitText>
             </AnimatedPressable>
           );
         })}

@@ -32,6 +32,8 @@ import {
   daysAgo,
 } from "@/features/enquiry/enquiry-tags";
 import { ManageVisitSheet } from "@/features/enquiry/manage-visit-sheet";
+import { EnquiryMessagePreview } from "@/features/enquiry/enquiry-message-preview";
+import { BookAStayEntry } from "@/features/booking/book-a-stay-entry";
 import { formatVisitShort } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
@@ -300,8 +302,9 @@ function MyEnquiryCard({
           {item.visitDate && item.visitStart ? (
             <GhostPill height={18} width={120}>
               <TagPill
+                backgroundColor={colors.surfaceSunken}
                 icon={CalendarCheck}
-                iconColor={colors.successText}
+                iconColor={colors.muted}
                 label={`Visit: ${formatVisitShort(item.visitDate, item.visitStart)}`}
               />
             </GhostPill>
@@ -309,32 +312,7 @@ function MyEnquiryCard({
           {expired ? <TagPill label={`Expired ${formatDate(item.expiresAt)}`} /> : null}
         </View>
 
-        {/* Their question, in a grey box behind a message mark (user, 2026-10-03). */}
-        <View
-          style={{
-            alignItems: "flex-start",
-            backgroundColor: colors.neutralSoft,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            flexDirection: "row",
-            gap: spacing.sm,
-            marginTop: 2,
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm,
-          }}
-        >
-          <View style={{ paddingTop: 2 }}>
-            <GhostIcon color={colors.muted} icon={MessageSquare} size={15} strokeWidth={2.2} />
-          </View>
-          {/* The owner card's message face (user, 2026-10-03). */}
-          <GhostText
-            ghostWidth="85%"
-            numberOfLines={3}
-            style={[type.description, { color: colors.ink, flex: 1, fontFamily: fonts.sansSemiBold }]}
-          >
-            {item.message}
-          </GhostText>
-        </View>
+        <EnquiryMessagePreview message={item.message} />
 
         {/* Marked not interested and still open, with the way back (owner's
             design, 2026-10-03). How long it has left is the Closes in tag. */}
@@ -432,6 +410,7 @@ function MyEnquiryCard({
         </View>
       </View>
 
+      {item.bookingEligibility?.eligible || item.visit?.state === "VISITED" ? <BookAStayEntry enquiryId={item.id} /> : null}
     </Card>
   );
 }

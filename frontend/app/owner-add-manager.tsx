@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Phone, Search, UserPlus, UserRound } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
@@ -30,6 +29,8 @@ import type { SalaryStructure } from "@/store/services/staff-api";
 import { rupeesToPaise } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 /**
  * Assigning a manager to a property.
@@ -162,17 +163,6 @@ export default function OwnerAddManagerScreen() {
 
   return (
     <ScreenScrollView
-      background={
-        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-          <LinearGradient
-            colors={[colors.primarySoft, colors.surface]}
-            end={{ x: 0.5, y: 1 }}
-            locations={[0, 1]}
-            start={{ x: 0.5, y: 0 }}
-            style={{ height: 260 }}
-          />
-        </View>
-      }
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
     >
@@ -372,9 +362,9 @@ export default function OwnerAddManagerScreen() {
 function PersonName({ name }: { name: string }) {
   const { colors, fonts } = useTheme();
   return (
-    <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
-      {name}
-    </Text>
+    <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>
+      {cardName(name)}
+    </FitText>
   );
 }
 

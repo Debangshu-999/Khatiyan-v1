@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, Text, View, type ImageSourcePropType } from "react-native";
@@ -76,7 +77,6 @@ const STATUS_OPTIONS: { label: string; value: BillStatusFilter }[] = [
  */
 const BILL_PAGE_SIZE = 5;
 
-const BILLS_HEADER_ILLUSTRATION = require("../assets/images/workspace/tenant-bills-header.png");
 const BILLING_HISTORY_ILLUSTRATION = require("../assets/images/workspace/billing-header.png");
 const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png");
 
@@ -304,11 +304,7 @@ export default function TenancyBillsScreen() {
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
-      {/* No back row, for the same reason the past-bills screen has none: the
-          gesture and the hardware button both still leave, and this header
-          already carries artwork on the row an arrow would sit in. */}
       <ScreenHeader
-        artwork={BILLS_HEADER_ILLUSTRATION}
         italicTail="bills."
         subtitle="Manage this month's rent, charges and other bills all in one place."
         title="My"
@@ -670,9 +666,9 @@ function StatusFilterDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Payment status
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 

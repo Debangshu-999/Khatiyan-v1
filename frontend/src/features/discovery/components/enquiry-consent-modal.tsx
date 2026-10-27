@@ -17,6 +17,7 @@ import {
 } from "@/store/services/enquiry-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * The agreement an enquirer makes before a property can be given a way to
@@ -123,7 +124,7 @@ export function EnquiryConsentModal({
    * for a drag to fight.
    */
   return (
-    <SheetShell dismissOnDrag onClose={onClose} title="How should they reply?">
+    <SheetShell dismissOnDrag onClose={onClose} title="Communication permissions">
       <View
         style={{
           borderColor: colors.border,
@@ -176,9 +177,10 @@ export function EnquiryConsentModal({
  * one screen where someone decides whether to hand it over, and a decision about
  * a value you cannot see is not much of a decision.
  *
- * <p>A locked row is drawn ticked and does not respond to a press. Chat is the
- * only one: it shares nothing, so there is nothing to agree to and nothing to
- * withdraw. It is shown rather than assumed because "they can always reach me in
+ * <p>A locked row has no tick box and does not respond to a press (user,
+ * 2026-10-18: a tick beside something that is on by default read as a choice).
+ * Chat is the only one: it shares nothing, so there is nothing to agree to and
+ * nothing to withdraw. Its line says "In the app, by default". It is shown rather than assumed because "they can always reach me in
  * the app" is the reassurance that makes declining phone a reasonable choice.
  */
 function ChannelRow({
@@ -202,8 +204,8 @@ function ChannelRow({
   return (
     <View style={{ borderTopColor: colors.border, borderTopWidth: first ? 0 : 1 }}>
       <AnimatedPressable
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked, disabled: !pressable }}
+        accessibilityRole={option.locked ? "text" : "checkbox"}
+        accessibilityState={option.locked ? undefined : { checked, disabled: !pressable }}
         disabled={!pressable}
         onPress={onToggle}
         style={{
@@ -219,7 +221,8 @@ function ChannelRow({
           paddingVertical: spacing.xs,
         }}
       >
-        <View
+        {/* No box and no gap where one would be: Chat starts at the left edge (user, 2026-10-18). */}
+        {option.locked ? null : <View
           style={{
             alignItems: "center",
             backgroundColor: checked ? colors.primary : "transparent",
@@ -232,9 +235,9 @@ function ChannelRow({
           }}
         >
           {checked ? <Check color={colors.onPrimary} size={14} strokeWidth={3} /> : null}
-        </View>
+        </View>}
 
-        <Icon color={colors.inkSoft} size={17} strokeWidth={2.2} style={{ marginLeft: spacing.sm }} />
+        <Icon color={colors.inkSoft} size={17} strokeWidth={2.2} style={{ marginLeft: option.locked ? 0 : spacing.sm }} />
 
         <View style={{ flex: 1, marginLeft: spacing.sm }}>
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
@@ -244,7 +247,7 @@ function ChannelRow({
               unavailable as well as the value it would share. Clipped to one,
               "Verify your email to enable that channel" lost the instruction and
               kept the preamble. */}
-          <Text
+          <FitText
             numberOfLines={2}
             style={[
               type.caption,
@@ -260,7 +263,7 @@ function ChannelRow({
             {option.locked
               ? "In the app, by default"
               : (option.target ?? unavailableNote ?? "Not available on your account")}
-          </Text>
+          </FitText>
         </View>
       </AnimatedPressable>
     </View>

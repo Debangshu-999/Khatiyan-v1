@@ -1,6 +1,5 @@
 package com.khatiyan.a_auth.service;
 
-import java.util.Optional;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -10,7 +9,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.khatiyan.c_shared.exception.ServiceUnavailableException;
 import com.khatiyan.c_shared.exception.TooManyRequestsException;
+import com.khatiyan.c_shared.valkey.ValkeyHealth;
 import com.khatiyan.a_auth.model.OtpDeliveryChannel;
 import com.khatiyan.a_auth.model.OtpPurpose;
 import com.khatiyan.a_auth.model.OtpRequest;
@@ -37,8 +38,9 @@ public class OtpService {
      * Per device: 20 in 5 minutes. The published policy names no figure for
      * it, so this is the owner's own, set the same day.
      *
-     * The same numbers in Valkey and in the database fallback, so which one
-     * answers makes no difference to the person asking.
+     * Valkey alone counts them. While it is down, codes are paused instead
+     * (2026-10-18): a database fallback lost track of codes and wrong tries the
+     * moment Valkey came back.
      */
     private static final int MAX_PHONE_REQUESTS_BURST = 3;
     private static final Duration PHONE_BURST_WINDOW = Duration.ofMinutes(10);
@@ -57,22 +59,27 @@ public class OtpService {
      */
     static final Duration RESEND_COOLDOWN = Duration.ofSeconds(30);
     private static final String RESEND_TOO_SOON = "Please wait before requesting another code";
+    static final String CODES_CANNOT_BE_SENT = "Codes can't be sent right now. Try again in a few minutes.";
+    static final String CODES_CANNOT_BE_CHECKED = "Codes can't be checked right now. Try again in a few minutes.";
 
     private final OtpRepository otpRepository;
     private final ValkeyOtpStore valkeyOtpStore;
     private final OtpDeliveryService otpDeliveryService;
     private final PasswordEncoder passwordEncoder;
+    private final ValkeyHealth valkeyHealth;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public OtpService(
             OtpRepository otpRepository,
             ValkeyOtpStore valkeyOtpStore,
             OtpDeliveryService otpDeliveryService,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            ValkeyHealth valkeyHealth) {
         this.otpRepository = otpRepository;
         this.valkeyOtpStore = valkeyOtpStore;
         this.otpDeliveryService = otpDeliveryService;
         this.passwordEncoder = passwordEncoder;
+        this.valkeyHealth = valkeyHealth;
     }
 
     @Transactional
@@ -104,25 +111,18 @@ public class OtpService {
         String otpHash = passwordEncoder.encode(otp);
         OtpDeliveryChannel resolvedChannel = resolveChannel(channel);
 
-        // ONE limiter answers each request: Valkey while it is up, the database
-        // only when it is not. Both used to run on every request, so a code was
-        // refused by whichever tripped first, and the database — counting rows
-        // on every send — was doing work Valkey had already done. Both apply
-        // the same three rules, so which one answered makes no difference to
-        // the person asking.
+        // Valkey alone counts and holds codes. While it is down, codes are
+        // paused (2026-10-18): the database fallback this replaced kept its own
+        // count, and lost track of codes and wrong tries when Valkey returned.
+        if (!valkeyHealth.available()) {
+            throw new ServiceUnavailableException(CODES_CANNOT_BE_SENT);
+        }
         try {
             enforceValkeyLimits(phone, requestIpAddress, purpose);
             valkeyOtpStore.saveOtp(phone, purpose, otpHash, now, OTP_TTL);
         } catch (DataAccessException e) {
-            log.warn(
-                    "Valkey unavailable during OTP issue. Falling back to database phone={} purpose={} reason={}",
-                    phone,
-                    purpose,
-                    e.getMessage());
-
-            enforceDatabaseLimits(phone, requestIpAddress, purpose, now);
-            issueUsingDatabase(phone, email, requestIpAddress, purpose, otpHash, otp, now, resolvedChannel, detail);
-            return;
+            valkeyHealth.failed(e);
+            throw new ServiceUnavailableException(CODES_CANNOT_BE_SENT);
         }
 
         saveDatabaseMirror(phone, requestIpAddress, purpose, otpHash, now);
@@ -133,76 +133,29 @@ public class OtpService {
 
     @Transactional
     public void verifyAndConsumeOTP(String phone, OtpPurpose purpose, String otp) {
+        if (!valkeyHealth.available()) {
+            throw new ServiceUnavailableException(CODES_CANNOT_BE_CHECKED);
+        }
         try {
             verifyUsingValkey(phone, purpose, otp, true);
             log.info("OTP verified and consumed using Valkey phone={} purpose={}", phone, purpose);
         } catch (DataAccessException e) {
-            log.warn(
-                    "Valkey unavailable during OTP consume verification. Falling back to database phone={} purpose={} reason={}",
-                    phone,
-                    purpose,
-                    e.getMessage());
-
-            verifyAndConsumeUsingDatabase(phone, purpose, otp);
+            valkeyHealth.failed(e);
+            throw new ServiceUnavailableException(CODES_CANNOT_BE_CHECKED);
         }
     }
 
     @Transactional
     public void verifyOTPWithoutConsuming(String phone, OtpPurpose purpose, String otp) {
+        if (!valkeyHealth.available()) {
+            throw new ServiceUnavailableException(CODES_CANNOT_BE_CHECKED);
+        }
         try {
             verifyUsingValkey(phone, purpose, otp, false);
             log.info("OTP verified without consuming using Valkey phone={} purpose={}", phone, purpose);
         } catch (DataAccessException e) {
-            log.warn(
-                    "Valkey unavailable during OTP non-consuming verification. Falling back to database phone={} purpose={} reason={}",
-                    phone,
-                    purpose,
-                    e.getMessage());
-
-            verifyWithoutConsumingUsingDatabase(phone, purpose, otp);
-        }
-    }
-
-    private void issueUsingDatabase(
-            String phone,
-            String email,
-            String requestIpAddress,
-            OtpPurpose purpose,
-            String otpHash,
-            String otp,
-            Instant now,
-            OtpDeliveryChannel channel,
-            String detail) {
-        saveDatabaseOtp(phone, requestIpAddress, purpose, otpHash, now);
-        otpDeliveryService.deliverOtp(phone, email, otp, purpose, channel, detail);
-
-        log.info("OTP issued using database fallback phone={} purpose={} channel={}", phone, purpose, channel);
-    }
-
-    private void verifyAndConsumeUsingDatabase(String phone, OtpPurpose purpose, String otp) {
-        OtpRequest request = otpRepository.findLatestUsable(phone, purpose, Instant.now(), MAX_VERIFY_ATTEMPTS)
-                .orElseThrow(() -> new ValidationException("OTP is invalid or expired"));
-
-        if (!passwordEncoder.matches(otp, request.getOtpHash())) {
-            request.recordFailedAttempt();  
-            throw new ValidationException("OTP is invalid or expired");
-        }
-
-        request.consume(Instant.now());
-    }
-
-    private void verifyWithoutConsumingUsingDatabase(String phone, OtpPurpose purpose, String otp) {
-        OtpRequest request = otpRepository.findLatestUsable(
-                phone,
-                purpose,
-                Instant.now(),
-                MAX_VERIFY_ATTEMPTS
-            )
-            .orElseThrow(() -> new ValidationException("OTP is invalid or expired"));
-
-        if (!passwordEncoder.matches(otp, request.getOtpHash())) {
-            request.recordFailedAttempt();
-            throw new ValidationException("OTP is invalid or expired");
+            valkeyHealth.failed(e);
+            throw new ServiceUnavailableException(CODES_CANNOT_BE_CHECKED);
         }
     }
 
@@ -295,77 +248,6 @@ public class OtpService {
                     "Too many requests from this device",
                     valkeyOtpStore.ipRequestWindowRemainingSeconds(requestIpAddress));
         }
-    }
-
-    /**
-     * The same three rules, answered from the rows the database already keeps.
-     *
-     * <p>Only reached when Valkey could not be asked. Those rows are written on
-     * every send, Valkey path included (see {@code saveDatabaseMirror}), so the
-     * counts here are the true ones even for codes Valkey issued before it went
-     * down.
-     */
-    private void enforceDatabaseLimits(String phone, String requestIpAddress, OtpPurpose purpose, Instant now) {
-        otpRepository.findFirstByPhoneAndPurposeOrderByCreatedAtDesc(phone, purpose)
-                .map(latest -> latest.getCreatedAt().plus(RESEND_COOLDOWN))
-                .filter(cooldownEnds -> cooldownEnds.isAfter(now))
-                .ifPresent(cooldownEnds -> {
-                    throw new TooManyRequestsException(
-                            RESEND_TOO_SOON,
-                            Math.max(1L, Duration.between(now, cooldownEnds).toSeconds()));
-                });
-
-        // The same two windows. The longer wait wins when both are full, for
-        // the same reason as on the Valkey side.
-        Instant burstSince = now.minus(PHONE_BURST_WINDOW);
-        Instant hourlySince = now.minus(PHONE_HOURLY_WINDOW);
-        boolean burstFull = otpRepository.countByPhoneAndCreatedAtAfter(phone, burstSince) >= MAX_PHONE_REQUESTS_BURST;
-        boolean hourlyFull = otpRepository.countByPhoneAndCreatedAtAfter(phone, hourlySince) >= MAX_PHONE_REQUESTS_HOURLY;
-        if (burstFull || hourlyFull) {
-            long burstWait = burstFull
-                    ? secondsUntilWindowFrees(
-                            otpRepository.findFirstByPhoneAndCreatedAtAfterOrderByCreatedAtAsc(phone, burstSince),
-                            now,
-                            PHONE_BURST_WINDOW)
-                    : 0L;
-            long hourlyWait = hourlyFull
-                    ? secondsUntilWindowFrees(
-                            otpRepository.findFirstByPhoneAndCreatedAtAfterOrderByCreatedAtAsc(phone, hourlySince),
-                            now,
-                            PHONE_HOURLY_WINDOW)
-                    : 0L;
-            throw new TooManyRequestsException("Too many requests", Math.max(burstWait, hourlyWait));
-        }
-
-        if (requestIpAddress == null || requestIpAddress.isBlank()) {
-            return;
-        }
-
-        Instant ipSince = now.minus(IP_WINDOW);
-        long recentIpOtpCount = otpRepository.countByRequestIpAddressAndCreatedAtAfter(requestIpAddress, ipSince);
-        if (recentIpOtpCount >= MAX_RECENT_IP_REQUESTS) {
-            throw new TooManyRequestsException(
-                    "Too many requests from this device",
-                    secondsUntilWindowFrees(
-                            otpRepository.findFirstByRequestIpAddressAndCreatedAtAfterOrderByCreatedAtAsc(
-                                    requestIpAddress, ipSince),
-                            now,
-                            IP_WINDOW));
-        }
-    }
-
-    /**
-     * How long until the oldest request in the window falls out of it.
-     *
-     * <p>Falls back to the whole window when the row cannot be found, which
-     * over-states the wait rather than under-stating it — a screen that
-     * re-enables early sends the caller into a second refusal.
-     */
-    private static long secondsUntilWindowFrees(Optional<OtpRequest> oldest, Instant now, Duration window) {
-        return oldest
-                .map(request -> Duration.between(now, request.getCreatedAt().plus(window)).toSeconds())
-                .filter(seconds -> seconds > 0)
-                .orElse(window.toSeconds());
     }
 
     private void recordDatabaseFailedAttempt(String phone, OtpPurpose purpose) {

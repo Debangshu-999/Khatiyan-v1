@@ -18,7 +18,17 @@ export type BillingCycleStatus =
   | "CANCELLED";
 export type BillingCycleCategory = "RENT_CYCLE" | "ONE_OFF";
 export type BillingCollectionTiming = "CYCLE_START" | "CYCLE_END";
-export type BillingLineItemType = "RENT" | "DEPOSIT" | "EXTRA_CHARGE" | "DISCOUNT" | "LATE_FEE";
+/**
+ * BOOKING_TOKEN (2026-10-10): a booking token the property already held when the
+ * stay began, taken off the first bill. Money received, not a discount.
+ */
+export type BillingLineItemType =
+  | "RENT"
+  | "DEPOSIT"
+  | "EXTRA_CHARGE"
+  | "DISCOUNT"
+  | "LATE_FEE"
+  | "BOOKING_TOKEN";
 export type BillingLineItemStatus = "PENDING" | "ADDED";
 export type BillingLineSettlementAction =
   | "ADDED_TO_BILL"
@@ -364,6 +374,12 @@ export const billingApi = api.injectEndpoints({
      * used three page sizes, so three entries, and the pill could keep an old
      * "none left" while the screen it opens showed eight.
      */
+    /** The bills paid today, the ones Home's Payments tile counts (2026-10-18). */
+    listPropertyCyclesPaidToday: builder.query<BillingCycle[], string>({
+      query: (propertyId) => `/api/v1/billing/properties/${propertyId}/cycles/paid-today`,
+      providesTags: ["BillingCycle"],
+    }),
+
     listUpcomingPropertyCycles: builder.query<Page<UpcomingBillingCycle>, { propertyId: string; month?: string; page?: number; size?: number }>({
       query: ({ month, page = 0, propertyId, size = 10 }) => ({
         params: {
@@ -575,6 +591,7 @@ export const billingApi = api.injectEndpoints({
 });
 
 export const {
+  useListPropertyCyclesPaidTodayQuery,
   useClearBillingLineItemMutation,
   useAddDepositCorrectionMutation,
   useAddCycleDiscountMutation,

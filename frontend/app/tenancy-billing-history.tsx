@@ -1,6 +1,7 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActivityIndicator, Modal, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { SlidersHorizontal, X } from "lucide-react-native";
 
@@ -309,9 +310,9 @@ function StatusFilterDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Payment status
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 

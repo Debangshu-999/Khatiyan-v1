@@ -19,6 +19,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { PaymentWindowModal } from "@/features/billing/payment-window-modal";
 import { billTitle, type BillingCycle } from "@/store/services/billing-api";
 import type { PaymentIntent } from "@/store/services/payment-intent-api";
+import { useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -44,6 +45,7 @@ export function TenantBillCard({
   /** An unfinished attempt on THIS bill, if there is one. */
   openAttempt: PaymentIntent | null;
 }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
   const [windowInfoOpen, setWindowInfoOpen] = useState(false);
   const awaitingConfirmation = cycle.status === "CONFIRMATION_PENDING";
@@ -65,10 +67,7 @@ export function TenantBillCard({
         overflow: "hidden",
         padding: spacing.md,
         position: "relative",
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 4, width: 0 },
-        shadowOpacity: 0.12,
-        shadowRadius: 10,
+        ...softShadow(colors.shadow, 4, 10, 0.12),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
@@ -86,15 +85,15 @@ export function TenantBillCard({
         </View>
 
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text
+          <FitText
             numberOfLines={1}
             style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, lineHeight: 23 }}
           >
             {billTitle(cycle)}
-          </Text>
-          <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
+          </FitText>
+          <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
             {cycle.referenceCode}
-          </Text>
+          </FitText>
         </View>
 
         <TenantBillStatusBadge cycle={cycle} />
@@ -115,7 +114,7 @@ export function TenantBillCard({
         <View style={{ flex: 2.2, gap: 4, minWidth: 0 }}>
           <Text style={[type.eyebrow, { color: colors.kicker }]}>Total payable</Text>
           <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-            <Text
+            <FitText
               numberOfLines={1}
               style={{
                 color: colors.ink,
@@ -126,10 +125,10 @@ export function TenantBillCard({
               }}
             >
               {formatTenantMoney(cycle.totalAmountPaise)}
-            </Text>
+            </FitText>
             {discount ? (
               <>
-                <Text
+                <FitText
                   numberOfLines={1}
                   style={{
                     color: colors.muted,
@@ -139,7 +138,7 @@ export function TenantBillCard({
                   }}
                 >
                   {formatTenantMoney(discount.grossPaise)}
-                </Text>
+                </FitText>
                 <View
                   style={{
                     backgroundColor: colors.jadeSoft,
@@ -148,12 +147,12 @@ export function TenantBillCard({
                     paddingVertical: 2,
                   }}
                 >
-                  <Text
+                  <FitText
                     numberOfLines={1}
                     style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 9.5 }}
                   >
                     {discount.percent}% OFF
-                  </Text>
+                  </FitText>
                 </View>
               </>
             ) : null}
@@ -171,9 +170,9 @@ export function TenantBillCard({
 
         <View style={{ flex: 0.95, gap: 5, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-            <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]}>
+            <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]}>
               Due date
-            </Text>
+            </FitText>
             <AnimatedPressable
               accessibilityLabel={`Payment window for ${cycle.referenceCode}`}
               accessibilityRole="button"
@@ -196,7 +195,7 @@ export function TenantBillCard({
               size={15}
               strokeWidth={2.2}
             />
-            <Text
+            <FitText
               numberOfLines={1}
               style={{
                 color: cycle.status === "OVERDUE" ? colors.danger : colors.ink,
@@ -205,7 +204,7 @@ export function TenantBillCard({
               }}
             >
               {formatTenantDate(cycle.rentDueDate)}
-            </Text>
+            </FitText>
           </View>
         </View>
       </View>
@@ -304,7 +303,7 @@ function TenantBillAction({
       {Icon ? (
         <Icon color={paid ? colors.jade : contentColor} size={16} strokeWidth={2.2} />
       ) : null}
-      <Text
+      <FitText
         numberOfLines={1}
         style={{
           color: contentColor,
@@ -313,7 +312,7 @@ function TenantBillAction({
         }}
       >
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }
@@ -352,12 +351,12 @@ function TenantBillStatusBadge({ cycle }: { cycle: BillingCycle }) {
       }}
     >
       <Icon color={display.color} size={13} strokeWidth={2.3} />
-      <Text
+      <FitText
         numberOfLines={1}
         style={{ color: display.color, fontFamily: fonts.sansBold, fontSize: 11 }}
       >
         {status.label}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -438,3 +437,4 @@ function payButtonLabel(cycle: BillingCycle, openAttempt: PaymentIntent | null) 
   return "Pay now";
 }
 import { CircleHelp } from "lucide-react-native";
+import { FitText } from "@/components/fit-text";

@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { Modal, ScrollView, Text, View } from "react-native";
@@ -112,9 +113,9 @@ export function CategoryPickerModal({
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: spacing.md }}>
-            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, }}>
+            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 21, }}>
               {isFilter ? "Filter by category" : "Choose categories"}
-            </Text>
+            </ModalTitle>
             <AnimatedPressable
               accessibilityLabel="Close"
               onPress={onClose}

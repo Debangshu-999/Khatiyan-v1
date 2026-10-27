@@ -54,6 +54,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/notifications/**").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        // A mail's "Open in app" button: a page that hands a screen name to the app.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/open").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/discovery/properties",
                                 "/api/v1/discovery/properties/**",

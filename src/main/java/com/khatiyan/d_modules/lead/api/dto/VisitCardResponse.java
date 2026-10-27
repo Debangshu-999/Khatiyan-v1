@@ -60,5 +60,7 @@ public record VisitCardResponse(
         LocalDate rescheduledToDate,
         LocalTime rescheduledToSlotStart,
         Instant placedAt,
-        long version) {
+        long version,
+        // Someone who walked in and was recorded by the property, with no app (2026-10-19).
+        boolean external) {
 }

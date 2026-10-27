@@ -6,6 +6,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { SectionHeading } from "@/components/section-heading";
 import { useHardwareBack } from "@/components/use-hardware-back";
+import { useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -42,6 +43,7 @@ export function FilteredQueue<T extends string>({
   options: FilterOption<T>[];
   value: T;
 }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts } = useTheme();
   const [open, setOpen] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -85,10 +87,7 @@ export function FilteredQueue<T extends string>({
               padding: spacing.xs,
               position: "absolute",
               right: 0,
-              shadowColor: colors.shadow,
-              shadowOffset: { height: 6, width: 0 },
-              shadowOpacity: 0.16,
-              shadowRadius: 14,
+              ...softShadow(colors.shadow, 6, 14, 0.16),
               top: menuTop,
               width: 220,
               zIndex: 20,
@@ -158,6 +157,7 @@ export function SectionWithDropdown<T extends string>({
   title: string;
   value: T;
 }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts } = useTheme();
   const [open, setOpen] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -208,10 +208,7 @@ export function SectionWithDropdown<T extends string>({
               padding: spacing.xs,
               position: "absolute",
               right: 0,
-              shadowColor: colors.shadow,
-              shadowOffset: { height: 6, width: 0 },
-              shadowOpacity: 0.16,
-              shadowRadius: 14,
+              ...softShadow(colors.shadow, 6, 14, 0.16),
               top: menuTop,
               width: 200,
               zIndex: 20,

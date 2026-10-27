@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { Modal, Text, View } from "react-native";
@@ -75,9 +76,9 @@ export function DepositCorrectionModal({
             width: "100%",
           }}
         >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
+          <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {isAdd ? "Add to deposit" : "Deduct from deposit"}
-          </Text>
+          </ModalTitle>
           <Text style={[type.caption, { color: colors.muted }]}>
             Current balance {formatMoneyPaise(balancePaise)}
           </Text>

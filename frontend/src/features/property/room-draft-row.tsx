@@ -11,6 +11,7 @@ import { MoldPicker, moldLabel } from "@/features/property/mold-picker";
 import type { RoomAmenity, RoomMold } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /** One room being written down, before any of them are created. */
 export type RoomDraft = {
@@ -215,13 +216,13 @@ export function RoomDraftRow({
         style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}
       >
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
             {number || `Room ${index + 1}`}
-          </Text>
+          </FitText>
           {/* Collapsed, the row still has to say what it is — otherwise a list
               of ten is ten identical headings and the only way to check one is
               to open it. */}
-          <Text numberOfLines={1} style={[type.description, { color: faulted ? colors.danger : colors.muted }]}>
+          <FitText numberOfLines={1} style={[type.description, { color: faulted ? colors.danger : colors.muted }]}>
             {faulted
               ? "Something is missing"
               : mold
@@ -229,7 +230,7 @@ export function RoomDraftRow({
                     draft.rent.trim() ? `₹${draft.rent.trim()}` : formatMoneyPaise(mold.baseRentPaise)
                   }`
                 : "No room type chosen"}
-          </Text>
+          </FitText>
         </View>
 
         {removable ? (

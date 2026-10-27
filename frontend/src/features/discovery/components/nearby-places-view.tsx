@@ -192,6 +192,7 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
           }}
         >
           <Image
+            resizeMethod="resize"
             accessibilityIgnoresInvertColors
             resizeMode="contain"
             source={NO_LOCATION_ILLUSTRATION}
@@ -207,13 +208,6 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
             }}
           >
             {hasQuery || narrowed ? "No matches found" : "No nearby places yet"}
-          </Text>
-          <Text style={[type.body, { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" }]}>
-            {hasQuery || narrowed
-              ? "Nothing matched. Try a broader term or a different category."
-              : isTenant
-                ? "Your property has not added nearby places yet."
-                : "Add landmarks, services and conveniences so tenants can find them here."}
           </Text>
 
           {/* Only when something is actually narrowing the list. With no search

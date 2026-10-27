@@ -80,6 +80,7 @@ class DashboardSpeedTest {
     @Autowired private ExpenseModule expenseModule;
     @Autowired private ExpenseAnalytics expenseAnalytics;
     @Autowired private ActivityEventService activityEvents;
+    @Autowired private com.khatiyan.d_modules.lead.service.ListingJourneyService listingJourney;
 
     private record Timing(String section, double p50, double p95, double max) {
     }
@@ -92,6 +93,9 @@ class DashboardSpeedTest {
 
         long seedStart = System.nanoTime();
         Seeded seeded = LargePropertySeeder.seed(jdbc, today, beds, years, 20261002L);
+        // Leads at scale (2026-10-19): about 27 people a bed open the listing over the years.
+        int prospects = Integer.getInteger("khatiyan.perf.prospects", beds * 27);
+        LeadsPerfSeeder.Seeded leads = LeadsPerfSeeder.seed(jdbc, seeded.propertyId(), seeded.ownerId(), years, prospects);
         double seedSeconds = (System.nanoTime() - seedStart) / 1e9;
         try {
             // A database that has been running has statistics. One filled a second
@@ -108,11 +112,23 @@ class DashboardSpeedTest {
                 }
             }
 
-            String report = report(seeded, beds, years, seedSeconds, timings) + parts(seeded, today);
+            // The Leads insights dashboard, every period it offers (2026-10-19).
+            for (var period : com.khatiyan.d_modules.lead.service.ListingJourneyService.Period.values()) {
+                if (period == com.khatiyan.d_modules.lead.service.ListingJourneyService.Period.CUSTOM) {
+                    continue;
+                }
+                timings.add(time("Leads insights, " + label(period), () -> listingJourney.journey(
+                        seeded.ownerId(), seeded.propertyId(), period)));
+            }
+
+            String report = report(seeded, beds, years, seedSeconds, timings) + parts(seeded, today)
+                    + String.format(Locale.ROOT, "%nLeads: %d people opened the listing, %d profile events, %d leads, %d visits.%n",
+                            leads.prospects(), leads.events(), leads.leads(), leads.visits());
             Files.createDirectories(Path.of("target"));
             Files.writeString(Path.of("target", "dashboard-speed.md"), report);
             System.out.println(report);
         } finally {
+            LeadsPerfSeeder.remove(jdbc, seeded.propertyId());
             LargePropertySeeder.remove(jdbc, seeded);
         }
     }

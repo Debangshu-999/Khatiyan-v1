@@ -10,6 +10,7 @@ import { MarqueeText } from "@/components/marquee-text";
 import type { PropertyLocalPlace } from "@/store/services/discovery-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 type NearbyPlaceCardProps = {
   place: PropertyLocalPlace;
@@ -57,9 +58,9 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
               <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{place.name}</MarqueeText>
             </View>
           </View>
-          <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+          <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {place.subcategoryNames.join(" · ") || "No categories"}
-          </Text>
+          </FitText>
         </View>
         {/* Distance only. Recommended is the star beside the name. */}
         <View style={{ alignItems: "flex-end", gap: 6 }}>
@@ -84,18 +85,18 @@ export function NearbyPlaceCard({ onDelete, onEdit, place }: NearbyPlaceCardProp
       {place.addressText ? (
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
           <MapPin color={colors.muted} size={13} strokeWidth={2.2} style={{ marginTop: 2.5 }} />
-          <Text style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]} numberOfLines={2}>
+          <FitText style={[type.caption, { color: colors.muted, flex: 1, lineHeight: 18 }]} numberOfLines={2}>
             {place.addressText}
-          </Text>
+          </FitText>
         </View>
       ) : null}
 
       {place.description ? (
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs }}>
           <Info color={colors.muted} size={13} strokeWidth={2.2} style={{ marginTop: 2.5 }} />
-          <Text style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 18 }]} numberOfLines={3}>
+          <FitText style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 18 }]} numberOfLines={3}>
             {place.description}
-          </Text>
+          </FitText>
         </View>
       ) : null}
 

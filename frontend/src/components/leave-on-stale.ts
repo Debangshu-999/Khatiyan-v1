@@ -59,6 +59,7 @@ export function leaveTopSurface() {
  * left out on purpose.
  */
 export const FORM_ROUTES: ReadonlySet<string> = new Set([
+  "/owner-booking-settings",
   "/owner-edit-property",
   "/owner-edit-room",
   "/owner-end-tenancy",

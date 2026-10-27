@@ -83,6 +83,8 @@ spring:
       - classpath:db/migration/verification
       - classpath:db/migration/food
       - classpath:db/migration/analytics
+      - classpath:db/migration/booking
+      - classpath:db/migration/mail
 
   modulith:
     events:
@@ -184,6 +186,10 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
 
 app:
+  cache:
+    # Seals personal data written into Valkey (2026-10-27). Empty = a random key per backend start, which is
+    # fine for one backend copy. Several copies must share one: 32 bytes, base64, from the environment.
+    field-key: ${CACHE_FIELD_KEY:}
   ai:
     # The master switch. Off means off: no provider call, no key read, nothing
     # in the background. This is the only module that sends data outside
@@ -323,6 +329,9 @@ app:
         subject-prefix: ${OTP_EMAIL_SUBJECT_PREFIX:Khatiyan}
   email:
     verification-url: ${EMAIL_VERIFICATION_URL:http://localhost:8080/api/v1/auth/email/verify}
+  mail:
+    # Where a visit or booking mail's "Open in app" button goes: a page that hands the screen to the app.
+    open-url: ${MAIL_OPEN_URL:http://localhost:8080/api/v1/open}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8081,http://localhost:8082}
   geo:
@@ -364,6 +373,14 @@ app:
     # Once a day, to owners who assign each enquiry themselves and have some
     # still waiting. 9:00 am in the zone above.
     unassigned-reminder-cron: ${ENQUIRY_UNASSIGNED_REMINDER_CRON:0 0 9 * * *}
+  booking:
+    # Requests nobody agreed in time. Hourly: each run only acts on what is
+    # already due, so a run missed while the server was down is made up.
+    expiry-cron: ${BOOKING_EXPIRY_CRON:0 25 * * * *}
+    expiry-zone: ${BOOKING_EXPIRY_ZONE:Asia/Kolkata}
+    # Booked beds still occupied on or after the move-in day. Each morning,
+    # once a day per booking, in the zone above.
+    bed-notice-cron: ${BOOKING_BED_NOTICE_CRON:0 0 9 * * *}
   notice:
     recurring-generation-cron: ${NOTICE_RECURRING_GENERATION_CRON:0 */5 * * * *}
     recurring-generation-zone: ${NOTICE_RECURRING_GENERATION_ZONE:Asia/Kolkata}

@@ -20,6 +20,8 @@ import {
 } from "@/store/services/payment-intent-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 /**
  * The claim states an owner is entitled to see.
@@ -120,9 +122,9 @@ export function ClaimCard({ claim, readOnly = false }: { claim: OwnerClaim; read
           a statement line. */}
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, gap: 4 }}>
-          <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
-            {claim.tenantName ?? "Tenant"}
-          </Text>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
+            {cardName(claim.tenantName ?? "Tenant")}
+          </FitText>
           {/* The glyph inside the code's own fill, not in a container of its
               own. It marks the chip as a BILL reference rather than any other
               code on the card, which matters once the owner is holding a

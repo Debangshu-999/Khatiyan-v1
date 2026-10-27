@@ -20,7 +20,7 @@ public record RoomResponse(
     String floor,
     int capacity,
     int occupiedCount,
-    // Beds held for approved room changes that have not transferred yet.
+    // Beds held for bookings or approved room changes; excluded from live vacancies.
     int reservedCount,
     int availableVacancies,
     RoomType roomType,

@@ -11,9 +11,9 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import com.khatiyan.c_shared.valkey.FallbackCache;
 import com.khatiyan.d_modules.intelligence.IntelligenceProperties;
 import com.khatiyan.d_modules.intelligence.api.dto.InterpretSearchRequest;
 import com.khatiyan.d_modules.intelligence.api.dto.SmartSearchResponse;
@@ -64,10 +64,11 @@ public class SmartSearchCache {
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .build();
 
-    private final StringRedisTemplate valkey;
+    /** Valkey while it is up, memory while it is not (2026-10-18). */
+    private final FallbackCache valkey;
     private final IntelligenceProperties properties;
 
-    public SmartSearchCache(StringRedisTemplate valkey, IntelligenceProperties properties) {
+    public SmartSearchCache(FallbackCache valkey, IntelligenceProperties properties) {
         this.valkey = valkey;
         this.properties = properties;
     }
@@ -118,6 +119,11 @@ public class SmartSearchCache {
      * kilometre — so the same person asking twice from the same room still
      * gets their repeat, even though GPS never reports exactly the same point.
      */
+    /** The answer's cache key, which is also how concurrent repeats are told apart. */
+    String answerKey(InterpretSearchRequest request) {
+        return ANSWER_KEY + answerIdentity(request);
+    }
+
     private String answerIdentity(InterpretSearchRequest request) {
         String where = request.hasDevice()
                 ? String.format(Locale.ROOT, "%.2f,%.2f", request.device().latitude(), request.device().longitude())
@@ -137,7 +143,7 @@ public class SmartSearchCache {
 
     private <T> Optional<T> read(String key, Class<T> type) {
         try {
-            String json = valkey.opsForValue().get(key);
+            String json = valkey.get(key);
             return json == null ? Optional.empty() : Optional.ofNullable(JSON.readValue(json, type));
         } catch (RuntimeException exception) {
             log.warn("Smart search cache read skipped key={}", key, exception);
@@ -158,7 +164,7 @@ public class SmartSearchCache {
         long spreadMillis = Math.max(1, ttl.toMillis() / 10);
         Duration jittered = ttl.plusMillis(ThreadLocalRandom.current().nextLong(spreadMillis));
         try {
-            valkey.opsForValue().set(key, JSON.writeValueAsString(value), jittered);
+            valkey.set(key, JSON.writeValueAsString(value), jittered);
         } catch (RuntimeException exception) {
             log.warn("Smart search cache write skipped key={}", key, exception);
         }

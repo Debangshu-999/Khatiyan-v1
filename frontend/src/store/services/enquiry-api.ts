@@ -1,3 +1,4 @@
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { api, ifMatch } from "@/store/api";
 
 export type EnquiryResponseChannel = "CALL_BACK" | "EMAIL" | "CHAT";
@@ -109,6 +110,17 @@ export type EnquiryEnding = {
 export type MyEnquiryState = "AWAITING_REPLY" | "ANSWERED" | "CLOSED" | "EXPIRED";
 
 /** One row of My enquiries. */
+export type PostVisitBookingEligibility = {
+  enquiryId: string;
+  propertyId: string;
+  visitId: string | null;
+  visitedOn: string | null;
+  windowEndsOn: string | null;
+  windowExpiresAt: string | null;
+  eligible: boolean;
+  reason: string | null;
+};
+
 export type MyEnquiryItem = {
   id: string;
   propertyId: string;
@@ -132,6 +144,7 @@ export type MyEnquiryItem = {
   canChangeMind: boolean;
   /** The visit that stands on it: booked, attended or missed. Null once the enquiry is over. */
   visit?: MyEnquiryVisit | null;
+  bookingEligibility?: PostVisitBookingEligibility | null;
   version: number;
 };
 
@@ -195,6 +208,12 @@ export type EnquiryDetail = {
    * on it, so a record someone else changed since is refused, not overwritten.
    */
   version: number;
+  /**
+   * The person keeps walking away from this property (2026-10-17): a duplicate
+   * after one or two earlier leads ended for their own reason, potential spam
+   * after three or more. The reason is the server's words. Null for most.
+   */
+  repeatMark?: { flag: "DUPLICATE" | "POTENTIAL_SPAM"; earlierLeads: number; reason: string } | null;
 };
 
 /** Everything the confirmation dialog needs, straight from the send call. */
@@ -269,6 +288,17 @@ export const enquiryApi = api.injectEndpoints({
     }),
 
     /** "Changed your mind?": takes back a Not interested, once, and tells the handler. */
+    /**
+     * Book a stay straight from the property profile (user, 2026-10-17): opens
+     * booking without a visit on the person's live enquiry there, or on a new
+     * direct record, and says what the booking form books from. Sent once the
+     * consent step is done.
+     */
+    openDirectBooking: builder.mutation<PostVisitBookingEligibility, string>({
+      query: (propertyId) => ({ method: "POST", url: `/api/v1/properties/${propertyId}/direct-booking` }),
+      invalidatesTags: ["Enquiry", "Lead"],
+    }),
+
     changeEnquiryMind: builder.mutation<MyEnquiryItem, { enquiryId: string; version: number }>({
       query: ({ enquiryId, version }) => ({
         headers: ifMatch(version),
@@ -318,6 +348,12 @@ export const enquiryApi = api.injectEndpoints({
         url: `/api/v1/properties/${propertyId}/enquiries`,
       }),
       invalidatesTags: ["Enquiry"],
+    }),
+
+    /** One enquiry, for management: what Follow up on a lead opens the respond sheet with (2026-10-17). */
+    getEnquiryForManagement: builder.query<EnquiryDetail, string>({
+      query: (enquiryId) => `/api/v1/enquiries/${enquiryId}`,
+      providesTags: ["Enquiry"],
     }),
 
     listPropertyEnquiries: builder.query<EnquiryDetail[], string>({
@@ -446,6 +482,8 @@ export const enquiryApi = api.injectEndpoints({
 export const {
   useAssignEnquiryHandlerMutation,
   useChangeEnquiryMindMutation,
+  useOpenDirectBookingMutation,
+  useGetEnquiryForManagementQuery,
   useGetEnquiryHandlerSettingsQuery,
   useSaveEnquiryHandlerSettingsMutation,
   useGetMyEnquiriesQuery,
@@ -470,7 +508,7 @@ export function describeChannelName(channel: EnquiryResponseChannel) {
 
 /** "Callback on +91…" / "Email to anita@example.com", for the dialog bullets. */
 export function describeReachableChannel(channel: ReachableChannel) {
-  return channel.channel === "EMAIL" ? `Email to ${channel.target}` : `Callback on ${channel.target}`;
+  return channel.channel === "EMAIL" ? `Email to ${channel.target}` : `Callback on ${formatIndianPhone(channel.target)}`;
 }
 
 /**

@@ -5,6 +5,7 @@ import { Flame, Megaphone, ShieldAlert, type LucideProps } from "lucide-react-na
 import { type NoticePriority, type NoticeSummary } from "@/store/services/notice-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Which shelf a notice sits on, derived rather than stored.
@@ -132,12 +133,12 @@ export function Fact({ fact, tone }: { fact: CardFact; tone?: string }) {
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
       <Icon color={tone ?? colors.kicker} size={14} strokeWidth={2.2} />
-      <Text
+      <FitText
         numberOfLines={1}
         style={{ color: tone ?? colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 12.5 }}
       >
         {fact.text}
-      </Text>
+      </FitText>
     </View>
   );
 }

@@ -60,7 +60,12 @@ public enum NotificationAudience {
                     // make against their bank statement.
                     PAYMENT_CLAIM_RAISED,
                     // A booked stay waiting on a bed only the owner can free.
-                    FUTURE_BOOKING_BLOCKED -> MANAGEMENT;
+                    FUTURE_BOOKING_BLOCKED,
+                    // A post-visit booking waiting on a bed that must be freed today.
+                    BOOKED_BED_NOT_FREE,
+                    // A booking waiting on the property's answer, a claim, a refund owed (2026-10-19).
+                    BOOKING_REQUEST_YOUR_TURN, BOOKING_REQUEST_WAITING, BOOKING_TOKEN_CLAIM_WAITING,
+                    BOOKING_REFUND_OWED -> MANAGEMENT;
             case CONCERN_UNDER_REVIEW, CONCERN_IN_PROGRESS, CONCERN_RELEASED,
                     CONCERN_RESOLVED, TENANCY_EXIT_APPROVED, TENANCY_EXIT_REJECTED,
                     TENANCY_EXIT_EXECUTED, NOTICE_PUBLISHED, BILLING_CYCLE_GENERATED,
@@ -88,6 +93,12 @@ public enum NotificationAudience {
                     ENQUIRY_CLOSED,
                     // Reminders of the visit they booked (2026-10-04).
                     VISIT_REMINDER_DAY_BEFORE, VISIT_REMINDER_TODAY,
+                    // How to book after the visit, and their own booking's steps (2026-10-18).
+                    VISIT_AFTER_BOOK_A_STAY,
+                    BOOKING_CONFIRMED, BOOKING_DATE_MOVED, BOOKING_MOVE_IN_TOMORROW,
+                    BOOKING_CANCELLED, BOOKING_EXPIRED, BOOKING_BED_NOT_READY,
+                    BOOKING_OFFER_RECEIVED, BOOKING_TERMS_AGREED, BOOKING_TOKEN_LAPSING, BOOKING_REFUND_SENT,
+                    BOOKING_YOUR_TURN, BOOKING_BOOK_AFTER_VISIT,
                     // A meal on the tenant's plan moved. Only tenants on a meal
                     // plan are told, and they read it in their stay.
                     FOOD_MEAL_DELAYED -> TENANT;

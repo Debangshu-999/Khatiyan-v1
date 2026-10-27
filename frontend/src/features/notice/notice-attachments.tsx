@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
 import { Dimensions, Image, Modal, Pressable, ScrollView, Text, View } from "react-native";
@@ -22,6 +23,7 @@ import { useToast } from "@/components/toast";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 export type AttachmentKind = "document" | "image";
 
@@ -514,9 +516,9 @@ function AttachmentRow({ attachment, onRemove }: { attachment: Attachment; onRem
       ) : (
         <FileText color={colors.primary} size={17} />
       )}
-      <Text numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1 }]}>
+      <FitText numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1 }]}>
         {attachment.name}
-      </Text>
+      </FitText>
       <Pressable accessibilityLabel={`Remove ${attachment.name}`} accessibilityRole="button" hitSlop={8} onPress={onRemove}>
         <X color={colors.danger} size={17} strokeWidth={2.4} />
       </Pressable>
@@ -561,12 +563,11 @@ function DocumentPreviewModal({
               marginBottom: spacing.md,
             }}
           >
-            <Text
-              numberOfLines={1}
+            <ModalTitle
               style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20, }}
             >
               {attachment.name}
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
 
@@ -606,9 +607,9 @@ function DocumentPreviewModal({
                     }}
                   >
                     <FileText color={colors.primary} size={16} />
-                    <Text numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1 }]}>
+                    <FitText numberOfLines={1} style={[type.body, { color: colors.ink, flex: 1 }]}>
                       {document.name}
-                    </Text>
+                    </FitText>
                   </Pressable>
                 ))}
               </View>

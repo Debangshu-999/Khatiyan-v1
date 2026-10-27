@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, View } from "react-native";
@@ -102,9 +103,9 @@ export function ProfileEditModal({
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ marginBottom: keyboardInset, maxWidth: 520, width: "100%" }}>
           <Card style={{ borderRadius: 18, gap: spacing.md }}>
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>
                 {isEmail ? "Edit email" : "Edit name"}
-              </Text>
+              </ModalTitle>
               <AnimatedPressable
                 accessibilityLabel="Close"
                 accessibilityRole="button"

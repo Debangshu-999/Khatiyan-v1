@@ -33,5 +33,16 @@ public enum OtpPurpose {
      * <p>Its own purpose for the same reason as the agreement: a code sent to
      * log in must not be spendable as an admission that money changed hands.
      */
-    CASH_PAYMENT
+    CASH_PAYMENT,
+
+    /**
+     * A prospect confirming, face to face, that they handed over cash as the
+     * token for a booking.
+     *
+     * <p>Apart from {@link #CASH_PAYMENT} because the OTP store keeps one live
+     * code per number per purpose. Someone who is a tenant at one property and
+     * booking a bed at another could otherwise have a code sent for a token
+     * pass on a bill, or the other way round.
+     */
+    BOOKING_TOKEN_CASH
 }

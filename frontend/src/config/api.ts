@@ -51,6 +51,10 @@ export function resolveDefaultApiBaseUrl() {
   return "http://localhost:8080";
 }
 
+// export function resolveDefaultApiBaseUrl() {
+//   return normalizeApiBaseUrl("https://headcount-handbrake-cotton.ngrok-free.dev");
+// }
+
 /**
  * Cleans a base URL before anything is concatenated onto it.
  *
@@ -69,8 +73,6 @@ export function normalizeApiBaseUrl(value: string) {
   return trimmed.endsWith("/") ? trimmed.replace(/\/+$/, "") : trimmed;
 }
 
-// export function resolveDefaultApiBaseUrl() {
-//   return normalizeApiBaseUrl("https://headcount-handbrake-cotton.ngrok-free.dev");
-// }
+
 
 export const defaultApiBaseUrl = resolveDefaultApiBaseUrl();

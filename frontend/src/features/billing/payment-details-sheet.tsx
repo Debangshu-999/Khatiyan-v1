@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useMemo, useState } from "react";
 import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -141,9 +142,9 @@ export function PaymentDetailsSheet({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Payment{propertyName ? ` · ${propertyName}` : ""}
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>
                 {cycle.referenceCode}
-              </Text>
+              </ModalTitle>
             </View>
             <IconButton accessibilityLabel="Close payment details" filled icon={X} onPress={() => dismiss()} />
           </View>

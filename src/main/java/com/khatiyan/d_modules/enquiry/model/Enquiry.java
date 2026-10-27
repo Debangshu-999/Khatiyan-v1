@@ -2,12 +2,14 @@ package com.khatiyan.d_modules.enquiry.model;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
 import com.khatiyan.c_shared.exception.ValidationException;
+import com.khatiyan.d_modules.enquiry.PostVisitBookingWindow;
 
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -79,6 +81,33 @@ public class Enquiry extends BaseEntity {
      */
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
+
+    /** Immutable source of the post-visit window, established only from recorded attendance. */
+    @Column(name = "booking_visit_id")
+    private UUID bookingVisitId;
+
+    @Column(name = "booking_visit_date")
+    private LocalDate bookingVisitDate;
+
+    @Column(name = "pre_visit_expires_at")
+    private Instant preVisitExpiresAt;
+
+    /** Tenant cancellation closes this source window permanently; subsequent attendance cannot reopen it. */
+    @Column(name = "booking_window_closed_at")
+    private Instant bookingWindowClosedAt;
+
+    /** How it began: an enquiry, or a visit or stay booked straight from the property profile. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "origin", nullable = false, updatable = false, length = 20)
+    private EnquiryOrigin origin = EnquiryOrigin.ENQUIRY;
+
+    /**
+     * When the person chose to book a stay without a visit (user, 2026-10-17).
+     * The booking window is then open with no attended visit, for as long as
+     * a window after a visit is.
+     */
+    @Column(name = "direct_booking_at")
+    private Instant directBookingAt;
 
     /**
      * What the enquirer agreed to share, as it stood when they asked.
@@ -212,13 +241,13 @@ public class Enquiry extends BaseEntity {
     @Column(name = "end_reason", length = 30)
     private EnquiryEndReason endReason;
 
-    private Enquiry(UUID propertyId, UUID enquirerUserId, String message, Set<EnquiryResponseChannel> sharedChannels) {
+    private Enquiry(UUID propertyId, UUID enquirerUserId, String message, Set<EnquiryResponseChannel> sharedChannels, Instant now) {
         this.id = UUID.randomUUID();
         this.propertyId = propertyId;
         this.enquirerUserId = enquirerUserId;
         this.message = message;
         this.status = EnquiryStatus.NEW;
-        this.expiresAt = Instant.now().plus(LIFETIME);
+        this.expiresAt = now.plus(LIFETIME);
         this.sharedChannels = sharedChannels;
     }
 
@@ -227,6 +256,11 @@ public class Enquiry extends BaseEntity {
             UUID enquirerUserId,
             String message,
             Set<EnquiryResponseChannel> sharedChannels) {
+        return raise(propertyId, enquirerUserId, message, sharedChannels, Instant.now());
+    }
+
+    public static Enquiry raise(UUID propertyId, UUID enquirerUserId, String message,
+            Set<EnquiryResponseChannel> sharedChannels, Instant now) {
         String trimmed = message == null ? "" : message.trim();
         if (trimmed.isEmpty()) {
             throw new ValidationException("Write what you would like to ask.");
@@ -244,7 +278,59 @@ public class Enquiry extends BaseEntity {
                 shared.add(channel);
             }
         }
-        return new Enquiry(propertyId, enquirerUserId, trimmed, shared);
+        return new Enquiry(propertyId, enquirerUserId, trimmed, shared, now);
+    }
+
+    /**
+     * A record opened by a visit or a stay booked straight from the property
+     * profile (user, 2026-10-17). The person shared their contact as for an
+     * enquiry. It needs no answer to go on: they acted themselves, so it
+     * starts answered.
+     */
+    public static Enquiry raiseDirect(UUID propertyId, UUID enquirerUserId, EnquiryOrigin origin,
+            Set<EnquiryResponseChannel> sharedChannels, Instant now) {
+        if (origin == null || !origin.isDirect()) {
+            throw new IllegalArgumentException("A direct record is a direct visit or a direct booking");
+        }
+        Enquiry enquiry = raise(propertyId, enquirerUserId,
+                origin == EnquiryOrigin.DIRECT_VISIT
+                        ? "Booked a visit from the property page."
+                        : "Asked to book a stay from the property page.",
+                sharedChannels, now);
+        enquiry.origin = origin;
+        enquiry.status = EnquiryStatus.RESPONDED;
+        enquiry.respondedAt = now;
+        if (origin == EnquiryOrigin.DIRECT_BOOKING) {
+            enquiry.openDirectBooking(now);
+        }
+        return enquiry;
+    }
+
+    public boolean isDirect() {
+        return origin != null && origin.isDirect();
+    }
+
+    /**
+     * Opens booking without a visit (user, 2026-10-17), on a direct record or
+     * on the person's live enquiry here. For as long as a window after a visit:
+     * the record lives at least that long from now. A window already open after
+     * an attended visit is left as it is.
+     *
+     * @return true when it opened now
+     */
+    public boolean openDirectBooking(Instant now) {
+        if (directBookingAt != null || bookingVisitId != null) {
+            return false;
+        }
+        if (isEnded() || replacedAt != null || bookingWindowClosedAt != null) {
+            throw new ValidationException("This conversation has ended. Ask again from the property page.");
+        }
+        directBookingAt = now;
+        Instant windowEnds = PostVisitBookingWindow.expiresAt(now.atZone(PostVisitBookingWindow.ZONE).toLocalDate());
+        if (windowEnds.isAfter(expiresAt)) {
+            expiresAt = windowEnds;
+        }
+        return true;
     }
 
     public boolean isOpen() {
@@ -273,8 +359,54 @@ public class Enquiry extends BaseEntity {
      * restamping an answered one would rewrite that.
      */
     public boolean isExpired() {
+        return isExpired(Instant.now());
+    }
+
+    public boolean isExpired(Instant now) {
         return status == EnquiryStatus.EXPIRED
-                || (expiresAt != null && !Instant.now().isBefore(expiresAt));
+                || (expiresAt != null && !now.isBefore(expiresAt));
+    }
+
+    /** Called only after the service has verified the attended visit and its property/prospect. */
+    public boolean openPostVisitBookingWindow(UUID visitId, LocalDate visitDate, Instant now) {
+        if (bookingVisitId != null) {
+            if (!bookingVisitId.equals(visitId) || !bookingVisitDate.equals(visitDate)) {
+                throw new ValidationException("This enquiry already has its attended visit.");
+            }
+            return false;
+        }
+        if (isEnded() || replacedAt != null || bookingWindowClosedAt != null
+                || endReason == EnquiryEndReason.VISIT_MISSED || endReason == EnquiryEndReason.VISIT_CANCELLED) {
+            return false;
+        }
+        if (visitId == null || visitDate == null
+                || visitDate.isAfter(now.atZone(PostVisitBookingWindow.ZONE).toLocalDate())
+                || !now.isBefore(PostVisitBookingWindow.expiresAt(visitDate))) {
+            throw new ValidationException("The attended visit is outside its booking window.");
+        }
+        preVisitExpiresAt = expiresAt;
+        bookingVisitId = visitId;
+        bookingVisitDate = visitDate;
+        expiresAt = PostVisitBookingWindow.expiresAt(visitDate);
+        if (status == EnquiryStatus.EXPIRED) {
+            status = respondedAt == null ? EnquiryStatus.NEW : EnquiryStatus.RESPONDED;
+        }
+        // A valid already-booked visit may happen after the OLD deadline. Only
+        // timer closure is undone; manual closure/replacement was refused above.
+        windowClosedAt = null;
+        chatClosedAt = null;
+        endReason = null;
+        return true;
+    }
+
+    /** Internal cancellation hook; closing does not reset/erase the original attendance. */
+    public boolean closePostVisitBookingWindow(Instant now) {
+        if ((bookingVisitId == null && directBookingAt == null) || bookingWindowClosedAt != null) {
+            return false;
+        }
+        bookingWindowClosedAt = now;
+        cutShort(now);
+        return true;
     }
 
     /**
@@ -360,7 +492,11 @@ public class Enquiry extends BaseEntity {
      * its date.
      */
     public boolean isOver() {
-        return isEnded() || isExpired();
+        return isOver(Instant.now());
+    }
+
+    public boolean isOver(Instant now) {
+        return isEnded() || isExpired(now);
     }
 
     /**
@@ -391,7 +527,7 @@ public class Enquiry extends BaseEntity {
      * one that will: not marked so, or already closed.
      */
     public Instant notInterestedClosesAt() {
-        if (sentiment != EnquirySentiment.NOT_INTERESTED || isEnded() || sentimentSetAt == null) {
+        if (bookingVisitId != null || sentiment != EnquirySentiment.NOT_INTERESTED || isEnded() || sentimentSetAt == null) {
             return null;
         }
         return sentimentSetAt.plus(NOT_INTERESTED_GRACE);
@@ -403,7 +539,11 @@ public class Enquiry extends BaseEntity {
      * not yet expired (owner's rule, 2026-10-03). Once only, either way.
      */
     public boolean mayChangeMind() {
-        if (tenantChangedMindAt != null || isExpired()) {
+        return mayChangeMind(Instant.now());
+    }
+
+    public boolean mayChangeMind(Instant now) {
+        if (tenantChangedMindAt != null || isExpired(now)) {
             return false;
         }
         return notInterestedClosesAt() != null || isClosedAsNotInterested();
@@ -424,7 +564,7 @@ public class Enquiry extends BaseEntity {
      * @return true when it was closed and is now open again
      */
     public boolean changeMind(UUID enquirerUserId, Instant now) {
-        if (!mayChangeMind()) {
+        if (!mayChangeMind(now)) {
             throw new ValidationException(tenantChangedMindAt != null
                     ? "You have already told the property you are interested."
                     : "This enquiry is not waiting on that.");

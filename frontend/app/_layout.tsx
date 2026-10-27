@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { Provider } from "react-redux";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context";
 
 import { loadSession } from "@/auth/session-storage";
 import { ScreenErrorFallback } from "@/components/screen-error-fallback";
@@ -19,6 +19,7 @@ import { setThemeMode } from "@/store/slices/app-config-slice";
 import { markSessionHydrated, setSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { store } from "@/store/store";
+import { startTracker } from "@/features/analytics/tracker";
 import { useAppFonts } from "@/theme/use-app-fonts";
 import { useTheme } from "@/theme/use-theme";
 
@@ -75,6 +76,11 @@ function ThemedRootStack() {
     };
   }, [dispatch]);
 
+  // Sends what the last run left in the tracker's queue (2026-10-18).
+  useEffect(() => {
+    startTracker();
+  }, []);
+
   // From here the loading screen in app/index.tsx carries the same logo on the
   // same background, so the hand-off does not show.
   useEffect(() => {
@@ -98,11 +104,11 @@ function ThemedRootStack() {
       <SessionExpiryGuard />
       <Stack
         screenOptions={{
-          // Native push/pop. "simple_push" is JS-driven and flashes a blank
-          // frame on the back gesture; the native slide keeps the previous
-          // screen painted through the whole transition. slide_from_left makes a
-          // pushed screen enter from the left; the native pop mirrors it.
-          animation: "slide_from_left",
+          // A short native fade for normal push/pop; explicit modal animations
+          // below retain their own motion. Android's native fade is 150ms;
+          // animationDuration gives iOS the same quick feel instead of 500ms.
+          animation: "fade",
+          animationDuration: 160,
           headerShadowVisible: false,
           headerStyle: { backgroundColor: colors.background },
           headerTitleStyle: { color: colors.ink },
@@ -123,6 +129,7 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-action-center" options={{ headerShown: false }} />
         <Stack.Screen name="owner-onboard-tenant" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-agreement-preview" options={{ headerShown: false }} />
         <Stack.Screen name="owner-active-tenancy-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-billing" options={{ headerShown: false }} />
         <Stack.Screen name="owner-analytics/[division]" options={{ headerShown: false }} />
@@ -135,6 +142,10 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-deposit-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exits-today" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-payments-today" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-move-ins-today" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-concerns-today" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-leads-insights" options={{ headerShown: false }} />
         <Stack.Screen name="owner-service-balance" options={{ headerShown: false }} />
         <Stack.Screen name="owner-service-balance-transactions" options={{ headerShown: false }} />
         <Stack.Screen name="owner-food" options={{ headerShown: false }} />
@@ -143,6 +154,16 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-room-change-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-edit-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-booking-settings" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-booking-payment-setup" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-bookings" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-booking-detail" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-booking-history" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-booking-tokens" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-booking-confirmed" options={{ headerShown: false }} />
+        <Stack.Screen name="my-bookings" options={{ headerShown: false }} />
+        <Stack.Screen name="my-booking-detail" options={{ headerShown: false }} />
+        <Stack.Screen name="booking-request" options={{ headerShown: false }} />
         <Stack.Screen name="owner-manage-listing" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property-visits" options={{ headerShown: false }} />
         <Stack.Screen name="owner-room-types" options={{ headerShown: false }} />
@@ -168,7 +189,12 @@ function ThemedRootStack() {
         <Stack.Screen name="nudges" options={{ headerShown: false }} />
         <Stack.Screen name="owner-enquiries" options={{ headerShown: false }} />
         <Stack.Screen name="owner-visits" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-leads" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-lead-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-visits-earlier" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-external-visit" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-booking-onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-external-booking" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notice-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notice-create" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concerns" options={{ headerShown: false }} />
@@ -317,7 +343,7 @@ export default function RootLayout() {
           thing in the app to use it, and without this the gesture silently
           never fires there — no error, just nothing happening. */}
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaProvider>
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <ToastProvider>
             <ThemedRootStack />
           </ToastProvider>

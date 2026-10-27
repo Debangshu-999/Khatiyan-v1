@@ -18,6 +18,7 @@ import {
 } from "@/store/services/expense-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Pick an expense category, or manage the list, from one control.
@@ -101,9 +102,9 @@ export function ExpenseCategoryPicker({
           <Text style={[type.caption, { color: error ? colors.danger : colors.kicker }]}>
             Category
           </Text>
-          <Text style={[type.bodyStrong, { color: selected ? colors.ink : colors.muted }]} numberOfLines={1}>
+          <FitText style={[type.bodyStrong, { color: selected ? colors.ink : colors.muted }]} numberOfLines={1}>
             {selected?.name ?? "Choose a category"}
-          </Text>
+          </FitText>
         </View>
         <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
       </AnimatedPressable>

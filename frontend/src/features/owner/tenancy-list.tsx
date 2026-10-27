@@ -1,3 +1,4 @@
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Animated, PanResponder, Text, View } from "react-native";
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, LogOut, Phone, UserRound, XCircle } from "lucide-react-native";
@@ -8,6 +9,8 @@ import { ActionButton } from "@/features/owner/owner-ui";
 import { tenancyStatusLabel, type TenancySummary } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 export type OwnerTenancyListTab = "active" | "past";
 
@@ -72,17 +75,17 @@ function TenantNameButton({ name, onPress, phone }: { name: string; onPress: () 
       onPress={onPress}
       style={{ alignSelf: "flex-start", gap: spacing.xs }}
     >
-      <Text
+      <FitText
         numberOfLines={1}
         style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 21, lineHeight: 26 }}
       >
-        {name}
-      </Text>
+        {cardName(name)}
+      </FitText>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
         <Phone color={colors.inkSoft} size={15} strokeWidth={2.1} />
-        <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
-          {phone || "Phone unavailable"}
-        </Text>
+        <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
+          {phone ? formatIndianPhone(phone) : "Phone unavailable"}
+        </FitText>
       </View>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
         <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 16 }}>
@@ -159,9 +162,9 @@ export function ActiveTenancyCard({
             justifyContent: "space-between",
           }}
         >
-          <Text numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]}>
+          <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]}>
             {tenancy.referenceCode}
-          </Text>
+          </FitText>
           <TenancyStatusCarousel chips={statusChips} />
         </View>
 
@@ -501,15 +504,15 @@ function TenancyMetric({ flex, label, value }: { flex: number; label: string; va
 
   return (
     <View style={{ flex, gap: 3, minWidth: 0, paddingHorizontal: spacing.xs }}>
-      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 10 }]}>
+      <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 10 }]}>
         {label}
-      </Text>
-      <Text
+      </FitText>
+      <FitText
         numberOfLines={2}
         style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 16 }}
       >
         {value}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -533,9 +536,9 @@ export function PastTenancyCard({ roomLabel, tenancy }: { roomLabel: string | nu
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 {tenancy.referenceCode}
               </Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }} numberOfLines={1}>
-                {tenantName}
-              </Text>
+              <FitText style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, }} numberOfLines={1}>
+                {cardName(tenantName)}
+              </FitText>
               <Text style={[type.caption, { color: colors.muted }]}>
                 {roomLabel ? `Room ${roomLabel}` : "Room unavailable"}
               </Text>
@@ -572,9 +575,9 @@ function TenancyDetail({ compact = false, label, value }: { compact?: boolean; l
       <Text style={[type.caption, { color: colors.muted }]}>
         {label}
       </Text>
-      <Text style={[type.caption, { color: colors.ink, fontWeight: "800" }]} numberOfLines={1}>
+      <FitText style={[type.caption, { color: colors.ink, fontWeight: "800" }]} numberOfLines={1}>
         {value}
-      </Text>
+      </FitText>
     </View>
   );
 }

@@ -8,6 +8,8 @@ import com.khatiyan.c_shared.exception.ValidationException;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.EnumType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -44,6 +46,15 @@ public class ExpenseBudgetVersion extends BaseEntity {
     @Column(name = "created_by_user_id")
     private UUID createdByUserId;
 
+    /** How much of each month's received income is added to the fixed amount (2026-10-18). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "income_mode", nullable = false, length = 10)
+    private BudgetIncomeMode incomeMode = BudgetIncomeMode.NONE;
+
+    /** The amount of income added, for PART only. Capped at what the month received. */
+    @Column(name = "income_part_paise")
+    private Long incomePartPaise;
+
     private ExpenseBudgetVersion(UUID propertyId, LocalDate effectiveMonth, long amountPaise, UUID createdByUserId) {
         requireNonNegative(amountPaise);
         this.id = UUID.randomUUID();
@@ -63,6 +74,32 @@ public class ExpenseBudgetVersion extends BaseEntity {
         requireNonNegative(amountPaise);
         this.amountPaise = amountPaise;
         this.createdByUserId = actorUserId;
+    }
+
+    /**
+     * Sets how much of each month's income joins the budget. PART needs an
+     * amount above zero, and only PART keeps one.
+     */
+    public void changeIncomeShare(BudgetIncomeMode mode, Long partPaise) {
+        BudgetIncomeMode chosen = mode == null ? BudgetIncomeMode.NONE : mode;
+        if (chosen == BudgetIncomeMode.PART && (partPaise == null || partPaise <= 0)) {
+            throw new ValidationException("Enter how much of the income to add, more than zero.");
+        }
+        this.incomeMode = chosen;
+        this.incomePartPaise = chosen == BudgetIncomeMode.PART ? partPaise : null;
+    }
+
+    /**
+     * What this version adds from a month's income: all of it, the set part
+     * but never more than was received, or nothing.
+     */
+    public long fromIncome(long incomeReceivedPaise) {
+        long received = Math.max(0, incomeReceivedPaise);
+        return switch (incomeMode) {
+            case FULL -> received;
+            case PART -> Math.min(incomePartPaise == null ? 0 : incomePartPaise, received);
+            case NONE -> 0;
+        };
     }
 
     private static void requireNonNegative(long amountPaise) {

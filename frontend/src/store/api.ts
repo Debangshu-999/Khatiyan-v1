@@ -65,6 +65,12 @@ export const API_TAGS = [
   // Separate from "Enquiry" so booking a visit does not refetch the
   // property's whole enquiry list.
   "EnquiryChat",
+  // Post-visit bookings: requests, their token and the owner's settings.
+  // One tag for both sides, since every step changes what the other sees.
+  "Booking",
+  // The leads pipeline. Its reads also carry "Enquiry", "EnquiryChat" and
+  // "Booking": a lead is made of those, so a step on any of them re-reads it.
+  "Lead",
   "Session",
   // The tenant's own identity checks. Separate from "Tenancy" so completing
   // a check refreshes the step bar without refetching the whole agreement

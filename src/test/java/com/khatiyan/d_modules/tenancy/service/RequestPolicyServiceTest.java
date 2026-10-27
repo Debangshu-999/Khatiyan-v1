@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -102,6 +103,9 @@ class RequestPolicyServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(exitRequestRepository.findPropertyIdById(any())).thenReturn(Optional.of(PROPERTY_ID));
+        lenient().when(roomChangeRequestRepository.findPropertyIdById(any())).thenReturn(Optional.of(PROPERTY_ID));
+        lenient().when(tenancyRepository.findPropertyIdById(any())).thenReturn(Optional.of(PROPERTY_ID));
         exitRequestService = new TenancyExitRequestService(
                 authModule,
                 referenceCodeGenerator,

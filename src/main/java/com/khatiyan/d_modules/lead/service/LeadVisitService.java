@@ -30,6 +30,7 @@ import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.d_modules.enquiry.EnquiryModule;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquiryParty;
 import com.khatiyan.d_modules.enquiry.api.dto.EnquirySnapshot;
+import com.khatiyan.d_modules.enquiry.model.EnquiryOrigin;
 import com.khatiyan.d_modules.enquiry.model.EnquirySentiment;
 import com.khatiyan.d_modules.lead.api.dto.BookedVisitResponse;
 import com.khatiyan.d_modules.lead.api.dto.CancelVisitRequest;
@@ -119,6 +120,8 @@ public class LeadVisitService {
     private final ReferenceCodeGenerator referenceCodeGenerator;
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
+    private final com.khatiyan.d_modules.tenancy.TenancyModule tenancyModule;
+    private final VisitMails visitMails;
 
     public LeadVisitService(
             VisitRepository visitRepository,
@@ -132,7 +135,9 @@ public class LeadVisitService {
             NotificationModule notificationModule,
             ReferenceCodeGenerator referenceCodeGenerator,
             JdbcTemplate jdbcTemplate,
-            Clock clock) {
+            Clock clock,
+            @org.springframework.context.annotation.Lazy com.khatiyan.d_modules.tenancy.TenancyModule tenancyModule,
+            VisitMails visitMails) {
         this.visitRepository = visitRepository;
         this.leadRepository = leadRepository;
         this.leadEnquiryRepository = leadEnquiryRepository;
@@ -145,6 +150,8 @@ public class LeadVisitService {
         this.referenceCodeGenerator = referenceCodeGenerator;
         this.jdbcTemplate = jdbcTemplate;
         this.clock = clock;
+        this.tenancyModule = tenancyModule;
+        this.visitMails = visitMails;
     }
 
     /** The time in India. Every rule that turns on the hour reads it here, so a test can set it. */
@@ -339,6 +346,25 @@ public class LeadVisitService {
     /** Books a visit from an enquiry, for whichever side is asking. */
     @Transactional
     public EnquiryChatActionsResponse schedule(UUID actorUserId, UUID enquiryId, ScheduleVisitRequest request) {
+        return schedule(actorUserId, enquiryId, request, false);
+    }
+
+    /**
+     * A visit booked straight from the property profile, by the person
+     * themselves, with no enquiry (user, 2026-10-17). It goes on their live
+     * enquiry here when there is one, else on a direct record that carries the
+     * contact they agreed to share. They booked it themselves, so it does not
+     * wait for an answer the way one booked in the chat does.
+     */
+    @Transactional
+    public EnquiryChatActionsResponse scheduleDirect(UUID actorUserId, UUID propertyId, ScheduleVisitRequest request) {
+        refuseWhoStaysHere(actorUserId, propertyId, true);
+        UUID enquiryId = enquiryModule.openDirect(actorUserId, propertyId, EnquiryOrigin.DIRECT_VISIT);
+        return schedule(actorUserId, enquiryId, request, true);
+    }
+
+    private EnquiryChatActionsResponse schedule(
+            UUID actorUserId, UUID enquiryId, ScheduleVisitRequest request, boolean fromProfile) {
         EnquirySnapshot enquiry = enquiryModule.findSnapshot(enquiryId)
                 .orElseThrow(() -> new NotFoundException("Enquiry", enquiryId));
         VisitBookedBy bookedBy = switch (enquiryModule.partyOf(enquiryId, actorUserId)) {
@@ -355,7 +381,7 @@ public class LeadVisitService {
         // (user, 2026-10-02): until someone has actually reached them there is
         // no conversation to book a visit out of. The screens grey the button
         // out too; this is the rule they mirror.
-        if (enquiry.respondedAt() == null) {
+        if (enquiry.respondedAt() == null && !(fromProfile && bookedBy == VisitBookedBy.TENANT)) {
             throw new ValidationException("A visit can be booked once this enquiry has been answered.");
         }
 
@@ -377,6 +403,7 @@ public class LeadVisitService {
                                     + " Another can be booked after it expires.");
         }
 
+        refuseWhoStaysHere(enquiry.enquirerUserId(), enquiry.propertyId(), bookedBy == VisitBookedBy.TENANT);
         OfferedSlot slot = requireOffered(enquiry.propertyId(), request.date(), request.slotStart());
         takePlace(enquiry.propertyId(), request.date(), slot);
 
@@ -413,6 +440,21 @@ public class LeadVisitService {
                 visit.getSlotStart(), bookedBy);
 
         return chatActions(actorUserId, enquiryId);
+    }
+
+    /**
+     * No visit for someone who already stays at the property, booked by
+     * whichever side (user, 2026-10-17: "Prevent scheduling and visits for a
+     * tenant in the same property").
+     */
+    private void refuseWhoStaysHere(UUID personUserId, UUID propertyId, boolean askedByThem) {
+        tenancyModule.findActiveByUserId(personUserId)
+                .filter(stay -> propertyId.equals(stay.propertyId()))
+                .ifPresent(stay -> {
+                    throw new ValidationException(askedByThem
+                            ? "You already stay at this property."
+                            : "They already stay at this property, so a visit cannot be booked.");
+                });
     }
 
     /**
@@ -702,7 +744,7 @@ public class LeadVisitService {
     /**
      * Tells whichever side did not act. The prospect hears from the property.
      * The property's side is the lead's handler, or the owner while nobody
-     * handles it.
+     * handles it. The visitor also gets a mail either way.
      */
     private void tellTheOtherSide(
             Visit visit, Lead lead, EnquirySnapshot enquiry, VisitBookedBy actedAs,
@@ -768,6 +810,8 @@ public class LeadVisitService {
                     NotificationDeliveryMode.IN_APP_AND_PUSH,
                     NotificationAudience.TENANT);
         }
+        // The visitor's mail, whichever side acted (user, 2026-10-18).
+        visitMails.tell(visit, property, actedAs, subtype);
     }
 
     /** "Sun 5 Oct, 4:00 pm": how a visit's date and slot are written for people. */

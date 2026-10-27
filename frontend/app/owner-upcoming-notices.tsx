@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
@@ -358,12 +359,11 @@ function DelaySheet({
                 marginBottom: spacing.md,
               }}
             >
-              <Text
+              <ModalTitle
                 style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}
-                numberOfLines={1}
               >
                 Delay notice
-              </Text>
+              </ModalTitle>
               <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
 
@@ -373,9 +373,9 @@ function DelaySheet({
               showsVerticalScrollIndicator={false}
               style={{ flexShrink: 1 }}
             >
-            <Text style={[type.body, { color: colors.muted }]} numberOfLines={2}>
+            <FitText style={[type.body, { color: colors.muted }]} numberOfLines={2}>
               {notice.title}
-            </Text>
+            </FitText>
 
             <View style={{ gap: spacing.xs }}>
               <Text style={[type.caption, { color: colors.kicker, fontWeight: "700" }]}>NEW START TIME</Text>
@@ -481,3 +481,4 @@ function resolveSelectedProperty(properties: OwnerProperty[], selectedPropertyId
   return properties.find((property) => property.id === selectedPropertyId) ?? properties[0];
 }
 import { CircleHelp } from "lucide-react-native";
+import { FitText } from "@/components/fit-text";

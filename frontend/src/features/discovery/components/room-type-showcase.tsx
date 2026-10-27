@@ -8,9 +8,11 @@ import { PickerOptionRow } from "@/components/picker-option-row";
 import { SheetShell } from "@/components/sheet-shell";
 import { ROOM_AMENITY_ICONS } from "@/features/property/room-amenity-icons";
 import { ROOM_AMENITIES, ROOM_TYPES, type RoomMold, type RoomType } from "@/store/services/property-api";
+import { useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { formatMoneyPaise, humanizeToken } from "../discovery-format";
+import { FitText } from "@/components/fit-text";
 
 const AMENITY_LABELS: Record<string, string> = {
   ATTACHED_TOILET: "Attached toilet",
@@ -124,6 +126,7 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
 }
 
 function RoomVariantCard({ room }: { room: RoomMold }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const images = room.images.map((image) => image.url).filter(Boolean);
@@ -142,10 +145,7 @@ function RoomVariantCard({ room }: { room: RoomMold }) {
         borderWidth: 1,
         gap: spacing.md,
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 3, width: 0 },
-        shadowOpacity: 0.12,
-        shadowRadius: 10,
+        ...softShadow(colors.shadow, 3, 10, 0.12),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -229,9 +229,9 @@ function RoomVariantCard({ room }: { room: RoomMold }) {
             return (
               <View key={amenity} style={{ alignItems: "center", flexDirection: "row", gap: 6, width: "46%" }}>
                 <Icon color={colors.inkSoft} size={18} />
-                <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
+                <FitText numberOfLines={2} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
                   {AMENITY_LABELS[amenity]}
-                </Text>
+                </FitText>
               </View>
             );
           })}
@@ -248,8 +248,8 @@ function RoomVariantCard({ room }: { room: RoomMold }) {
   );
 }
 
-function MissingVariant({ conditioning, occupancy }: { conditioning: "AC" | "NON_AC"; occupancy: RoomType }) {
-  const { colors, fonts, type } = useTheme();
+function MissingVariant({ conditioning }: { conditioning: "AC" | "NON_AC"; occupancy: RoomType }) {
+  const { colors, fonts } = useTheme();
   const Variant = conditioning === "AC" ? AirVent : Fan;
   const label = conditioning === "AC" ? "AC" : "Non-AC";
 
@@ -271,10 +271,6 @@ function MissingVariant({ conditioning, occupancy }: { conditioning: "AC" | "NON
       <View style={{ flex: 1, gap: 3 }}>
         <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 15 }}>
           No {label} option
-        </Text>
-        <Text style={[type.description, { color: colors.muted }]}>
-          This property does not offer {humanizeToken(occupancy).toLowerCase()} rooms with{" "}
-          {conditioning === "AC" ? "air conditioning" : "no air conditioning"}.
         </Text>
       </View>
     </View>

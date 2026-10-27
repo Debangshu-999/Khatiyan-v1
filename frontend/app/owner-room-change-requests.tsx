@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { type ComponentType, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -42,6 +43,7 @@ import {
   useRevertRoomChangeApprovalMutation,
   type TenancyRoomChangeRequest,
 } from "@/store/services/tenancy-api";
+import { softShadow } from "@/theme/shadows";
 import { metricFontSize } from "@/theme/metric-size";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -359,7 +361,7 @@ function PastRoomChangeRequestsModal({
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Reviewed moves</Text>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Reviewed moves</ModalTitle>
             </View>
             <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={() => dismiss()} />
           </View>
@@ -443,12 +445,12 @@ function RoomChangeCard({
               <Repeat2 color={colors.ink} size={20} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-              <Text
+              <FitText
                 numberOfLines={1}
                 style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
               >
-                {request.tenantName ?? "Tenant"}
-              </Text>
+                {cardName(request.tenantName ?? "Tenant")}
+              </FitText>
               <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
                 {request.referenceCode}
               </Text>
@@ -467,9 +469,9 @@ function RoomChangeCard({
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
               <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
                 <Text style={[type.eyebrow, { color: colors.kicker }]}>From</Text>
-                <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+                <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
                   {currentRoomLabel ?? "Current room"}
-                </Text>
+                </FitText>
               </View>
               <View
                 style={{
@@ -485,12 +487,12 @@ function RoomChangeCard({
               </View>
               <View style={{ alignItems: "flex-end", flex: 1, gap: 2, minWidth: 0 }}>
                 <Text style={[type.eyebrow, { color: colors.kicker }]}>To</Text>
-                <Text
+                <FitText
                   numberOfLines={1}
                   style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, textAlign: "right" }}
                 >
                   {targetRoomLabel ?? "New room"}
-                </Text>
+                </FitText>
               </View>
             </View>
 
@@ -648,9 +650,9 @@ function RoomChangeReviewModal({
                 <Text style={[type.eyebrow, { color: colors.kicker }]}>
                   Room change
                 </Text>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
+                <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
                   {title}
-                </Text>
+                </ModalTitle>
               </View>
               <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
@@ -771,9 +773,9 @@ function InfoPopover({ onClose, title, value }: { onClose: () => void; title: st
             width: "100%",
           }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
+            <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
               {title}
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
           </View>
           <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
@@ -815,10 +817,7 @@ function SummaryTile({
         // Centred, because tiles in a row stretch to the tallest of them.
         justifyContent: "center",
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
+        ...softShadow(colors.shadow, 2, 6),
       }}
     >
       {/* The app's one metric card: a 38pt ink glyph in a 44-wide rail with the
@@ -832,10 +831,10 @@ function SummaryTile({
         </View>
 
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+          <FitText numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
             {label}
-          </Text>
-          <Text
+          </FitText>
+          <FitText
             numberOfLines={1}
             style={{
               color: accent,
@@ -846,15 +845,15 @@ function SummaryTile({
             }}
           >
             {value}
-          </Text>
+          </FitText>
         </View>
       </View>
 
       {/* Under the row on the tile's full width — beside a 38pt glyph the hint
           had half a tile and wrapped, leaving one tile taller than its pair. */}
-      <Text numberOfLines={2} style={[type.caption, { color: colors.kicker, fontSize: 11, lineHeight: 15 }]}>
+      <FitText numberOfLines={2} style={[type.caption, { color: colors.kicker, fontSize: 11, lineHeight: 15 }]}>
         {hint}
-      </Text>
+      </FitText>
     </View>
   );
 }
@@ -980,3 +979,5 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 import { CircleHelp } from "lucide-react-native";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";

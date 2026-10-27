@@ -366,14 +366,12 @@ public class BillingCycleService {
                     .filter(cycle -> cycle.countsAsBilled() && cycle.getCategory() == BillingCycleCategory.RENT_CYCLE)
                     .map(BillingCycle::getTenancyId)
                     .collect(Collectors.toSet());
-            List<TenancyResponse> expectedTenancies = tenancyModule.findActiveByPropertyId(propertyId).stream()
-                    .filter(t -> t.billingType() == TenancyBillingType.MONTHLY)
-                    .filter(t -> t.endDate() == null
-                            || t.endDate().isBefore(monthStart)
-                            || !t.endDate().isBefore(nextMonth))
+            List<TenancyResponse> monthlyStays = monthlyStays(propertyId);
+            List<TenancyResponse> projected = rentToRaise(propertyId, monthStart, billedTenancyIds, monthlyStays);
+            List<TenancyResponse> expectedTenancies = monthlyStays.stream()
+                    .filter(t -> billedTenancyIds.contains(t.id()) || projected.contains(t))
                     .toList();
-            long projectedExtraPaise = expectedTenancies.stream()
-                    .filter(t -> !billedTenancyIds.contains(t.id()))
+            long projectedExtraPaise = projected.stream()
                     .mapToLong(t -> t.rentAmountPaise() == null ? 0L : t.rentAmountPaise())
                     .sum();
             activeCount = expectedTenancies.size();
@@ -384,9 +382,7 @@ public class BillingCycleService {
             // billedPaise beside them described the whole month — so early in the
             // month P&L reported a loss for rent it was going to bill anyway.
             // Whether a scheduler has created the row yet is not a financial fact.
-            rentCycleCount = rentCycleCount + (int) expectedTenancies.stream()
-                    .filter(t -> !billedTenancyIds.contains(t.id()))
-                    .count();
+            rentCycleCount = rentCycleCount + projected.size();
             rentBilledPaise = rentBilledPaise + projectedExtraPaise;
         }
 
@@ -427,8 +423,16 @@ public class BillingCycleService {
     @Transactional(readOnly = true)
     public BillingDashboardMonths getPropertyDashboardMonths(UUID propertyId, LocalDate monthStart) {
         LocalDate lastMonthStart = monthStart.minusMonths(1);
+        Set<UUID> rentBilled = billingCycleRepository.findRentBilledTenancyIds(propertyId, monthStart, monthStart.plusMonths(1));
+        // This month's rent still to be raised, by the summary's own rule (2026-10-18).
+        long stillToRaise = monthStart.equals(LocalDate.now(DASHBOARD_ZONE).withDayOfMonth(1))
+                ? rentToRaise(propertyId, monthStart, rentBilled, monthlyStays(propertyId)).stream()
+                        .mapToLong(t -> t.rentAmountPaise() == null ? 0L : t.rentAmountPaise())
+                        .sum()
+                : 0L;
         return new BillingDashboardMonths(
-                billingCycleRepository.findRentBilledTenancyIds(propertyId, monthStart, monthStart.plusMonths(1)),
+                rentBilled,
+                stillToRaise,
                 billingCycleRepository.sumTotalForPropertyByPeriodStartBetween(propertyId, lastMonthStart, monthStart),
                 billingCycleRepository.sumTotalForPropertyByStatusAndPaidAtBetween(
                         propertyId,
@@ -448,6 +452,23 @@ public class BillingCycleService {
             String query,
             String month) {
         return listPropertyCyclesForSelectedMonth(actorUserId, propertyId, query, month);
+    }
+
+    /**
+     * The bills paid today, in India's calendar, by the same rule as the Home
+     * digest's Payments count (2026-10-18). Any bill, whatever month it is for:
+     * a September bill settled today is today's payment.
+     */
+    @Transactional(readOnly = true)
+    public List<BillingCycleResponse> listPropertyCyclesPaidToday(UUID actorUserId, UUID propertyId) {
+        billingAccessPolicy.ensureCanViewBilling(actorUserId, propertyId);
+        LocalDate today = LocalDate.now(DASHBOARD_ZONE);
+        List<BillingCycle> cycles = billingCycleRepository.findForPropertyByStatusAndPaidAtBetween(
+                propertyId,
+                BillingCycleStatus.PAID,
+                today.atStartOfDay(DASHBOARD_ZONE).toInstant(),
+                today.plusDays(1).atStartOfDay(DASHBOARD_ZONE).toInstant());
+        return toResponses(cycles, tenancyReferenceCodes(cycles));
     }
 
     private List<BillingCycleResponse> listPropertyCyclesForSelectedMonth(
@@ -601,6 +622,44 @@ public class BillingCycleService {
         return futureMonth
                 ? MonthlyCycleDates.startIn(selectedMonth, anchorDay)
                 : MonthlyCycleDates.nextStartAfter(latest.getPeriodStartDate(), anchorDay);
+    }
+
+    private List<TenancyResponse> monthlyStays(UUID propertyId) {
+        return tenancyModule.findActiveByPropertyId(propertyId).stream()
+                .filter(t -> t.billingType() == TenancyBillingType.MONTHLY)
+                .toList();
+    }
+
+    /**
+     * The live monthly stays whose rent bill for this month is still to be
+     * raised, and will be (2026-10-18): the next rent bill starts this month,
+     * before the stay's checkout. The same rule as the Upcoming cycles screen
+     * and the generator. Reading endDate alone projected a fixed term's bill for
+     * the day it leaves, which is never raised, and showed it as rent still to
+     * come in.
+     */
+    private List<TenancyResponse> rentToRaise(
+            UUID propertyId, LocalDate monthStart, Set<UUID> billedTenancyIds, List<TenancyResponse> monthlyStays) {
+        if (monthlyStays.isEmpty()) {
+            return List.of();
+        }
+        LocalDate nextMonth = monthStart.plusMonths(1);
+        Map<UUID, BillingCycle> latestRent = billingCycleRepository
+                .findLatestRentCycles(propertyId, monthlyStays.stream().map(TenancyResponse::id).toList())
+                .stream()
+                .filter(cycle -> cycle.getCategory() == BillingCycleCategory.RENT_CYCLE)
+                .collect(Collectors.toMap(BillingCycle::getTenancyId, cycle -> cycle,
+                        (left, right) -> left.getPeriodStartDate().isAfter(right.getPeriodStartDate()) ? left : right));
+        YearMonth month = YearMonth.from(monthStart);
+        return monthlyStays.stream()
+                .filter(t -> !billedTenancyIds.contains(t.id()))
+                .filter(t -> {
+                    BillingCycle latest = latestRent.get(t.id());
+                    LocalDate nextStart = latest == null ? t.startDate() : upcomingStartFor(t, latest, false, month);
+                    return nextStart != null && !nextStart.isBefore(monthStart) && nextStart.isBefore(nextMonth)
+                            && !skippedPastCheckout(t, nextStart);
+                })
+                .toList();
     }
 
     /**
@@ -2230,7 +2289,13 @@ public class BillingCycleService {
                 .mapToLong(lineItem -> lineItem.getAmountPaise())
                 .sum();
 
-        cycle.recalculateTotals(baseAmount, depositAmount, extraAmount, lateFeeAmount, discountAmount);
+        long bookingTokenCredit = lineItems.stream()
+                .filter(lineItem -> lineItem.contributesToBookingTokenCredit())
+                .mapToLong(lineItem -> lineItem.getAmountPaise())
+                .sum();
+
+        cycle.recalculateTotals(baseAmount, depositAmount, extraAmount, lateFeeAmount, discountAmount,
+                bookingTokenCredit);
     }
 
     /**

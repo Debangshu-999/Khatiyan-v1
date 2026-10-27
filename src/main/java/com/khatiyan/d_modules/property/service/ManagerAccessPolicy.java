@@ -2,6 +2,9 @@ package com.khatiyan.d_modules.property.service;
 
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.Collection;
+import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -222,6 +225,27 @@ public class ManagerAccessPolicy {
     }
 
     /** Called when a manager is removed, so re-adding them starts from nothing. */
+    /**
+     * Of these managers, the ones who may fully use one resource. One read of
+     * the property's grants, however many managers there are. The owner is
+     * never in it: they need no grant.
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> managersWhoManage(UUID propertyId, ManagerResource resource, Collection<UUID> activeManagers) {
+        Set<UUID> active = Set.copyOf(activeManagers);
+        if (active.isEmpty()) {
+            return List.of();
+        }
+        return managerPermissionRepository.findByPropertyId(propertyId).stream()
+                .filter(permission -> permission.getResource() == resource
+                        && permission.getAccessLevel() == ManagerAccessLevel.MANAGE
+                        && active.contains(permission.getManagerUserId()))
+                .map(ManagerPermission::getManagerUserId)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
     @Transactional
     public void clearGrants(UUID propertyId, UUID managerUserId) {
         managerPermissionRepository.deleteByPropertyIdAndManagerUserId(propertyId, managerUserId);

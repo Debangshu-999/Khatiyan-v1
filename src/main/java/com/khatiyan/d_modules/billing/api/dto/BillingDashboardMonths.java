@@ -13,6 +13,9 @@ import java.util.UUID;
  * @param rentBilledTenancyIds    stays whose rent for this month is already on
  *                                the books, so the dashboard projects rent only
  *                                for the others
+ * @param rentStillToRaisePaise   this month's rent bills not raised yet that will
+ *                                be, by the billing summary's own rule (2026-10-18).
+ *                                Zero for any month but the current one
  * @param billedLastMonthPaise    bills whose period began last month, cancelled
  *                                ones left out
  * @param collectedLastMonthPaise bills marked paid during last month, whichever
@@ -20,6 +23,7 @@ import java.util.UUID;
  */
 public record BillingDashboardMonths(
         Set<UUID> rentBilledTenancyIds,
+        long rentStillToRaisePaise,
         long billedLastMonthPaise,
         long collectedLastMonthPaise) {
 }

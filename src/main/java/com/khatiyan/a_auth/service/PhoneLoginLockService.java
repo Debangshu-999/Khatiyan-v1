@@ -1,10 +1,15 @@
 package com.khatiyan.a_auth.service;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import com.khatiyan.a_auth.model.LoginFailureReason;
+import com.khatiyan.a_auth.repository.LoginAttemptRepository;
 import com.khatiyan.c_shared.exception.ValidationException;
 
 /**
@@ -24,32 +29,37 @@ import com.khatiyan.c_shared.exception.ValidationException;
  * row runs, so the two escalate in step — 5, 15, 30, 60, then 1440 minutes — and
  * stay indistinguishable at every attempt count rather than only at the sixth.
  *
- * <p>Valkey, not Postgres: this is checked before every login, and it is a
- * counter with a TTL, which is the one thing a key-value store is unambiguously
- * better at. The durable {@code login_attempts} ledger still records the audit
- * trail.
+ * <p><b>Worked out from {@code auth.login_attempts} (2026-10-18).</b> It was a
+ * Valkey counter, so PIN login failed whenever Valkey was down, and a count kept
+ * elsewhere during an outage would have come back short. Every attempt is
+ * already written to the ledger in its own transaction, and every PIN login
+ * already reads it for the durable window, so the ledger is the tally: the
+ * failures since the phone's last successful login, in a run with no gap of
+ * {@link #FAILURE_TALLY_TTL} or more, which is when the Valkey tally expired.
  */
 @Service
 public class PhoneLoginLockService {
 
-    private static final String FAILURE_KEY_PREFIX = "khatiyan:auth:login-fails:";
-    private static final String LOCK_KEY_PREFIX = "khatiyan:auth:login-lock:";
-
     /**
-     * How long a phone's failure tally survives.
+     * A gap this long between two failures starts the tally again.
      *
      * <p>Must outlast the LONGEST lock the ladder can hand out, or the tally
      * expires while the phone is still locked and the next attempt starts again
-     * from one — the top of the ladder would then be unreachable and the lock
-     * would silently cap at five minutes forever.
+     * from one — the top of the ladder would then be unreachable.
      */
-    private static final Duration FAILURE_TALLY_TTL = Duration.ofDays(2);
+    static final Duration FAILURE_TALLY_TTL = Duration.ofDays(2);
 
-    private final StringRedisTemplate valkeyTemplate;
+    /** The failures the tally counts: a wrong PIN, and a number with no account, alike. */
+    static final Set<LoginFailureReason> COUNTED = Set.of(LoginFailureReason.INVALID_PIN, LoginFailureReason.USER_NOT_FOUND);
+
+    /** Far past the top of the ladder, and a bound on what one check reads. */
+    private static final int MOST_FAILURES_READ = 1_000;
+
+    private final LoginAttemptRepository loginAttemptRepository;
     private final LoginRateLimitProperties properties;
 
-    public PhoneLoginLockService(StringRedisTemplate valkeyTemplate, LoginRateLimitProperties properties) {
-        this.valkeyTemplate = valkeyTemplate;
+    public PhoneLoginLockService(LoginAttemptRepository loginAttemptRepository, LoginRateLimitProperties properties) {
+        this.loginAttemptRepository = loginAttemptRepository;
         this.properties = properties;
     }
 
@@ -64,51 +74,43 @@ public class PhoneLoginLockService {
      * use. A message only a real account could produce is itself an oracle.
      */
     public void ensureNotLocked(String normalizedPhone) {
-        if (Boolean.TRUE.equals(valkeyTemplate.hasKey(lockKey(normalizedPhone)))) {
+        ensureNotLocked(normalizedPhone, Instant.now());
+    }
+
+    void ensureNotLocked(String normalizedPhone, Instant now) {
+        List<Instant> failures = loginAttemptRepository.findFailureTimesSinceLastSuccess(
+                normalizedPhone, COUNTED, PageRequest.of(0, MOST_FAILURES_READ));
+        Instant until = lockedUntil(failures, properties);
+        if (until != null && until.isAfter(now)) {
             throw new ValidationException("Too many login attempts for this phone. Try again later.");
         }
     }
 
     /**
-     * Counts one failed attempt against the phone and locks it once the tally
-     * reaches a rung on the ladder.
+     * When the lock from these failures ends, or null when they set none.
      *
-     * <p>Call for a wrong PIN and for a number with no account alike — treating
-     * those two differently is the whole bug.
+     * <p>Walks the newest run of failures oldest first, numbering them as the
+     * Valkey counter did, and keeps the lock the latest rung handed out.
+     *
+     * @param newestFirst failure times since the last success, newest first
      */
-    public void recordFailure(String normalizedPhone) {
-        Long tally = valkeyTemplate.opsForValue().increment(failureKey(normalizedPhone));
-        if (tally == null) {
-            return;
+    static Instant lockedUntil(List<Instant> newestFirst, LoginRateLimitProperties properties) {
+        if (newestFirst.isEmpty()) {
+            return null;
         }
-
-        // Refreshed on every failure rather than set once, so a phone under a
-        // slow drip of attempts does not age out of its own tally.
-        valkeyTemplate.expire(failureKey(normalizedPhone), FAILURE_TALLY_TTL);
-
-        Duration lockFor = properties.lockDurationForFailedAttempt(tally.intValue());
-        if (lockFor.isZero() || lockFor.isNegative()) {
-            return;
+        int run = 1;
+        while (run < newestFirst.size()
+                && Duration.between(newestFirst.get(run), newestFirst.get(run - 1)).compareTo(FAILURE_TALLY_TTL) < 0) {
+            run++;
         }
-
-        valkeyTemplate.opsForValue().set(lockKey(normalizedPhone), tally.toString(), lockFor);
-    }
-
-    /**
-     * Forgets a phone's failures. Mirrors {@code User.clearLoginLock()}, which a
-     * successful sign-in already performs on the user row — without this the two
-     * would drift apart the moment anybody logged in successfully.
-     */
-    public void clear(String normalizedPhone) {
-        valkeyTemplate.delete(failureKey(normalizedPhone));
-        valkeyTemplate.delete(lockKey(normalizedPhone));
-    }
-
-    private String failureKey(String normalizedPhone) {
-        return FAILURE_KEY_PREFIX + normalizedPhone;
-    }
-
-    private String lockKey(String normalizedPhone) {
-        return LOCK_KEY_PREFIX + normalizedPhone;
+        Instant until = null;
+        for (int index = run - 1; index >= 0; index--) {
+            int attempt = run - index;
+            Duration lockFor = properties.lockDurationForFailedAttempt(attempt);
+            if (!lockFor.isZero() && !lockFor.isNegative()) {
+                until = newestFirst.get(index).plus(lockFor);
+            }
+        }
+        return until;
     }
 }

@@ -2,10 +2,9 @@ package com.khatiyan.d_modules.dashboard.api.dto;
 
 /**
  * "What needs attention" rollup for a single property — the actionable queue.
- * {@code upcomingExits} counts approved exits whose checkout falls within the
- * configured upcoming-exit window. {@code exitsPastDue} counts exits that are
- * overdue but not yet executed — approved monthly exits past their checkout date
- * plus active daily tenancies past their end date.
+ * Upcoming exits, checkouts due today and past-due exits are separate queues.
+ * Checkout uses a notice's end date, or the planned end of a daily/fixed-term
+ * stay, so a fixed term does not need an exit request to need attention.
  */
 public record AttentionSummary(
     long paymentsOverdue,
@@ -14,6 +13,8 @@ public record AttentionSummary(
     long pendingExitRequests,
     long pendingRoomChangeRequests,
     long upcomingExits,
+    /** Current stays whose effective checkout is today, including fixed terms without an exit request. */
+    long exitsDueToday,
     long exitsPastDue,
     long tenantsOnNotice,
     long pendingDepositSettlements,

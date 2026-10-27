@@ -15,6 +15,7 @@ import { useAppSelector } from "@/store/hooks";
 import { useListSessionsQuery, useRevokeSessionMutation, type UserSession } from "@/store/services/auth-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /**
  * Where this account is signed in, and a way to end any of it.
@@ -129,9 +130,9 @@ function DeviceRow({
         <DeviceIcon color={colors.ink} size={20} strokeWidth={2.2} />
 
         <View style={{ flex: 1, gap: 2 }}>
-          <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink }]}>
+          <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink }]}>
             {session.deviceLabel ?? "Unknown device"}
-          </Text>
+          </FitText>
           <Text style={[type.description, { color: colors.muted }]}>
             {session.current ? "Active now" : `Signed in ${formatRelative(session.createdAt)}`}
           </Text>

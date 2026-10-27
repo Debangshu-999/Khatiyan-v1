@@ -1,3 +1,5 @@
+import { ModalTitle } from "@/components/modal-title";
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -257,7 +259,7 @@ export default function OwnerConcernDetailScreen() {
               <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <View style={{ gap: spacing.md }}>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <Text style={[type.display, { color: colors.ink, fontSize: 20 }]}>Resolve concern</Text>
+                  <ModalTitle style={[type.display, { color: colors.ink, fontSize: 20 }]}>Resolve concern</ModalTitle>
                   <IconButton filled disabled={resolveState.isLoading} accessibilityLabel="Close resolution" icon={X} onPress={() => setResolveOpen(false)} />
                 </View>
                 <FormInput label="Resolution note" multiline onChangeText={setResolutionNote} placeholder="What was done to resolve this?" value={resolutionNote} />
@@ -306,7 +308,7 @@ function AssignConcernModal({
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1, gap: spacing.xxs }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Assign concern</Text>
-              <Text style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 30 }]}>Choose a manager</Text>
+              <ModalTitle style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 30 }]}>Choose a manager</ModalTitle>
             </View>
             <IconButton accessibilityLabel="Close assignment" icon={X} onPress={() => dismiss()} />
           </View>
@@ -332,7 +334,7 @@ function AssignConcernModal({
                   }}
                 >
                   <Text style={[type.bodyStrong, { color: colors.ink }]}>{manager.managerFullName}</Text>
-                  <Text style={[type.caption, { color: colors.muted }]}>{manager.managerPhone}</Text>
+                  <Text style={[type.caption, { color: colors.muted }]}>{formatIndianPhone(manager.managerPhone)}</Text>
                 </AnimatedPressable>
               ))}
             </ScrollView>
@@ -352,7 +354,6 @@ function ConcernMediaCarousel({ concern }: { concern: ConcernSummary }) {
       <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 16, gap: spacing.sm, justifyContent: "center", minHeight: 220, padding: spacing.lg }}>
         <Images color={colors.primary} size={42} strokeWidth={1.8} />
         <Text style={{ color: colors.primary, fontSize: 18, fontWeight: "900", textAlign: "center" }}>No images available</Text>
-        <Text style={{ color: colors.muted, lineHeight: 20, textAlign: "center" }}>Concern photos will appear here when the tenant attaches them.</Text>
       </View>
     );
   }

@@ -20,6 +20,7 @@ import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SelectionTabs } from "@/components/selection-tabs";
@@ -29,8 +30,9 @@ import { ClosesInChip, CountPill, TagPill, clockTime } from "@/features/enquiry/
 import { ManageVisitSheet } from "@/features/enquiry/manage-visit-sheet";
 import { formatVisitShort } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
-import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, NoticeBar } from "@/features/owner/owner-ui";
 import { PropertyVisitsIcon } from "@/features/property/property-control-icons";
+import { BookAStayEntry } from "@/features/booking/book-a-stay-entry";
 import { RunningLateSheet } from "@/features/visits/running-late-sheet";
 import { indiaDate, useNow } from "@/features/visits/visit-clock";
 import { VisitStateChip, type VisitStatus } from "@/features/visits/visit-state-chip";
@@ -38,6 +40,7 @@ import { VisitorPassSheet } from "@/features/visits/visitor-pass-sheet";
 import {
   useDeclineMissedVisitMutation,
   useGetMyVisitsQuery,
+  useGetMyVisitHistoryQuery,
   type MyVisit,
 } from "@/store/services/enquiry-chat-api";
 import { radii, spacing } from "@/theme/spacing";
@@ -48,7 +51,7 @@ type Tab = "today" | "upcoming" | "history";
 
 const TAB_COPY: Record<Tab, { empty: string; emptyTitle: string; noun: [string, string] }> = {
   history: {
-    empty: "Visits you have made, and ones that were missed, are kept here.",
+    empty: "Past visits and cancellations are kept here.",
     emptyTitle: "No past visits",
     noun: ["past visit", "past visits"],
   },
@@ -122,13 +125,21 @@ export default function MyVisitsScreen() {
   const tab: Tab =
     pickedTab ??
     (byTab.today.length > 0 ? "today" : byTab.upcoming.length > 0 ? "upcoming" : byTab.history.length > 0 ? "history" : "today");
-  const list = byTab[tab];
+  const [historyPage, setHistoryPage] = useState(0);
+  const historyQuery = useGetMyVisitHistoryQuery({ page: historyPage }, {
+    skip: tab !== "history",
+    refetchOnMountOrArgChange: true,
+  });
+  const history = historyQuery.currentData;
+  const list = tab === "history" ? history?.items ?? [] : byTab[tab];
+  const loading = tab === "history" ? historyQuery.isFetching && !history : query.isLoading && !query.data;
+  const allVisits = [...visits, ...(history?.items ?? [])];
   // Still to happen today, and still asking for an answer: what each tab's count is for.
   const dueToday = byTab.today.filter((visit) => visit.state === "SCHEDULED" && visit.enquiryOpen).length;
   const awaitingAnswer = byTab.history.filter(isAskingStillInterested).length;
-  const managing = managingId ? visits.find((visit) => visit.visitId === managingId) ?? null : null;
+  const managing = managingId ? allVisits.find((visit) => visit.visitId === managingId) ?? null : null;
   const late = lateId ? visits.find((visit) => visit.visitId === lateId) ?? null : null;
-  const declining = decliningId ? visits.find((visit) => visit.visitId === decliningId) ?? null : null;
+  const declining = decliningId ? allVisits.find((visit) => visit.visitId === decliningId) ?? null : null;
 
   // Not asked again once they have said "I'm on my way": the server remembers that.
   const runningLate =
@@ -176,7 +187,12 @@ export default function MyVisitsScreen() {
           ]}
         />
 
-        {query.isLoading && !query.data ? (
+        {tab === "history" && historyQuery.isError ? (
+          <View style={{ gap: spacing.sm }}>
+            <NoticeBar title="Unable to load history" message="Visit history could not be loaded." tone="warning" />
+            <ActionButton label="Try again" onPress={() => void historyQuery.refetch()} variant="secondary" />
+          </View>
+        ) : loading ? (
           // The real cards, drawn as their own placeholder: every leaf is a Ghost.
           <SkeletonBoundary>
             <View style={{ gap: spacing.md }}>
@@ -194,7 +210,7 @@ export default function MyVisitsScreen() {
           />
         ) : (
           <View style={{ gap: spacing.md }}>
-            <CountPill count={list.length} noun={TAB_COPY[tab].noun} />
+            <CountPill count={tab === "history" ? history?.totalElements ?? 0 : list.length} noun={TAB_COPY[tab].noun} />
             {list.map((visit) => (
               <MyVisitCard
                 key={visit.visitId}
@@ -206,6 +222,13 @@ export default function MyVisitsScreen() {
                 visit={visit}
               />
             ))}
+            {tab === "history" && history && history.totalPages > 1 ? (
+              <PaginationBar
+                {...history}
+                onNext={() => setHistoryPage((page) => page + 1)}
+                onPrevious={() => setHistoryPage((page) => Math.max(0, page - 1))}
+              />
+            ) : null}
           </View>
         )}
       </View>
@@ -288,6 +311,9 @@ function isRunningLate(visit: MyVisit, now: number) {
  * None once its enquiry is over with the visit never having happened.
  */
 function myVisitStatus(visit: MyVisit, now: number): VisitStatus | null {
+  if (visit.state === "CANCELLED") {
+    return { icon: CalendarX, label: "Cancelled", tone: "muted" };
+  }
   if (visit.state === "VISITED") {
     return { icon: CircleCheck, label: "Visited", tone: "green" };
   }
@@ -363,8 +389,8 @@ function MyVisitCard({
         <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
           <GhostPill height={18} width={126}>
             <TagPill
-              icon={missed ? CalendarX : CalendarCheck}
-              iconColor={missed ? colors.danger : colors.successText}
+              icon={missed || visit.state === "CANCELLED" ? CalendarX : CalendarCheck}
+              iconColor={missed ? colors.danger : visit.state === "CANCELLED" ? colors.muted : colors.successText}
               label={formatVisitShort(visit.date, visit.slotStart)}
             />
           </GhostPill>
@@ -464,6 +490,7 @@ function MyVisitCard({
           )}
         </View>
       ) : null}
+      {visited && visit.enquiryId ? <BookAStayEntry enquiryId={visit.enquiryId} /> : null}
     </Card>
   );
 }

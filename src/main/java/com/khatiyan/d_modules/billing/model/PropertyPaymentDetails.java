@@ -122,6 +122,36 @@ public class PropertyPaymentDetails extends BaseEntity {
     @Column(name = "cash_otp_required", nullable = false)
     private boolean cashOtpRequired = false;
 
+    /**
+     * Whether a booking token is paid to the same UPI and bank details as a
+     * bill (2026-10-11). True for every property until its owner gives tokens
+     * details of their own in Payment setup.
+     */
+    @Column(name = "token_uses_bill_details", nullable = false)
+    private boolean tokenUsesBillDetails = true;
+
+    // The token's own details. All null while tokens use the bill details.
+    @Column(name = "token_upi_vpa", length = 120)
+    private String tokenUpiVpa;
+
+    @Column(name = "token_payee_name", length = 120)
+    private String tokenPayeeName;
+
+    @Column(name = "token_upi_qr_image_url", length = 500)
+    private String tokenUpiQrImageUrl;
+
+    @Column(name = "token_upi_phone", length = 10)
+    private String tokenUpiPhone;
+
+    @Column(name = "token_bank_account_number", length = 34)
+    private String tokenBankAccountNumber;
+
+    @Column(name = "token_bank_ifsc", length = 11)
+    private String tokenBankIfsc;
+
+    @Column(name = "token_bank_account_holder", length = 120)
+    private String tokenBankAccountHolder;
+
     private PropertyPaymentDetails(UUID propertyId) {
         this.propertyId = propertyId;
     }
@@ -232,6 +262,82 @@ public class PropertyPaymentDetails extends BaseEntity {
     /** Bank transfer is offered to tenants: ticked, and the account is complete. */
     public boolean offersBankTransfer() {
         return acceptsBankTransfer && hasBankDetails();
+    }
+
+    // ---- Booking tokens -------------------------------------------------------
+
+    /**
+     * The ways a person may record a booking token as paid: UPI and a bank
+     * transfer, each only where there is something to pay to. By the bill
+     * details where tokens share them, and then only the ones ticked for
+     * bills. By the token's own details otherwise.
+     *
+     * <p>Never cash, a card or a cheque. Those change hands at the property,
+     * which records them itself.
+     */
+    public List<ManualPaymentMethod> tokenMethods() {
+        boolean upi = tokenUsesBillDetails
+                ? offersUpi()
+                : notBlank(tokenUpiVpa) || notBlank(tokenUpiPhone) || notBlank(tokenUpiQrImageUrl);
+        boolean bank = tokenUsesBillDetails
+                ? offersBankTransfer()
+                : notBlank(tokenBankAccountNumber) && notBlank(tokenBankIfsc);
+        return METHOD_ORDER.stream()
+                .filter(method -> method == ManualPaymentMethod.UPI ? upi
+                        : method == ManualPaymentMethod.BANK_TRANSFER && bank)
+                .toList();
+    }
+
+    /**
+     * Every way a token reaches this property, in display order: what a
+     * person may record ({@link #tokenMethods()}), and what the property
+     * takes at its desk and records itself.
+     */
+    public List<ManualPaymentMethod> tokenAcceptedMethods() {
+        List<ManualPaymentMethod> recordable = tokenMethods();
+        return METHOD_ORDER.stream()
+                .filter(method -> method == ManualPaymentMethod.UPI || method == ManualPaymentMethod.BANK_TRANSFER
+                        ? recordable.contains(method)
+                        : accepts(method))
+                .toList();
+    }
+
+    /**
+     * Where booking tokens are paid: the bill details, or these.
+     *
+     * <p>The token's own details pass the very checks a bill's do, by the same
+     * code, and at least one of UPI and a bank account has to be there:
+     * choosing "different details" and giving none would leave a person with
+     * nowhere to pay. Going back to the bill details clears them.
+     */
+    public void updateTokenDetails(
+            boolean usesBillDetails,
+            String upiVpa,
+            String payeeName,
+            String upiPhone,
+            String upiQrImageUrl,
+            String bankAccountNumber,
+            String bankIfsc,
+            String bankAccountHolder,
+            UUID actorUserId) {
+        PropertyPaymentDetails checked = new PropertyPaymentDetails(propertyId);
+        if (!usesBillDetails) {
+            checked.update(upiVpa, payeeName, upiPhone, upiQrImageUrl, bankAccountNumber, bankIfsc,
+                    bankAccountHolder, actorUserId);
+            if (!checked.canAcceptUpi() && !checked.hasBankDetails()) {
+                throw new ValidationException(
+                        "Add UPI or bank details for booking tokens, or use the bill payment details.");
+            }
+        }
+        this.tokenUsesBillDetails = usesBillDetails;
+        this.tokenUpiVpa = checked.upiVpa;
+        this.tokenPayeeName = checked.payeeName;
+        this.tokenUpiPhone = checked.upiPhone;
+        this.tokenUpiQrImageUrl = checked.upiQrImageUrl;
+        this.tokenBankAccountNumber = checked.bankAccountNumber;
+        this.tokenBankIfsc = checked.bankIfsc;
+        this.tokenBankAccountHolder = checked.bankAccountHolder;
+        this.updatedByUserId = actorUserId;
     }
 
     public void update(

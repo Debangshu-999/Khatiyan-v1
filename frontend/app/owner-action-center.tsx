@@ -1,78 +1,40 @@
-import { ExitTenancyIcon } from "@/components/artwork-icon";
-import { UpcomingExitsIcon } from "@/components/tenancy-line-icons";
-import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useRouteGate } from "@/features/owner/route-gates";
-import { Animated, Easing, Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { AlertCircle, Banknote, BedDouble, CalendarClock, CalendarX2, Check, ChevronRight, DoorOpen, FileSignature, Gauge, HandCoins, KeyRound, MessageSquare, Repeat2, ShieldAlert, TrendingUp, Wallet, type LucideProps } from "lucide-react-native";
+import { Text, View } from "react-native";
+import { AlertCircle, Check } from "lucide-react-native";
 
-import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { FilterPillRow } from "@/components/filter-bubbles";
 import { LedgerRow } from "@/components/ledger-row";
 import { OwnerActionCenterSkeleton } from "@/components/skeletons/owner";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { formatMoneyPaise } from "@/features/owner/owner-ui";
+import { ActionButton } from "@/features/owner/owner-ui";
+import { useFocusEffect } from "expo-router";
 import { useAppSelector } from "@/store/hooks";
-import { formatDate } from "@/features/owner/bill-views";
-import { type BlockedBooking, type OwnerDashboard, useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
+import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import type { ThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 const ALL_CAUGHT_UP_ILLUSTRATION = require("../assets/empty-states/All-Caught-Up_512x512.png");
 
-type ActionRoute =
-  | "/owner-billing"
-  | "/owner-concerns"
-  | "/owner-deposit-history"
-  | "/owner-enquiries"
-  | "/owner-exit-requests"
-  | "/owner-expenses"
-  | "/owner-room-change-requests"
-  | "/owner-staff"
-  | "/owner-tenancy"
-  // Opens the tenancy screen with its Upcoming exits sheet already up. The
-  // route gate matches on the path alone, so the param does not ungate it.
-  | "/owner-tenancy?open=upcoming-exits"
-  // Straight to ending the stay that holds a booked bed.
-  | `/owner-end-tenancy?tenancyId=${string}`;
-type ActionSource = "billing" | "concern" | "tenancy" | "budget" | "enquiry" | "staff";
-type ActionFilter = ActionSource | "all";
-type ActionTone = "primary" | "warning" | "danger";
-
-type ActionItem = {
-  badge: string;
-  detail: string;
-  emphasize: boolean;
-  icon: ComponentType<LucideProps>;
-  key: string;
-  label: string;
-  route: ActionRoute;
-  source: ActionSource;
-  tone: ActionTone;
-};
-
-const FILTERS: Array<{ key: ActionFilter; label: string }> = [
-  { key: "all", label: "All" },
-  { key: "budget", label: "Budget" },
-  { key: "billing", label: "Billing" },
-  { key: "concern", label: "Concerns" },
-  { key: "tenancy", label: "Tenancy" },
-  { key: "enquiry", label: "Enquiries" },
-  { key: "staff", label: "Staff" },
-];
-
-const TONE_RANK: Record<ActionTone, number> = { danger: 0, warning: 1, primary: 2 };
+import { ACTION_FILTERS as FILTERS, buildActionItems, countActionItems, type ActionFilter, type ActionItem, type ActionTone } from "@/features/owner/action-center";
+import { FitText } from "@/components/fit-text";
 
 export default function OwnerActionCenterScreen() {
   const router = useGuardedRouter();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { dialog: routeGateDialog, gate: routeGate } = useRouteGate(selectedPropertyId);
-  const dashboardQuery = useGetOwnerDashboardQuery(selectedPropertyId ?? "", { skip: !selectedPropertyId });
-  const dashboard = dashboardQuery.data;
+  const dashboardQuery = useGetOwnerDashboardQuery(selectedPropertyId ?? "", {
+    skip: !selectedPropertyId, refetchOnMountOrArgChange: true, refetchOnFocus: true,
+    refetchOnReconnect: true, pollingInterval: 60_000, skipPollingIfUnfocused: true,
+  });
+  const dashboard = dashboardQuery.currentData;
+  useFocusEffect(useCallback(() => {
+    if (selectedPropertyId && !dashboardQuery.isUninitialized) void dashboardQuery.refetch();
+  }, [selectedPropertyId, dashboardQuery.isUninitialized, dashboardQuery.refetch]));
 
   const actionItems = useMemo(() => (dashboard ? buildActionItems(dashboard) : []), [dashboard]);
   const [filter, setFilter] = useState<ActionFilter>("all");
@@ -80,8 +42,8 @@ export default function OwnerActionCenterScreen() {
   const filters = FILTERS.map((entry) => ({
     count: dashboard
       ? entry.key === "all"
-        ? actionItems.length
-        : actionItems.filter((item) => item.source === entry.key).length
+        ? countActionItems(actionItems)
+        : countActionItems(actionItems.filter((item) => item.source === entry.key))
       : undefined,
     label: entry.label,
     value: entry.key,
@@ -90,7 +52,7 @@ export default function OwnerActionCenterScreen() {
   const activeLabel = FILTERS.find((entry) => entry.key === filter)?.label ?? "All";
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} onRefresh={async () => { await dashboardQuery.refetch(); }}>
       <ScreenHeader
         title="Action"
         italicTail="center."
@@ -130,134 +92,33 @@ export default function OwnerActionCenterScreen() {
           ) : (
             <View style={{ gap: spacing.sm }}>
               {visibleItems.map((item) => (
-                <MovingBorder active={item.emphasize} fill={false} key={item.key}>
-                  <ActionRow item={item} onPress={() => routeGate(item.route, () => router.push(item.route))} />
-                </MovingBorder>
+                // No moving red glow any more (user, 2026-10-27): the card's fill says how urgent it is.
+                <ActionRow item={item} key={item.key} onPress={() => routeGate(item.route, () => router.push(item.route))} />
               ))}
             </View>
           )}
         </View>
+      ) : null}
+      {selectedPropertyId && dashboardQuery.isError ? (
+        <EmptyState icon={AlertCircle} title="Could not refresh actions" action={
+          <ActionButton label="Try again" onPress={() => void dashboardQuery.refetch()} />
+        } />
       ) : null}
       {routeGateDialog}
     </ScreenScrollView>
   );
 }
 
-function buildActionItems(dashboard: OwnerDashboard): ActionItem[] {
-  const attention = dashboard.attention;
-  const items: ActionItem[] = [];
-
-  // One row per booked stay that can't start, each naming its room: the
-  // tenant is waiting on something only the owner can do.
-  for (const blocked of dashboard.blockedBookings ?? []) {
-    const room = blocked.roomNumber ? `Room ${blocked.roomNumber}` : "A room";
-    const endStay = blocked.reason !== "ROOM_CHANGE_NOT_DONE" && blocked.blockingTenancyId;
-    items.push({
-      badge: formatDate(blocked.startDate),
-      detail: blockedBookingDetail(blocked),
-      emphasize: true,
-      icon: BedDouble,
-      key: `booking-blocked-${blocked.bookingTenancyId}`,
-      label: `Tenancy can't start · ${room}`,
-      route: endStay ? `/owner-end-tenancy?tenancyId=${blocked.blockingTenancyId}` : "/owner-room-change-requests",
-      source: "tenancy",
-      tone: "danger",
-    });
-  }
-
-  if (attention.paymentsOverdue > 0) {
-    items.push({ badge: String(attention.paymentsOverdue), detail: "Awaiting collection", emphasize: true, icon: Banknote, key: "overdue", label: "Overdue payments", route: "/owner-billing", source: "billing", tone: "danger" });
-  }
-
-  if (attention.escalatedConcerns > 0) {
-    items.push({ badge: String(attention.escalatedConcerns), detail: "Needs owner attention", emphasize: true, icon: ShieldAlert, key: "escalated", label: "Escalated concerns", route: "/owner-concerns", source: "concern", tone: "danger" });
-  }
-  if (attention.concernsUnattended24h > 0) {
-    items.push({ badge: String(attention.concernsUnattended24h), detail: "No action in over a day", emphasize: false, icon: AlertCircle, key: "unattended", label: "Concerns unattended 24h+", route: "/owner-concerns", source: "concern", tone: "warning" });
-  }
-
-  if (attention.exitsPastDue > 0) {
-    items.push({ badge: String(attention.exitsPastDue), detail: "Checkout date has passed", emphasize: true, icon: CalendarX2, key: "past-due-exits", label: "Exits past due", route: "/owner-tenancy", source: "tenancy", tone: "danger" });
-  }
-  if (attention.pendingExitRequests > 0) {
-    items.push({ badge: String(attention.pendingExitRequests), detail: "Awaiting your review", emphasize: false, icon: ExitTenancyIcon, key: "exits", label: "Pending exit requests", route: "/owner-exit-requests", source: "tenancy", tone: "primary" });
-  }
-  if (attention.pendingRoomChangeRequests > 0) {
-    items.push({ badge: String(attention.pendingRoomChangeRequests), detail: "Awaiting your review", emphasize: false, icon: Repeat2, key: "room-changes", label: "Pending room-change requests", route: "/owner-room-change-requests", source: "tenancy", tone: "primary" });
-  }
-  if (attention.upcomingExits > 0) {
-    items.push({ badge: String(attention.upcomingExits), detail: "Checkout coming up soon", emphasize: false, icon: UpcomingExitsIcon, key: "upcoming", label: "Upcoming exits", route: "/owner-tenancy?open=upcoming-exits", source: "tenancy", tone: "primary" });
-  }
-  if (attention.tenantsOnNotice > 0) {
-    items.push({ badge: String(attention.tenantsOnNotice), detail: "Serving notice period", emphasize: false, icon: KeyRound, key: "notice", label: "Tenants on notice", route: "/owner-tenancy", source: "tenancy", tone: "primary" });
-  }
-  // A stranger asking about the property, with nobody having answered. Ranked
-  // primary rather than danger: nothing is broken, but every hour it sits there
-  // is a prospective tenant deciding the place is unresponsive.
-  if (attention.newEnquiries > 0) {
-    items.push({ badge: String(attention.newEnquiries), detail: "Awaiting your response", emphasize: false, icon: MessageSquare, key: "enquiries", label: "New enquiries", route: "/owner-enquiries", source: "enquiry", tone: "primary" });
-  }
-
-  if (attention.pendingDepositSettlements > 0) {
-    items.push({ badge: String(attention.pendingDepositSettlements), detail: "Deposit awaiting settlement", emphasize: false, icon: Wallet, key: "deposit-settlements", label: "Deposits to settle", route: "/owner-deposit-history", source: "tenancy", tone: "primary" });
-  }
-
-  if (attention.salaryPaymentsDue > 0) {
-    items.push({ badge: String(attention.salaryPaymentsDue), detail: "Unpaid for this month", emphasize: false, icon: HandCoins, key: "salary-due", label: "Salaries to record", route: "/owner-staff", source: "staff", tone: "warning" });
-  }
-
-  if (attention.agreementsPendingAcceptance > 0) {
-    items.push({ badge: String(attention.agreementsPendingAcceptance), detail: "Waiting on the tenant", emphasize: false, icon: FileSignature, key: "agreements-pending", label: "Agreements unsigned", route: "/owner-tenancy", source: "tenancy", tone: "primary" });
-  }
-
-  // Optional-chained: a cached / pre-upgrade dashboard response has no budget.
-  const budget = dashboard.budget;
-  if (budget?.level === "EXCEEDED") {
-    items.push({
-      badge: `+${formatMoneyPaise(budget.overPaise)}`,
-      detail: `${formatMoneyPaise(budget.spentPaise)} of ${formatMoneyPaise(budget.effectiveBudgetPaise)}`,
-      emphasize: true,
-      icon: TrendingUp,
-      key: "budget-exceeded",
-      label: "Budget exceeded",
-      route: "/owner-expenses",
-      source: "budget",
-      tone: "danger",
-    });
-  } else if (budget?.level === "APPROACHING") {
-    items.push({
-      badge: `${formatMoneyPaise(budget.remainingPaise)} left`,
-      detail: `${formatMoneyPaise(budget.spentPaise)} of ${formatMoneyPaise(budget.effectiveBudgetPaise)}`,
-      emphasize: false,
-      icon: Gauge,
-      key: "budget-approaching",
-      label: "Budget nearing limit",
-      route: "/owner-expenses",
-      source: "budget",
-      tone: "warning",
-    });
-  }
-
-  return items.sort((first, second) => TONE_RANK[first.tone] - TONE_RANK[second.tone]);
-}
-
+/**
+ * The card's pale fill and its count's colour, by how urgent the item is (user, 2026-10-27). The
+ * ordinary ones are pale grey, not pale blue: pale blue fills are kept off cards app-wide.
+ */
 function toneColors(colors: ThemeColors, tone: ActionTone) {
   if (tone === "danger") return { accent: colors.danger, soft: colors.dangerSoft };
   if (tone === "warning") return { accent: colors.warningText, soft: colors.warningSoft };
-  return { accent: colors.primary, soft: colors.primarySoft };
+  return { accent: colors.primary, soft: colors.neutralSoft };
 }
 
-function blockedBookingDetail(blocked: BlockedBooking): string {
-  const name = blocked.blockingTenantName;
-  switch (blocked.reason) {
-    case "PENDING_EXIT":
-      return `Pending exit${name ? ` for ${name}` : ""}. End it to let the new tenant in.`;
-    case "STAY_NOT_ENDED":
-      return name ? `${name}'s stay hasn't been ended yet` : "The stay in this room hasn't been ended yet";
-    case "ROOM_CHANGE_NOT_DONE":
-      return `${name ? `${name}'s room change` : "The room change freeing this bed"} hasn't gone through. Retrying hourly.`;
-  }
-}
 
 function ActionRow({ item, onPress }: { item: ActionItem; onPress: () => void }) {
   const { colors, fonts } = useTheme();
@@ -266,64 +127,15 @@ function ActionRow({ item, onPress }: { item: ActionItem; onPress: () => void })
   return (
     <LedgerRow
       caption={item.detail}
+      fill={palette.soft}
       icon={item.icon}
-      iconBackground={palette.soft}
-      iconColor={palette.accent}
       onPress={onPress}
       title={item.label}
       trailing={
-        <Text numberOfLines={1} style={{ color: palette.accent, fontFamily: fonts.display, fontSize: 16, fontVariant: ["tabular-nums"], }}>
+        <FitText numberOfLines={1} style={{ color: palette.accent, fontFamily: fonts.display, fontSize: 16, fontVariant: ["tabular-nums"], }}>
           {item.badge}
-        </Text>
+        </FitText>
       }
     />
-  );
-}
-
-function MovingBorder({
-  active,
-  children,
-  fill = true,
-  radius = 14,
-}: {
-  active: boolean;
-  children: ReactNode;
-  fill?: boolean;
-  radius?: number;
-}) {
-  const { colors } = useTheme();
-  const spin = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.timing(spin, { toValue: 1, duration: 2200, easing: Easing.linear, useNativeDriver: true }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [active, spin]);
-
-  if (!active) {
-    return <>{children}</>;
-  }
-
-  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
-
-  return (
-    <View style={{ borderRadius: radius, flex: fill ? 1 : undefined, overflow: "hidden", padding: 2 }}>
-      <Animated.View
-        style={{ bottom: -120, left: -120, position: "absolute", right: -120, top: -120, transform: [{ rotate }] }}
-      >
-        <LinearGradient
-          colors={[colors.danger, "transparent", "transparent", colors.danger]}
-          end={{ x: 1, y: 1 }}
-          start={{ x: 0, y: 0 }}
-          style={{ flex: 1 }}
-        />
-      </Animated.View>
-      <View style={{ borderRadius: radius - 2, flex: fill ? 1 : undefined, overflow: "hidden" }}>{children}</View>
-    </View>
   );
 }

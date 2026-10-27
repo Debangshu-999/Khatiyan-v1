@@ -88,6 +88,14 @@ public class ConcernController {
         return concernModule.listAvailableConcerns(user.userId(), propertyId);
     }
 
+    /** The concerns raised today, the ones Home's Concerns tile counts (2026-10-18). */
+    @GetMapping("/properties/{propertyId}/concerns/raised-today")
+    public List<ConcernResponse> listConcernsRaisedToday(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return concernModule.listConcernsRaisedToday(user.userId(), propertyId);
+    }
+
     @GetMapping("/properties/{propertyId}/concerns/history")
     public PageResponse<ConcernResponse> listPropertyConcernHistory(
             @AuthenticationPrincipal UserPrincipal user,

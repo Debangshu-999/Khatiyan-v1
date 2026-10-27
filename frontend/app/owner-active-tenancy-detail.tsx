@@ -2,7 +2,6 @@ import type { PropsWithChildren, ReactNode } from "react";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { openDialer } from "@/lib/dial";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ChevronRight, Info, MessageCircle, Phone } from "lucide-react-native";
@@ -24,6 +23,8 @@ import { tenancyStatusLabel, useListPropertyTenanciesQuery, type TenancyStatus }
 import { useListTenantThreadsQuery, useOpenTeamThreadMutation, type ChatThread } from "@/store/services/chat-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 export default function OwnerActiveTenancyDetailScreen() {
   const router = useGuardedRouter();
@@ -177,19 +178,6 @@ export default function OwnerActiveTenancyDetailScreen() {
 
   return (
     <ScreenScrollView
-      // The same opening band as the overhauled workspace screens: a pale blue
-      // wash fading into the page rather than a flat sheet.
-      background={
-        <View style={{ backgroundColor: colors.surface, flex: 1 }}>
-          <LinearGradient
-            colors={[colors.primarySoft, colors.surface]}
-            end={{ x: 0.5, y: 1 }}
-            locations={[0, 1]}
-            start={{ x: 0.5, y: 0 }}
-            style={{ height: 260 }}
-          />
-        </View>
-      }
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
     >
@@ -204,9 +192,9 @@ export default function OwnerActiveTenancyDetailScreen() {
       <View style={{ alignItems: "center", gap: spacing.md }}>
         <InitialsAvatar name={tenantName} />
         <View style={{ alignItems: "center", gap: spacing.xxs }}>
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, }}>
-            {tenantName}
-          </Text>
+          <FitText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, }}>
+            {cardName(tenantName)}
+          </FitText>
           {/* The reference code alone. The room already has its own field in
               Rent details, and repeating it in brackets here made the code look
               like it contained the room. */}

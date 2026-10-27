@@ -10,6 +10,7 @@ import { StatusIcon } from "@/components/status-icon";
 import { errorBody, errorCode, errorMessage } from "@/features/forms/server-error";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 // ---------------------------------------------------------------- helpers
 
@@ -218,7 +219,8 @@ export function OtpBoxes({
 }: {
   value: string;
   onChangeText: (value: string) => void;
-  onComplete: (code: string) => void;
+  /** Omit for flows that require a separate confirmation button. */
+  onComplete?: (code: string) => void;
   busy?: boolean;
   error?: string;
 }) {
@@ -316,7 +318,7 @@ export function OtpBoxes({
           if (busy) return;
           const next = digitsOnly(text).slice(0, 6);
           onChangeText(next);
-          if (next.length === 6) {
+          if (next.length === 6 && onComplete) {
             dismissKeyboardSmoothly();
             onComplete(next);
           }
@@ -526,7 +528,7 @@ function FieldNotch({ error, fill, focused, label }: { error?: string; fill: str
       <View style={{ flexShrink: 1, overflow: "hidden" }}>
         <View style={{ backgroundColor: colors.authSurface, height: NOTCH_SPLIT, left: 0, position: "absolute", right: 0, top: 0 }} />
         <View style={{ backgroundColor: fill, bottom: 0, left: 0, position: "absolute", right: 0, top: NOTCH_SPLIT }} />
-        <Text
+        <FitText
           accessibilityRole={message ? "alert" : undefined}
           numberOfLines={1}
           style={{
@@ -542,7 +544,7 @@ function FieldNotch({ error, fill, focused, label }: { error?: string; fill: str
           }}
         >
           {message || label}
-        </Text>
+        </FitText>
       </View>
     </View>
   );
@@ -590,7 +592,7 @@ export function CodeField({
         <View style={{ flex: 1, justifyContent: "center", minHeight: 56 }}>
           {/* Placeholder yields as soon as the field is focused, not on typing. */}
           {!value && !focused ? (
-            <Text
+            <FitText
               numberOfLines={1}
               pointerEvents="none"
               style={{
@@ -603,7 +605,7 @@ export function CodeField({
               }}
             >
               {placeholderText}
-            </Text>
+            </FitText>
           ) : null}
           <AppTextInput
             value={value}

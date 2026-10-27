@@ -5,6 +5,7 @@ import Svg, { Circle, G, Line, Path, Text as SvgText } from "react-native-svg";
 import { PlotScroller } from "@/components/charts/plot-scroller";
 import { axisScale, roundedTopBarPath } from "@/features/analytics/chart-math";
 import { TapSlots } from "@/components/charts/tap-slots";
+import { useSoftShadow } from "@/theme/shadows";
 import { useChartPalette } from "@/theme/chart-colors";
 import { useTheme } from "@/theme/use-theme";
 
@@ -36,6 +37,7 @@ export function BudgetColumns({
   formatValue: (value: number) => string;
   months: BudgetMonth[];
 }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts } = useTheme();
   const palette = useChartPalette();
   const [selected, setSelected] = useState<string | null>(null);
@@ -111,10 +113,7 @@ export function BudgetColumns({
               paddingHorizontal: 8,
               paddingVertical: 5,
               position: "absolute",
-              shadowColor: colors.shadow,
-              shadowOffset: { height: 2, width: 0 },
-              shadowOpacity: 0.12,
-              shadowRadius: 6,
+              ...softShadow(colors.shadow, 2, 6, 0.12),
               top: cardTop ?? 0,
             }}
           >

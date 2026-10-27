@@ -5,7 +5,7 @@ import { AnimatedPressable } from "./animated-pressable";
 import { useTheme } from "@/theme/use-theme";
 import { spacing } from "@/theme/spacing";
 
-export function AgreementMonthDropdown({ value, disabled, onChange }: { value: number; disabled?: boolean; onChange: (months: number) => void }) {
+export function AgreementMonthDropdown({ value, disabled, label = "Months (1 to 11)", onChange }: { value: number; disabled?: boolean; label?: string; onChange: (months: number) => void }) {
   const { colors, fonts, type } = useTheme();
   const { width, height } = useWindowDimensions();
   const trigger = useRef<View>(null);
@@ -17,7 +17,7 @@ export function AgreementMonthDropdown({ value, disabled, onChange }: { value: n
     setAnchor({ left: Math.max(16, Math.min(x, width - w - 16)), top, width: Math.min(w, width - 32), height: menuHeight });
   });
   return <View style={{ gap: spacing.xs }}>
-    <Text style={[type.label, { color: colors.muted }]}>Months (1 to 11)</Text>
+    <Text style={[type.label, { color: colors.muted }]}>{label}</Text>
     <View ref={trigger} collapsable={false}>
       <AnimatedPressable disabled={disabled} accessibilityRole="button" accessibilityLabel={`Agreement term: ${value} months`} accessibilityState={{ disabled, expanded: !!anchor }} onPress={open} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderColor: colors.borderStrong, borderWidth: 1, borderRadius: 14, padding: spacing.md }}>
         <Text style={{ color: colors.ink, fontFamily: fonts.sans, fontSize: 15 }}>{value} {value === 1 ? "month" : "months"}</Text>

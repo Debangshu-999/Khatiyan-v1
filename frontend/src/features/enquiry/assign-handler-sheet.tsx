@@ -13,6 +13,8 @@ import { useAssignEnquiryHandlerMutation, type EnquiryDetail } from "@/store/ser
 import { useListPropertyManagersQuery } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 /** The Staff screen's no-managers artwork. */
 const NO_PERSON_ILLUSTRATION = require("../../../assets/empty-states/No-Person_512x512.png");
@@ -130,9 +132,9 @@ function ManagerRow({
     >
       <CircleCheckbox checked={selected} />
       <View style={{ flex: 1, gap: 2 }}>
-        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
-          {name}
-        </Text>
+        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+          {cardName(name)}
+        </FitText>
         <Text style={[type.caption, { color: colors.muted }]}>{openLine}</Text>
       </View>
     </AnimatedPressable>

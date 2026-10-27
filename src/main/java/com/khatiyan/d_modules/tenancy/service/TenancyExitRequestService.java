@@ -495,6 +495,9 @@ public class TenancyExitRequestService {
      */
     @Transactional
     public void endTenancyNow(UUID actorUserId, UUID tenancyId, EndTenancyRequest request) {
+        UUID inventoryProperty = tenancyRepository.findPropertyIdById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        propertyModule.lockRoomInventory(inventoryProperty);
         // Locked, so two people ending the same stay at once (one account on
         // several devices, or an owner and a manager) cannot both apply the
         // exit: the second waits for the first to commit, then reads the stay
@@ -692,6 +695,9 @@ public class TenancyExitRequestService {
     }
 
     private TenancyExitRequest getRequest(UUID requestId) {
+        UUID propertyId = exitRequestRepository.findPropertyIdById(requestId)
+                .orElseThrow(() -> new NotFoundException("TenancyExitRequest", requestId));
+        propertyModule.lockRoomInventory(propertyId);
         return exitRequestRepository.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new NotFoundException("TenancyExitRequest", requestId));
     }

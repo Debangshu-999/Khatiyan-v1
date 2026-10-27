@@ -320,6 +320,17 @@ public class ConcernService {
     private static final ZoneId DASHBOARD_ZONE = ZoneId.of("Asia/Kolkata");
 
     /**
+     * The concerns raised today, in India's calendar, whatever their status now:
+     * the ones the Home digest's Concerns tile counts (2026-10-18).
+     */
+    @Transactional(readOnly = true)
+    public List<ConcernResponse> listConcernsRaisedToday(UUID actorUserId, UUID propertyId) {
+        concernAccessPolicy.ensureCanView(actorUserId, propertyId);
+        Instant todayStart = LocalDate.now(DASHBOARD_ZONE).atStartOfDay(DASHBOARD_ZONE).toInstant();
+        return toResponses(concernRepository.findRaisedSinceWithPhotos(propertyId, todayStart));
+    }
+
+    /**
      * Property-scoped concern rollup for the owner action center.
      *
      * <p>"Raised today" uses the current IST date; "resolved this week" uses a

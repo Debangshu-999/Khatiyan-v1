@@ -34,7 +34,8 @@ export function SetupPinStep({
   return (
     <>
       <StepProgress step={2} total={2} />
-      <View style={{ flexGrow: 1, gap: spacing.md }}>
+      {/* Balance the gap below the indicator against the raised field label. */}
+      <View style={{ flexGrow: 1, gap: spacing.md, paddingTop: spacing.sm }}>
         <CodeField label="New PIN" value={newPin} onChangeText={onNewPinChange} secureTextEntry error={newPinError} />
         <FieldSpacer />
         <CodeField label="Retype PIN" value={confirmPin} onChangeText={onConfirmPinChange} secureTextEntry error={confirmPinError} />

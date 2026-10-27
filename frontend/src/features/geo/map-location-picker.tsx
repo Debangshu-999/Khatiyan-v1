@@ -22,6 +22,7 @@ import {
 } from "@/store/services/geo-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 // Free, keyless vector style (OpenFreeMap). Swappable without touching code
 // elsewhere — the renderer is style-agnostic.
@@ -304,12 +305,12 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
                 onPress={() => pickSuggestion(suggestion)}
                 style={{ borderColor: colors.border, borderTopWidth: index === 0 ? 0 : 1, gap: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}
               >
-                <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+                <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
                   {suggestion.name ?? "Unnamed place"}
-                </Text>
-                <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+                </FitText>
+                <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
                   {suggestion.address ?? "—"}
-                </Text>
+                </FitText>
               </AnimatedPressable>
             ))}
           </View>
@@ -334,9 +335,9 @@ function PickerMap({ home, initial, onClose, onPick, title }: MapLocationPickerP
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={[type.eyebrow, { color: colors.kicker }]}>{title ?? "Pin location"}</Text>
-            <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={2}>
+            <FitText style={[type.caption, { color: colors.ink, fontWeight: "700" }]} numberOfLines={2}>
               {addressLine}
-            </Text>
+            </FitText>
           </View>
           <AnimatedPressable
             accessibilityLabel="Use my location"
@@ -361,7 +362,8 @@ function DevBuildRequiredScreen({ onBack }: { onBack: () => void }) {
   return (
     <View style={{ backgroundColor: colors.background, flex: 1, gap: spacing.lg, justifyContent: "center", padding: spacing.lg, paddingTop: insets.top + spacing.lg }}>
       <EmptyState
-        icon={MapPin}        title="Maps need a dev build"
+        icon={MapPin}
+        title="Maps need a dev build"
         description={
           "The map picker uses a native module that Expo Go cannot load. Build and install the development app once with: npx expo run:android — then reopen this screen."
         }

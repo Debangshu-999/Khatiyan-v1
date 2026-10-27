@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
 import { MarqueeText } from "@/components/marquee-text";
+import { useSoftShadow } from "@/theme/shadows";
 import { metricFontSize } from "@/theme/metric-size";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -34,6 +35,7 @@ type MetricTileProps = {
 };
 
 export function MetricTile({ dense = false, hint, icon: Icon, iconFilled = false, iconPlacement = "top", iconTone = "primary", label, surfaceTone = "default", tone = "default", value }: MetricTileProps) {
+  const softShadow = useSoftShadow();
   const { colors, type } = useTheme();
   const accentColor = tone === "danger" ? colors.danger : tone === "primary" ? colors.jade : colors.ink;
   // Most tiles stay white. Screens that need more separation from a white page
@@ -93,10 +95,7 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconFilled = false
         flex: 1,
         gap: spacing.xs,
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
+        ...softShadow(colors.shadow, 2, 6),
       }}
     >
       {/* Bare, on the tile's own white — the billing card's treatment. A tinted

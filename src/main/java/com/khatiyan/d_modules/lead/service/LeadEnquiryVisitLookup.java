@@ -88,6 +88,19 @@ public class LeadEnquiryVisitLookup implements EnquiryVisitLookup {
 
     @Override
     @Transactional(readOnly = true)
+    public Map<UUID, AttendedVisit> attendedOn(Collection<UUID> enquiryIds) {
+        if (enquiryIds.isEmpty()) {
+            return Map.of();
+        }
+        return visitRepository.findByEnquiryIdInAndStatus(enquiryIds, VisitStatus.VISITED).stream()
+                .filter(visit -> visit.getCheckedInAt() != null)
+                .collect(Collectors.toMap(Visit::getEnquiryId,
+                        visit -> new AttendedVisit(visit.getId(), visit.getPropertyId(),
+                                visit.getProspectUserId(), visit.getVisitDate(), visit.getCheckedInAt())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Map<UUID, BookedVisit> bookedOn(Collection<UUID> enquiryIds) {
         if (enquiryIds.isEmpty()) {
             return Map.of();

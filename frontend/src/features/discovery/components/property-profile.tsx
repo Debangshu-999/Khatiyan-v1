@@ -1,3 +1,4 @@
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -6,18 +7,34 @@ import { AirVent } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useToast } from "@/components/toast";
 import { openDialer } from "@/lib/dial";
+import { trackContactTap } from "@/features/analytics/use-profile-view";
 import type { PropertyDiscoveryDetail } from "@/store/services/discovery-api";
 import { NOTICE_PERIOD_LABELS } from "@/store/services/property-api";
+import { useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { formatDepositPaise, formatMoneyPaise, humanizeToken } from "../discovery-format";
-import { EnquireAction } from "./enquire-action";
 import { PropertyMediaCarousel } from "./property-media-carousel";
 import { RoomTypeShowcase } from "./room-type-showcase";
+import { FitText } from "@/components/fit-text";
 
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 
-export function PropertyProfile({ property }: { property: PropertyDiscoveryDetail }) {
+/**
+ * @param actions       Enquire, Visit and Booking, resting just below Contacts (user, 2026-10-17)
+ * @param onActionsDock where that row sits, from the top of the profile. The screen floats the
+ *                      same row until the page reaches it
+ */
+export function PropertyProfile({
+  actions,
+  onActionsDock,
+  property,
+}: {
+  actions?: ReactNode;
+  onActionsDock?: (y: number) => void;
+  property: PropertyDiscoveryDetail;
+}) {
+  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const facilities = [...(property.facilities ?? []), ...(property.customFacilities ?? [])];
@@ -71,10 +88,7 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
             height: 42,
             justifyContent: "center",
             paddingHorizontal: spacing.md,
-            shadowColor: colors.shadow,
-            shadowOffset: { height: 2, width: 0 },
-            shadowOpacity: 0.12,
-            shadowRadius: 8,
+            ...softShadow(colors.shadow, 2, 8, 0.12),
           }}
         >
           <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12 }}>
@@ -133,8 +147,6 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
           label={property.dailyRentingAvailable ? "Daily Stay Available" : "Monthly Stay Only"}
         />
       </View>
-
-      <EnquireAction profileCard propertyId={property.propertyId} propertyName={property.name} />
 
       <ProfileSection
         title="Property details"
@@ -239,7 +251,6 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
         <View style={{ gap: spacing.sm }}>
           {ownerContact?.phone ? (
             <ContactCard
-              email={ownerContact.email}
               name={ownerContact.name || "Property owner"}
               phone={ownerContact.phone}
               role="Owner"
@@ -249,7 +260,6 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
           )}
           {managerContacts.map((contact) => (
             <ContactCard
-              email={contact.email}
               key={contact.userId}
               name={contact.name || "Property manager"}
               phone={contact.phone ?? ""}
@@ -259,6 +269,9 @@ export function PropertyProfile({ property }: { property: PropertyDiscoveryDetai
         </View>
 
       </ProfileSection>
+
+      {/* Where the floating row of actions comes to rest once the page is scrolled to its end. */}
+      {actions ? <View onLayout={(event) => onActionsDock?.(event.nativeEvent.layout.y)}>{actions}</View> : null}
     </View>
   );
 }
@@ -279,6 +292,7 @@ function ProfileSection({ children, title, trailing }: { children: ReactNode; ti
 }
 
 function RoundIconButton({ icon, label, onPress }: { icon: MaterialIconName; label: string; onPress: () => void }) {
+  const softShadow = useSoftShadow();
   const { colors } = useTheme();
   return (
     <AnimatedPressable
@@ -293,10 +307,7 @@ function RoundIconButton({ icon, label, onPress }: { icon: MaterialIconName; lab
         borderWidth: 1,
         height: 42,
         justifyContent: "center",
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
+        ...softShadow(colors.shadow, 2, 8, 0.12),
         width: 42,
       }}
     >
@@ -314,6 +325,7 @@ const BAN_RING = 34;
  *                across it (user, 2026-10-02, for electricity not included).
  */
 function QuickHighlight({ banned, crossed, icon, label }: { banned?: boolean; crossed?: boolean; icon: MaterialIconName; label: string }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts } = useTheme();
   return (
     <View
@@ -329,10 +341,7 @@ function QuickHighlight({ banned, crossed, icon, label }: { banned?: boolean; cr
         minHeight: 78,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        ...softShadow(colors.shadow, 2, 8, 0.08),
         width: "48%",
       }}
     >
@@ -458,12 +467,12 @@ function FacilitiesGrid({ facilities }: { facilities: string[] }) {
             }}
           >
             <PropertyDetailIcon color={colors.inkSoft} icon={iconForFacility(facility)} size={28} />
-            <Text
+            <FitText
               numberOfLines={2}
               style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 16, textAlign: "center" }}
             >
               {humanizeToken(facility)}
-            </Text>
+            </FitText>
             <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>Available</Text>
           </View>
         ))}
@@ -523,27 +532,18 @@ function PreferenceCard({ icon, label, value }: { icon: MaterialIconName; label:
   );
 }
 
+// Profiles show no email, only a call (2026-10-18).
 function ContactCard({
-  email,
   name,
   phone,
   role,
 }: {
-  email: string | null;
   name: string;
   phone: string;
   role: "Owner" | "Manager";
 }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
-  const toast = useToast();
-
-  function emailContact() {
-    if (!email) {
-      toast.warning(`${name} has no verified email.`);
-      return;
-    }
-    void Linking.openURL(`mailto:${email}`);
-  }
 
   return (
     <View
@@ -558,42 +558,31 @@ function ContactCard({
         gap: spacing.md,
         minHeight: 112,
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        ...softShadow(colors.shadow, 2, 8, 0.08),
       }}
     >
       <MaterialCommunityIcons color={colors.kicker} name="account-circle-outline" size={48} />
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
         <Text style={[type.caption, { color: colors.muted }]}>{role}</Text>
-        <Text numberOfLines={1} style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 17 }}>
+        <FitText numberOfLines={1} style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 17 }}>
           {name}
-        </Text>
-        <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.muted }]}>
-          {phone}
-        </Text>
+        </FitText>
+        <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.muted }]}>
+          {formatIndianPhone(phone)}
+        </FitText>
       </View>
       <View style={{ flexDirection: "row", gap: spacing.xs }}>
-        <ContactAction icon="phone-outline" label={`Call ${name}`} onPress={() => openDialer(phone)} />
-        <ContactAction
-          disabled={!email}
-          icon="email-outline"
-          label={email ? `Email ${name}` : `${name} has no verified email`}
-          onPress={emailContact}
-        />
+        <ContactAction icon="phone-outline" label={`Call ${name}`} onPress={() => { trackContactTap("CALL"); openDialer(phone); }} />
       </View>
     </View>
   );
 }
 
 function ContactAction({
-  disabled,
   icon,
   label,
   onPress,
 }: {
-  disabled?: boolean;
   icon: MaterialIconName;
   label: string;
   onPress: () => void;
@@ -612,11 +601,10 @@ function ContactAction({
         borderWidth: 1,
         height: 44,
         justifyContent: "center",
-        opacity: disabled ? 0.55 : 1,
         width: 44,
       }}
     >
-      <MaterialCommunityIcons color={disabled ? colors.kicker : colors.inkSoft} name={icon} size={21} />
+      <MaterialCommunityIcons color={colors.inkSoft} name={icon} size={21} />
     </AnimatedPressable>
   );
 }

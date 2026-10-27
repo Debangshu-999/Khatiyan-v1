@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
@@ -28,6 +29,7 @@ import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/starts-soon-bubble";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
@@ -204,9 +206,9 @@ function ConcernCard({ concern, onPress }: { concern: ConcernSummary; onPress: (
             <Text style={{ color: statusColor, fontFamily: fonts.sansBold, fontSize: 11, lineHeight: 15 }}>{statusLabel}</Text>
           </View>
         </View>
-        <Text numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
+        <FitText numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
           {concern.title}
-        </Text>
+        </FitText>
         <ConcernMetaRow concern={concern} />
         {concern.status === "RESOLVED" && concern.reopenUntil && new Date(concern.reopenUntil).getTime() > Date.now() ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.warningSoft, borderRadius: 10, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
@@ -262,9 +264,9 @@ function ClosedConcernsModal({
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Concern history</Text>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23 }}>
+              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23 }}>
                 Closed concerns
-              </Text>
+              </ModalTitle>
             </View>
             <IconButton accessibilityLabel="Close concern history" filled icon={X} onPress={() => dismiss()} />
           </View>

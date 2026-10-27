@@ -5,8 +5,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Ellipse, Path, Rect } from "react-native-svg";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { HeaderNote } from "@/components/header-note";
 import { PickerOptionRow } from "@/components/picker-option-row";
+import { ScreenHeader } from "@/components/screen-header";
 import { SheetShell } from "@/components/sheet-shell";
 import { BillingStatusBadge } from "@/features/owner/bill-views";
 import { ActionButton, NoticeBar, ViewOnlyChip, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
@@ -14,6 +14,8 @@ import { isDepositCredit, type DepositAccount, type DepositMovement } from "@/st
 import { tenancyStatusLabel, type TenancySummary } from "@/store/services/tenancy-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
 export type DepositMovementFilter = "ALL" | DepositMovement["type"];
 const MOVEMENT_FILTERS: { label: string; value: DepositMovementFilter }[] = [
@@ -36,47 +38,29 @@ export function formatDepositDate(value: string, includeTime = false) {
     : { day: "numeric", month: "short", year: "numeric" }).format(date);
 }
 
-/**
- * The heading for one tenant's deposit account.
- *
- * <p>
- * No back arrow. The app dropped in-screen back controls app-wide — the device
- * button is the way back, and here it is handled: this view is a state of the
- * deposit manager rather than a route of its own, so the handler closes the
- * account and returns to the picker. The tenant card below is the visible way
- * to change tenancy.
- */
-export function DepositAccountHeader({ canManage, tenantName }: { canManage: boolean; tenantName: string | null }) {
-  const { colors, fonts, type } = useTheme();
+export function DepositAccountHeader({
+  canManage,
+  tenantName,
+}: {
+  canManage: boolean;
+  tenantName: string | null;
+}) {
+  const { colors, fonts } = useTheme();
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.75}
-        numberOfLines={1}
-        style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 29, letterSpacing: -0.7, lineHeight: 38 }}
-      >
-        Deposit <Text style={{ color: colors.accent }}>account</Text>
-      </Text>
-      {/* HeaderNote, like every other screen's description: the accent rule and
-          the tracked italic, rather than plain body copy that happened to sit
-          under a heading.
-
-          Named, not "your tenant's" — the owner opened this account on purpose
-          and the name is the confirmation they landed on the right one, so it
-          carries the weight while the possessive stays in the sentence's own
-          voice. */}
-      <HeaderNote>
+    <ScreenHeader
+      badge={!canManage ? <ViewOnlyChip /> : null}
+      italicTail="account"
+      subtitle={
         <>
           View{" "}
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontStyle: "italic" }}>
-            {tenantName ?? "this tenant"}
-          </Text>
+          <FitText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontStyle: "italic" }}>
+            {cardName(tenantName ?? "this tenant")}
+          </FitText>
           ’s deposit balance, manage transactions and track the history.
         </>
-      </HeaderNote>
-      {!canManage ? <ViewOnlyChip /> : null}
-    </View>
+      }
+      title="Deposit"
+    />
   );
 }
 
@@ -124,12 +108,12 @@ export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => 
       {/* Name over reference, and nothing else in the column — so the pill can
           leave it entirely. */}
       <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
-        <Text
+        <FitText
           numberOfLines={1}
           style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 18, lineHeight: 25 }}
         >
-          {tenancy.tenantName ?? "Unnamed tenant"}
-        </Text>
+          {cardName(tenancy.tenantName ?? "Unnamed tenant")}
+        </FitText>
         <Text selectable style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 18 }]}>
           {tenancy.referenceCode}
         </Text>
@@ -214,8 +198,7 @@ export function DepositAccountDetail({
               Current deposit balance
             </Text>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              <Text
-                adjustsFontSizeToFit
+              <FitText
                 minimumFontScale={0.55}
                 numberOfLines={1}
                 selectable
@@ -227,7 +210,7 @@ export function DepositAccountDetail({
                     at 38pt that read as one glyph rather than two. */}
                 <Text style={{ letterSpacing: 3 }}>₹</Text>
                 {formatMoneyPaise(deposit.currentBalancePaise).replace("₹", "")}
-              </Text>
+              </FitText>
               <DepositBalanceArtwork />
             </View>
             {/* Account status is separate from the tenant's status above. */}
@@ -295,13 +278,6 @@ export function DepositAccountDetail({
         <DepositHistoryArtwork size={82} />
         <Text style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 16, lineHeight: 23, textAlign: "center" }}>
           {movements.length > 0 ? "No more transactions" : filter === "ALL" ? "No transactions yet" : "No matching transactions"}
-        </Text>
-        <Text style={[type.body, { color: colors.muted, fontSize: 12, lineHeight: 19, maxWidth: 280, textAlign: "center" }]}>
-          {filter !== "ALL" && movements.length === 0
-            ? "Try another filter to see this account’s transactions."
-            : settled
-              ? "This deposit account is settled. Its transaction history stays available here."
-              : "You’ll see new deposit transactions here once they’re added."}
         </Text>
       </View>
 

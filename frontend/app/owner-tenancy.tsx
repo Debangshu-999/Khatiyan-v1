@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { TenancyAgreementIcon, ExitPolicyIcon } from "@/components/tenancy-rule-icons";
@@ -46,19 +47,19 @@ import {
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
 } from "@/store/services/tenancy-api";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 
 import { useTheme } from "@/theme/use-theme";
-import { HeaderGradient } from "@/components/header-gradient";
 import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react-native";
+import { FitText } from "@/components/fit-text";
 
 const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
 const NO_PERSON_ILLUSTRATION = require("../assets/empty-states/No-Person_512x512.png");
 
 const TENANCY_PAGE_SIZE = 10;
-const TENANCY_HEADER_ILLUSTRATION = require("../assets/images/workspace/tenancy-header.png");
 
 export default function OwnerTenancyWorkspaceScreen() {
   const router = useGuardedRouter();
@@ -72,7 +73,7 @@ export default function OwnerTenancyWorkspaceScreen() {
   // "?open=upcoming-exits" arrives from the action centre, whose Upcoming exits
   // row is about the stays listed in this sheet — not the exit REQUESTS screen,
   // which is a different queue.
-  const { open: openParam } = useLocalSearchParams<{ open?: string }>();
+  const { open: openParam, ending: endingParam } = useLocalSearchParams<{ open?: string; ending?: string }>();
   const [upcomingOpen, setUpcomingOpen] = useState(openParam === "upcoming-exits");
   // Withdrawing a stay the tenant never accepted. Held here rather than in the
   // card so one dialog serves the whole list.
@@ -92,8 +93,16 @@ export default function OwnerTenancyWorkspaceScreen() {
   const [pastPage, setPastPage] = useState(0);
   const [searchDraft, setSearchDraft] = useState("");
   const [committedQuery, setCommittedQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StayStatusFilter>("ALL");
+  const [statusFilter, setStatusFilter] = useState<StayStatusFilter>(endingParam === "TODAY" ? "ENDS_TODAY" : "ALL");
   const [statusPickerOpen, setStatusPickerOpen] = useState(false);
+  // Action center opens the existing server-side Ends today filter, not an
+  // unfiltered page where the stay it counted can be buried on a later page.
+  useEffect(() => {
+    setStatusFilter(endingParam === "TODAY" ? "ENDS_TODAY" : "ALL");
+    setActivePage(0);
+    setSearchDraft("");
+    setCommittedQuery("");
+  }, [endingParam]);
   useEffect(() => { setActivePage(0); setPastPage(0); }, [selectedProperty?.id]);
   // Debounce the search box so each keystroke doesn't fire a request; reset both
   // tabs to the first page whenever the committed query changes.
@@ -215,7 +224,6 @@ export default function OwnerTenancyWorkspaceScreen() {
   return (
     <>
     <ScreenScrollView
-      background={<HeaderGradient />}
       safeAreaEdges={["top", "bottom"]}
       surface={colors.surface}
       onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
@@ -223,9 +231,6 @@ export default function OwnerTenancyWorkspaceScreen() {
       }}
       scrollEventThrottle={16}
     >
-      {/* Main module screen, so the standalone Back pill and no line header —
-          the inline arrow belongs to nested screens, which name their parent
-          in the eyebrow beside it. */}
       <ScreenHeader
         italicTail="control."
         subtitle={
@@ -233,7 +238,6 @@ export default function OwnerTenancyWorkspaceScreen() {
             ? `Tenancy workspace for ${selectedProperty.name}.`
             : "Select a property on Home first."
         }
-        artwork={TENANCY_HEADER_ILLUSTRATION}
         title="Tenancy"
       />
 
@@ -599,10 +603,7 @@ function TenancySnapshotTile({
         gap: spacing.xs,
         justifyContent: "center",
         padding: spacing.md,
-        shadowColor: colors.shadow,
-        shadowOffset: { height: 2, width: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
+        ...softShadow(colors.shadow, 2, 6),
       }}
     >
       {/* The billing and concern card's rail: a 44 box holding a 30 glyph in
@@ -618,10 +619,10 @@ function TenancySnapshotTile({
           {/* Sentence case at caption size, as on the billing tile. Tracked-out
               caps beside a 38pt glyph read as a second graphic rather than as
               the number's label. */}
-          <Text numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
+          <FitText numberOfLines={2} style={[type.caption, { color: colors.muted, fontSize: 13, lineHeight: 17 }]}>
             {label}
-          </Text>
-          <Text
+          </FitText>
+          <FitText
             numberOfLines={1}
             style={{
               color: colors.ink,
@@ -633,7 +634,7 @@ function TenancySnapshotTile({
             }}
           >
             {value}
-          </Text>
+          </FitText>
 
         </View>
       </View>
@@ -649,9 +650,9 @@ function TenancySnapshotTile({
           previous={delta.previous}
         />
       ) : hint ? (
-        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
+        <FitText numberOfLines={2} style={[type.description, { color: colors.muted }]}>
           {hint}
-        </Text>
+        </FitText>
       ) : null}
     </View>
   );
@@ -747,12 +748,12 @@ function TenancyToolBox({ badge, icon: Icon, label, onPress }: { badge?: number;
         </View>
       ) : null}
       <Icon color="#3F6ED8" size={36} strokeWidth={1.9} />
-      <Text
+      <FitText
         numberOfLines={2}
         style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
       >
         {label}
-      </Text>
+      </FitText>
     </AnimatedPressable>
   );
 }
@@ -779,16 +780,17 @@ type StayStatusFilter =
  * it (user, 2026-09-30): its status, plus the "Ends today" and "Ends soon"
  * chips, which come from the checkout date rather than the status. Both notice
  * kinds are one "On notice", as they are everywhere else. Ended stays are in
- * Tenancy history, so they aren't offered here.
+ * Tenancy history, so they aren't offered here. Booked stays aren't offered
+ * in this status picker either.
  */
 const STAY_STATUS_FILTER_OPTIONS: {
-  /** The chip the card shows, drawn in the picker. "Any status" has none and stays text. */
+  /** The chip the card shows, drawn in the picker. "All status" has none and stays text. */
   chip?: TenancyCardStatusChip;
   empty: string;
   label: string;
   value: StayStatusFilter;
 }[] = [
-  { empty: "", label: "Any status", value: "ALL" },
+  { empty: "", label: "All status", value: "ALL" },
   {
     chip: { key: "filter-active", kind: "tenancy", status: "ACTIVE" },
     empty: "No stay is active right now.",
@@ -824,12 +826,6 @@ const STAY_STATUS_FILTER_OPTIONS: {
     empty: "No stay is waiting on an agreement.",
     label: tenancyStatusLabel("PENDING_ACCEPTANCE"),
     value: "PENDING_ACCEPTANCE",
-  },
-  {
-    chip: { key: "filter-booked", kind: "tenancy", status: "SCHEDULED" },
-    empty: "No stay is booked to start later.",
-    label: tenancyStatusLabel("SCHEDULED"),
-    value: "SCHEDULED",
   },
 ];
 
@@ -872,32 +868,35 @@ function StayStatusFilterDialog({
               alignItems: "center",
               flexDirection: "row",
               gap: spacing.sm,
+              justifyContent: "space-between",
               paddingLeft: spacing.lg,
               paddingRight: spacing.md,
               paddingVertical: spacing.sm,
             }}
           >
-            <Text style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Tenancy status
-            </Text>
+            </ModalTitle>
             <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 
-          <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
             {STAY_STATUS_FILTER_OPTIONS.map((option) => {
               const Icon = option.value === "ALL" ? null : option.value === "ACTIVE" ? CheckCircle2 : option.value === "PENDING_EXIT" ? AlertTriangle : Clock3;
               return (
-              <PickerOptionRow
-                icon={Icon ? <Icon color={colors.inkSoft} size={18} strokeWidth={2.3} /> : undefined}
-                key={option.value}
-                label={option.label}
-                onPress={() => {
-                  onSelect(option.value);
-                  onClose();
-                }}
-                selected={option.value === value}
-              />
-            ); })}
+                <View key={option.value} style={{ width: option.value === "ALL" ? "100%" : "50%" }}>
+                  <PickerOptionRow
+                    icon={Icon ? <Icon color={colors.inkSoft} size={18} strokeWidth={2.3} /> : undefined}
+                    label={option.label}
+                    onPress={() => {
+                      onSelect(option.value);
+                      onClose();
+                    }}
+                    selected={option.value === value}
+                  />
+                </View>
+              );
+            })}
           </View>
         </View>
       </View>

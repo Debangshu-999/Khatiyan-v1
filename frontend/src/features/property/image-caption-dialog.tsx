@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useRef, useState } from "react";
 import {
@@ -109,9 +110,9 @@ export function ImageCaptionDialog({
             {/* The question is the title however many photos there are — it is
                 what the dialog is asking. Which photo you are on is a position,
                 and belongs with the dots that show it. */}
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, letterSpacing: -0.2 }}>
+            <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, letterSpacing: -0.2 }}>
               What is this photo of?
-            </Text>
+            </ModalTitle>
 
             <View style={{ height: PREVIEW_HEIGHT, width: pageWidth }}>
             <FlatList

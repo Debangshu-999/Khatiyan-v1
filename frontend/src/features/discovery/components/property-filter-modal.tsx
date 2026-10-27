@@ -1,3 +1,4 @@
+import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { PanResponder, ScrollView, Text, TextInput, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -182,7 +183,7 @@ export function PropertyFilterModal({
             }}
           >
             <View style={{ flex: 1, gap: 2 }}>
-              <Text
+              <ModalTitle
                 style={{
                   color: colors.ink,
                   fontFamily: fonts.display,
@@ -191,7 +192,7 @@ export function PropertyFilterModal({
                 }}
               >
                 Property filters
-              </Text>
+              </ModalTitle>
               <Text style={[type.modalDescription, { color: colors.muted }]}>
                 Refine listed PG and hostel profiles
               </Text>

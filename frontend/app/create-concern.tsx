@@ -24,6 +24,7 @@ import { EmptyState } from "@/components/empty-state";
 import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/starts-soon-bubble";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 const CONCERN_CATEGORY_OPTIONS = [
   { label: "Maintenance", subtitle: "Repairs, fixtures or property damage", value: "MAINTENANCE" },
@@ -401,9 +402,9 @@ function PhotoAttachmentSection({
                 style={{ backgroundColor: colors.neutralSoft, height: 72, width: "100%" }}
               />
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", padding: 6 }}>
-                <Text numberOfLines={1} style={[type.body, { color: colors.muted, flex: 1, fontSize: 10 }]}>
+                <FitText numberOfLines={1} style={[type.body, { color: colors.muted, flex: 1, fontSize: 10 }]}>
                   {photo.name}
-                </Text>
+                </FitText>
                 <AnimatedPressable
                   accessibilityLabel="Remove photo"
                   onPress={() => onRemovePhoto(photo.id)}
@@ -512,15 +513,15 @@ function CategoryPickerField({
       </View>
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
         <Text style={[type.caption, { color: colors.muted }]}>Selected category</Text>
-        <Text
+        <FitText
           numberOfLines={1}
           style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}
         >
           {selected.label}
-        </Text>
-        <Text numberOfLines={1} style={[type.caption, { color: colors.kicker }]}>
+        </FitText>
+        <FitText numberOfLines={1} style={[type.caption, { color: colors.kicker }]}>
           {selected.subtitle}
-        </Text>
+        </FitText>
       </View>
       <View
         style={{

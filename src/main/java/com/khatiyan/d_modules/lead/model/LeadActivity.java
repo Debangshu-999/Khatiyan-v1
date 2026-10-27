@@ -57,6 +57,10 @@ public class LeadActivity extends BaseEntity {
     @Column(name = "occurred_at", nullable = false, updatable = false)
     private Instant occurredAt;
 
+    /** The booking this entry is a step of. Null for everything that is not a booking's step. */
+    @Column(name = "booking_request_id", updatable = false)
+    private UUID bookingRequestId;
+
     private LeadActivity(
             UUID leadId, LeadActivityType type, UUID actorUserId, UUID subjectUserId, UUID enquiryId,
             String detail, Instant occurredAt) {
@@ -74,6 +78,18 @@ public class LeadActivity extends BaseEntity {
     public static LeadActivity bySystem(
             UUID leadId, LeadActivityType type, UUID subjectUserId, UUID enquiryId, String detail, Instant occurredAt) {
         return new LeadActivity(leadId, type, null, subjectUserId, enquiryId, detail, occurredAt);
+    }
+
+    /**
+     * A step of one of the lead's bookings. The booking it belongs to is kept
+     * with it, so a step heard of twice is written once.
+     */
+    public static LeadActivity ofBooking(
+            UUID leadId, LeadActivityType type, UUID bookingRequestId, UUID enquiryId, String detail,
+            Instant occurredAt) {
+        LeadActivity activity = new LeadActivity(leadId, type, null, null, enquiryId, detail, occurredAt);
+        activity.bookingRequestId = bookingRequestId;
+        return activity;
     }
 
     /** Something a person did. */

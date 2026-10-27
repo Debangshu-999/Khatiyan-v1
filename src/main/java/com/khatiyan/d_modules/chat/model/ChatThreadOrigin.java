@@ -19,5 +19,12 @@ public enum ChatThreadOrigin {
     ENQUIRY,
 
     /** Somebody started a one-to-one. Carries no origin id. */
-    PERSONAL
+    PERSONAL,
+
+    /**
+     * A booking made in the app (user, 2026-10-27). Carries the booking id.
+     * Private to the person who booked and whoever handles the booking now,
+     * and read-only once the booking ends.
+     */
+    BOOKING
 }

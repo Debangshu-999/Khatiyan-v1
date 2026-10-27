@@ -24,6 +24,7 @@ import com.khatiyan.d_modules.tenancy.model.TenancyStatus;
 import com.khatiyan.d_modules.tenancy.repository.TenancyExitRequestRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRepository;
 import com.khatiyan.d_modules.tenancy.repository.TenancyRoomChangeRequestRepository;
+import com.khatiyan.d_modules.tenancy.repository.BedHoldRepository;
 
 /**
  * Which full beds can be booked ahead, and whether a booking's bed has freed.
@@ -63,14 +64,16 @@ public class FutureVacancies {
     private final TenancyRepository tenancyRepository;
     private final TenancyRoomChangeRequestRepository roomChangeRequestRepository;
     private final TenancyExitRequestRepository exitRequestRepository;
+    private final BedHoldRepository bedHolds;
 
     public FutureVacancies(
             TenancyRepository tenancyRepository,
             TenancyRoomChangeRequestRepository roomChangeRequestRepository,
-            TenancyExitRequestRepository exitRequestRepository) {
+            TenancyExitRequestRepository exitRequestRepository, BedHoldRepository bedHolds) {
         this.tenancyRepository = tenancyRepository;
         this.roomChangeRequestRepository = roomChangeRequestRepository;
         this.exitRequestRepository = exitRequestRepository;
+        this.bedHolds = bedHolds;
     }
 
     /**
@@ -120,6 +123,7 @@ public class FutureVacancies {
     /** Every full-room bed in the property that can be booked ahead and is not booked yet. */
     public List<UpcomingVacancy> upcoming(UUID propertyId, LocalDate today) {
         List<UpcomingVacancy> vacancies = new ArrayList<>();
+        Set<UUID> sharedClaims = new HashSet<>(bedHolds.claimedDepartures(propertyId));
 
         List<TenancyRoomChangeRequest> moves = roomChangeRequestRepository
                 .findByPropertyIdAndStatus(propertyId, TenancyRoomChangeRequestStatus.APPROVED);
@@ -128,7 +132,8 @@ public class FutureVacancies {
         Set<UUID> movers = new HashSet<>();
         for (TenancyRoomChangeRequest move : moves) {
             movers.add(move.getTenancyId());
-            if (!bookedMoves.contains(move.getId()) && !move.getEffectiveTransferDate().isBefore(today)) {
+            if (!sharedClaims.contains(move.getTenancyId()) && !bookedMoves.contains(move.getId())
+                    && !move.getEffectiveTransferDate().isBefore(today)) {
                 vacancies.add(new UpcomingVacancy(move.getCurrentRoomId(), move.getEffectiveTransferDate(), Source.ROOM_CHANGE));
             }
         }
@@ -141,7 +146,7 @@ public class FutureVacancies {
         for (Tenancy stay : stays) {
             LocalDate from = departingStayAvailableFrom(
                     stay, exitsByStay.getOrDefault(stay.getId(), List.of()), movers.contains(stay.getId()), today);
-            if (from != null && !bookedStays.contains(stay.getId())) {
+            if (from != null && !sharedClaims.contains(stay.getId()) && !bookedStays.contains(stay.getId())) {
                 vacancies.add(new UpcomingVacancy(stay.getRoomId(), from, Source.EXIT));
             }
         }
@@ -158,7 +163,8 @@ public class FutureVacancies {
     public Claim claim(UUID propertyId, UUID roomId, LocalDate startDate, LocalDate today) {
         for (TenancyRoomChangeRequest request : roomChangeRequestRepository
                 .findBookableDeparturesForUpdate(propertyId, roomId, today, startDate)) {
-            if (!tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(request.getId())) {
+            if (bedHolds.activeOnDeparture(request.getTenancyId()).isEmpty()
+                    && !tenancyRepository.existsByFutureVacancySourceIdAndActiveTrue(request.getId())) {
                 return new Claim(request.getId(), null);
             }
         }
@@ -172,6 +178,7 @@ public class FutureVacancies {
             LocalDate from = departingStayAvailableFrom(
                     stay, exitRequestRepository.findByTenancyId(stay.getId()), hasApprovedMove, today);
             if (from != null && !from.isAfter(startDate)
+                    && bedHolds.activeOnDeparture(stay.getId()).isEmpty()
                     && !tenancyRepository.existsByFutureVacancyTenancyIdAndActiveTrue(stay.getId())) {
                 return new Claim(null, stay.getId());
             }

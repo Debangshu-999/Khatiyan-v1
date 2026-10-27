@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.khatiyan.d_modules.property.model.RoomConditioning;
@@ -25,4 +27,16 @@ public interface RoomMoldRepository extends JpaRepository<RoomMold, UUID> {
             UUID propertyId, RoomType sharingType, RoomConditioning conditioning, int bedCount);
 
     long countByPropertyIdAndActiveTrue(UUID propertyId);
+
+    /**
+     * Every photo of every type a property has, as (type id, url), each
+     * type's in the order its owner arranged them.
+     *
+     * <p>One query however many types there are. {@code images} is a lazy
+     * collection, so reading it type by type is one query for each. A retired
+     * type is included: a room cut from it is still that kind of room.
+     */
+    @Query("select m.id, i.url from RoomMold m join m.images i where m.propertyId = :propertyId"
+            + " order by m.id, index(i)")
+    List<Object[]> findImageUrlsByPropertyId(@Param("propertyId") UUID propertyId);
 }

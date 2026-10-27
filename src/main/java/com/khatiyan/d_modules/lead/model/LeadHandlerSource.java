@@ -10,5 +10,7 @@ package com.khatiyan.d_modules.lead.model;
 public enum LeadHandlerSource {
     FIRST_RESPONSE,
     SYSTEM,
-    OWNER
+    OWNER,
+    /** Whoever handles the lead's live booking. While one is live, they are the lead's handler. */
+    BOOKING
 }

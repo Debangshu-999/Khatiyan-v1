@@ -36,6 +36,22 @@ public record UpdatePropertyPaymentDetailsRequest(
      */
     Set<ManualPaymentMethod> acceptedMethods,
     /** Whether cash needs the tenant's code. Null keeps what is set. */
-    Boolean cashOtpRequired
+    Boolean cashOtpRequired,
+    /**
+     * Whether booking tokens are paid to the bill details (2026-10-11). Null
+     * keeps what is set, and the seven fields under it are then not read, so
+     * a client from before this still saves. False takes those seven as the
+     * token's own details, replaced whole like the bill's.
+     */
+    Boolean tokenUsesBillDetails,
+    @Size(max = 120) String tokenUpiVpa,
+    @Size(max = 120) String tokenPayeeName,
+    @Size(max = 10) String tokenUpiPhone,
+    @Size(max = 500) String tokenUpiQrImageUrl,
+    @Size(max = 34) String tokenBankAccountNumber,
+    @Size(max = 11)
+    @Pattern(regexp = "^[A-Z]{4}0[A-Z0-9]{6}$", message = "Enter a valid IFSC. It is 11 characters: 4 letters, a 0, then 6 letters or digits.")
+    String tokenBankIfsc,
+    @Size(max = 120) String tokenBankAccountHolder
 ) {
 }

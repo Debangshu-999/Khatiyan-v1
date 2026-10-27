@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AlarmClock,
   CalendarClock,
+  CalendarDays,
   CalendarX,
   CheckCheck,
   CheckCircle2,
@@ -18,14 +19,16 @@ import {
   ClockAlert,
   Hourglass,
   UserCheck,
+  UserPlus,
 } from "lucide-react-native";
-import type { ReactNode } from "react";
 
+import { AddRecordCard } from "@/components/add-record-card";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { FilteredQueue } from "@/components/filtered-queue";
+import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SelectionTabs } from "@/components/selection-tabs";
@@ -41,22 +44,29 @@ import { useVisitTabsSeen } from "@/features/visits/use-visit-tabs-seen";
 import { VisitStateChip, type VisitStatus } from "@/features/visits/visit-state-chip";
 import { MarkAttendanceSheet } from "@/features/visits/mark-attendance-sheet";
 import { useNow } from "@/features/visits/visit-clock";
+import { SlotStepper } from "@/features/visits/slot-stepper";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
 import {
   useGetPropertyVisitsQuery,
+  useGetPropertyVisitHistoryQuery,
   useMarkMissedCheckInMutation,
   type PropertyVisits,
   type VisitCard,
+  type VisitHistoryStatus,
 } from "@/store/services/enquiry-chat-api";
 import { useListMyPropertiesQuery } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 import { EnquiryCardSheet } from "./owner-enquiries";
+import { FitText } from "@/components/fit-text";
+import { cardName } from "@/lib/person-name";
 
-type Tab = "today" | "upcoming" | "missed";
+type Tab = "today" | "upcoming" | "missed" | "history";
 type Range = "ALL" | "WEEK" | "NEXT_WEEK" | "MONTH";
+/** How far back the Missed tab looks (user, 2026-10-18). Its own daily review: no screen of its own. */
+type MissedRange = "ALL" | "TODAY" | "WEEK" | "MONTH" | "LAST_30";
 
 const INDIA = "Asia/Kolkata";
 
@@ -66,6 +76,21 @@ const INDIA = "Asia/Kolkata";
  * changes over. Tightened twice at the user's asking (2026-10-04).
  */
 const EARLIER_CARD_GAP = spacing.md;
+
+const HISTORY_HEADINGS: Record<VisitHistoryStatus, string> = {
+  ALL: "All past visits",
+  CANCELLED: "Cancelled",
+  NO_VISIT: "No visit",
+  VISITED: "Visited",
+};
+
+const MISSED_HEADINGS: Record<MissedRange, string> = {
+  ALL: "All missed visits",
+  LAST_30: "Missed in the last 30 days",
+  MONTH: "Missed this month",
+  TODAY: "Missed today",
+  WEEK: "Missed this week",
+};
 
 const RANGE_HEADINGS: Record<Range, string> = {
   ALL: "All upcoming visits",
@@ -133,11 +158,45 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
   const [markMissed, markMissedState] = useMarkMissedCheckInMutation();
 
   const [tab, setTab] = useState<Tab>("today");
+  const [historyPage, setHistoryPage] = useState(0);
+  // All by default (user, 2026-10-19).
+  const [historyStatus, setHistoryStatus] = useState<VisitHistoryStatus>("ALL");
+  const historyQuery = useGetPropertyVisitHistoryQuery({ propertyId: property?.id ?? "", page: historyPage, status: historyStatus }, {
+    skip: !property || tab !== "history" || view !== "main",
+    refetchOnMountOrArgChange: true,
+  });
+  const history = historyQuery.currentData;
+  useEffect(() => setHistoryPage(0), [property?.id, historyStatus]);
   const [range, setRange] = useState<Range>("ALL");
+  // Today first: the Missed tab is where the day's no-shows are reviewed (user, 2026-10-18). With none
+  // today it opens on All instead, so missed visits from earlier days are never hidden (user, 2026-10-27).
+  const [chosenMissedRange, setMissedRange] = useState<MissedRange | null>(null);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [missedCheckInId, setMissedCheckInId] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  // The slot shown on Today. None chosen means the first one left, the slot on
+  // now or the next to come, so the screen always opens there (user, 2026-10-19).
+  const [slotKey, setSlotKey] = useState<string | null>(null);
+  // Where the empty slot's state goes: the space between the slot bar's foot and the top of the
+  // fixed strip holding Record external visit, measured on the window (user, 2026-10-19). Measured
+  // rather than stretched: a stretched list counted as too tall to fit and scrolled with nothing in
+  // it, and on a phone ran on behind the strip, so its middle sat low.
+  const rootRef = useRef<View>(null);
+  const stepperRef = useRef<View>(null);
+  const stripRef = useRef<View>(null);
+  const [emptySpace, setEmptySpace] = useState<{ height: number; top: number } | null>(null);
+  const measureEmptySpace = useCallback(() => {
+    rootRef.current?.measureInWindow((_rootX, rootY) => {
+      stepperRef.current?.measureInWindow((_x, stepperY, _width, stepperHeight) => {
+        stripRef.current?.measureInWindow((_stripX, stripY) => {
+          const top = stepperY + stepperHeight - rootY;
+          const height = stripY - stepperY - stepperHeight;
+          if (height > 0) setEmptySpace((last) => (last && last.top === top && last.height === height ? last : { height, top }));
+        });
+      });
+    });
+  }, []);
   // Upcoming and Missed count what has been added to them since the tab was
   // last looked at, not everything in them (user, 2026-10-04): a tab that has
   // been visited shows no count, until something new arrives. A tab is seen
@@ -152,13 +211,13 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
   useFocusEffect(
     useCallback(
       () => () => {
-        if (openTab.current !== "today") markSeen(openTab.current);
+        if (openTab.current === "upcoming" || openTab.current === "missed") markSeen(openTab.current);
       },
       [markSeen],
     ),
   );
   function changeTab(next: Tab) {
-    if (next !== tab && tab !== "today") markSeen(tab);
+    if (next !== tab && (tab === "upcoming" || tab === "missed")) markSeen(tab);
     setTab(next);
   }
 
@@ -191,7 +250,12 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
 
   const today = useMemo(() => visitsQuery.data?.today ?? [], [visitsQuery.data]);
   const upcoming = useMemo(() => visitsQuery.data?.upcoming ?? [], [visitsQuery.data]);
-  const missed = useMemo(() => visitsQuery.data?.missed ?? [], [visitsQuery.data]);
+  // Newest first, so today's missed visits lead the list (user, 2026-10-18).
+  const missed = useMemo(
+    () => [...(visitsQuery.data?.missed ?? [])].sort((left, right) =>
+      right.date.localeCompare(left.date) || right.slotStart.localeCompare(left.slotStart)),
+    [visitsQuery.data],
+  );
   const viewerIsOwner = visitsQuery.data?.viewerIsOwner ?? false;
 
   const upcomingBy = useMemo(() => {
@@ -204,6 +268,18 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
       WEEK: upcoming.filter((visit) => visit.date <= weekEnd),
     } satisfies Record<Range, VisitCard[]>;
   }, [upcoming]);
+
+  const missedBy = useMemo(() => {
+    const { last30Start, monthStart, today: todayIso, weekStart } = startsOfWeekAndMonth();
+    return {
+      LAST_30: missed.filter((visit) => visit.date >= last30Start),
+      MONTH: missed.filter((visit) => visit.date >= monthStart),
+      TODAY: missed.filter((visit) => visit.date === todayIso),
+      WEEK: missed.filter((visit) => visit.date >= weekStart),
+      ALL: missed,
+    } satisfies Record<MissedRange, VisitCard[]>;
+  }, [missed]);
+  const missedRange: MissedRange = chosenMissedRange ?? (missedBy.TODAY.length > 0 ? "TODAY" : "ALL");
 
   const marking = markingId ? today.find((visit) => visit.visitId === markingId) ?? null : null;
   const completing = completingId ? today.find((visit) => visit.visitId === completingId) ?? null : null;
@@ -226,16 +302,14 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     }
   }
 
-  const loading = visitsQuery.isLoading && !visitsQuery.data;
-  const list = tab === "today" ? today : tab === "upcoming" ? upcomingBy[range] : missed;
-  // A visit moved to another day still shows on Today, as Rescheduled. It is
-  // not one of today's visits any more, so the counts leave it out.
-  const comingToday = today.filter((visit) => visit.state !== "RESCHEDULED").length;
+  const loading = tab === "history"
+    ? historyQuery.isFetching && !history
+    : visitsQuery.isLoading && !visitsQuery.data;
+  const list = tab === "today" ? today : tab === "upcoming" ? upcomingBy[range] : tab === "history" ? history?.items ?? [] : missedBy[missedRange];
   // The tab's own badge counts only what the tab still lists: visits in a slot
   // that is on now or still to come. It used to be the day's total, so it went
   // on saying 1 with nothing left on the tab, for a visit already attended in
-  // a slot that had ended (user, 2026-10-04). The day's total stays in the
-  // "n visits today" pill.
+  // a slot that had ended (user, 2026-10-04).
   const stillListedToday = today.filter(
     (visit) => visit.state !== "RESCHEDULED" && now <= Date.parse(visit.slotEndsAt),
   ).length;
@@ -259,17 +333,18 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     today.filter((visit) => now <= Date.parse(visit.slotEndsAt)),
     (visitsQuery.data?.todaySlots ?? []).filter((slot) => now <= Date.parse(slot.endsAt)),
   );
+  const slotIndex = Math.max(0, slots.findIndex((slot) => slot.key === slotKey));
+  const shownSlot = slots[slotIndex] ?? null;
   // Always there on Today, with or without anything in it yet: it is where
   // a slot's visits will go when it ends (user, 2026-10-04).
   const showEarlierCard = view === "main" && tab === "today" && Boolean(property);
-  // How many of today's slots are over, the ones nobody came in included.
-  // Said beside the day's count once the first has ended (user, 2026-10-04).
-  const slotsToday = groupBySlot(today, visitsQuery.data?.todaySlots ?? []);
-  const slotsCompleted = slotsToday.filter((slot) => now > Date.parse(slot.slotEndsAt)).length;
-  // Every one of today's slots is over: the chip says so in words, not as a number (user, 2026-10-04).
-  const allSlotsCompleted = slotsToday.length > 0 && slotsCompleted === slotsToday.length;
 
-  const cards = loading ? (
+  const cards = tab === "history" && historyQuery.isError ? (
+    <View style={{ gap: spacing.sm }}>
+      <NoticeBar title="Unable to load history" message="Visitor history could not be loaded." tone="warning" />
+      <ActionButton label="Try again" onPress={() => void historyQuery.refetch()} variant="secondary" />
+    </View>
+  ) : loading ? (
     // The real cards, drawn as their own placeholder: every line of sample
     // data is a Ghost, so none of it reads as a real visitor's.
     <SkeletonBoundary>
@@ -290,7 +365,11 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
             ? upcoming.length > 0
               ? "Pick another range to see the rest."
               : "Visits booked from tomorrow onwards show here."
-            : "A visit nobody was checked in for shows here until its enquiry ends."
+            : tab === "history"
+              ? "Past visits and cancellations for this property are kept here."
+              : missed.length > 0
+                ? "Pick another range to see the rest."
+                : "A visit nobody was checked in for shows here until its enquiry ends."
       }
       // The Property screen's own Visiting Hours mark (user, 2026-10-04).
       artworkNode={<PropertyVisitsIcon size={64} />}
@@ -301,14 +380,25 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
             : "No visits today"
           : tab === "upcoming"
             ? "No upcoming visits"
-            : "No missed visits"
+            : tab === "history" ? "No visitor history yet" : "No missed visits"
       }
     />
-  ) : tab === "today" ? (
-    <View style={{ gap: spacing.lg }}>
-      {slots.map((slot) => (
-        <SlotSection key={slot.key} now={now} slot={slot}>
-          {slot.visits.length === 0 ? <EmptySlot /> : null}
+  ) : tab === "today" && shownSlot ? (
+    // One slot at a time, stepped left and right (user, 2026-10-19).
+    <View style={{ gap: spacing.md }}>
+      <View collapsable={false} onLayout={measureEmptySpace} ref={stepperRef}>
+      <SlotStepper
+        index={slotIndex}
+        ongoing={now >= Date.parse(shownSlot.slotStartsAt)}
+        onChange={(next) => setSlotKey(slots[next]?.key ?? null)}
+        slots={slots}
+        visitors={shownSlot.visits.filter((visit) => visit.state !== "RESCHEDULED").length}
+      />
+      </View>
+      {[shownSlot].map((slot) => (
+        // An empty slot draws nothing here: its empty state is laid over the screen, centred in the
+        // space measured between the slot bar and Record external visit (below).
+        <View key={slot.key} style={{ gap: spacing.sm }}>
           {slot.visits.map((visit) => (
             <VisitCardView
               currentUserId={currentUserId}
@@ -323,7 +413,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
               visit={visit}
             />
           ))}
-        </SlotSection>
+        </View>
       ))}
     </View>
   ) : (
@@ -440,16 +530,26 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     );
   }
 
+  // Record external visit above Earlier today (user, 2026-10-19), for the slot
+  // shown. The form starts on that slot and can pick another of the day's.
   const earlierCard = (
-    <EarlierTodayCard
-      count={earlier.length}
-      onPress={() => router.push("/owner-visits-earlier")}
-      pendingReview={pendingReview}
-    />
+    <View style={{ gap: spacing.sm }}>
+      <RecordExternalVisitCard
+        onPress={() => router.push(shownSlot
+          ? { params: { slot: shownSlot.key }, pathname: "/owner-external-visit" }
+          : "/owner-external-visit")}
+        slot={shownSlot}
+      />
+      <EarlierTodayCard
+        count={earlier.length}
+        onPress={() => router.push("/owner-visits-earlier")}
+        pendingReview={pendingReview}
+      />
+    </View>
   );
 
   return (
-    <>
+    <View collapsable={false} onLayout={measureEmptySpace} ref={rootRef} style={{ flex: 1 }}>
     <ScreenScrollView
       // The same gap under the space the list keeps for the card as under the
       // card itself (user, 2026-10-04): scrolled to the end, the list stops
@@ -458,15 +558,13 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
       safeAreaEdges={["top", "bottom"]}
     >
       <ScreenHeader
-        // "Visitor Management System", VMS on the Home tool. It was "Manage
-        // visits" (user, 2026-10-04).
-        italicTail="System."
         subtitle={
           property
             ? `Everyone coming to see ${property.name}, and who has arrived.`
             : "Select a property from Home first."
         }
-        title="Visitor Management"
+        italicTail="Management"
+        title="Visitor"
       />
 
       {!property && !propertiesQuery.isFetching ? (
@@ -482,12 +580,18 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
           <SelectionTabs<Tab>
             active={tab}
             bleed={spacing.lg}
+            compact
             distributed
+            gap={0}
+            // A little in from the edge, so the first and last tab's fill never touch the device's
+            // edge (user, 2026-10-19). With no gap the row's own inset is 0.
+            horizontalPadding={spacing.sm}
             onChange={changeTab}
             options={[
               { badge: stillListedToday, label: "Today", value: "today" },
               { badge: newUpcoming, label: "Upcoming", value: "upcoming" },
               { badge: newMissed, label: "Missed", value: "missed" },
+              { label: "History", value: "history" },
             ]}
           />
 
@@ -507,22 +611,51 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
             >
               {cards}
             </FilteredQueue>
-          ) : (
-            <View style={{ gap: spacing.md }}>
-              {loading ? null : (
-                <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-                  <CountPill
-                    count={tab === "today" ? comingToday : list.length}
-                    kind={tab === "missed" ? "missed" : undefined}
-                    noun={tab === "today" ? ["visit today", "visits today"] : ["visit", "visits"]}
-                  />
-                  {tab === "today" && slotsCompleted > 0 ? (
-                    <SlotsCompletedPill all={allSlotsCompleted} count={slotsCompleted} />
-                  ) : null}
-                </View>
-              )}
+          ) : tab === "missed" ? (
+            <FilteredQueue<MissedRange>
+              count={loading ? undefined : missedBy[missedRange].length}
+              heading={MISSED_HEADINGS[missedRange]}
+              headingNode={loading ? undefined : <CountPill count={missedBy[missedRange].length} kind="missed" noun={["visit", "visits"]} />}
+              onChange={setMissedRange}
+              options={[
+                { count: missedBy.ALL.length, label: "All", value: "ALL" },
+                { count: missedBy.TODAY.length, label: "Today", value: "TODAY" },
+                { count: missedBy.WEEK.length, label: "This week", value: "WEEK" },
+                { count: missedBy.MONTH.length, label: "This month", value: "MONTH" },
+                { count: missedBy.LAST_30.length, label: "Last 30 days", value: "LAST_30" },
+              ]}
+              value={missedRange}
+            >
               {cards}
-            </View>
+            </FilteredQueue>
+          ) : tab === "history" ? (
+            // A status filter, All first and by default (user, 2026-10-19). Counted on the server, so
+            // only the chosen one has a number.
+            <FilteredQueue<VisitHistoryStatus>
+              count={loading ? undefined : history?.totalElements ?? 0}
+              heading={HISTORY_HEADINGS[historyStatus]}
+              headingNode={loading ? undefined : <CountPill count={history?.totalElements ?? 0} noun={["visit", "visits"]} />}
+              onChange={setHistoryStatus}
+              options={[
+                { label: "All", value: "ALL" },
+                { label: "Visited", value: "VISITED" },
+                { label: "No visit", value: "NO_VISIT" },
+                { label: "Cancelled", value: "CANCELLED" },
+              ]}
+              value={historyStatus}
+            >
+              {cards}
+              {history && history.totalPages > 1 ? (
+                <PaginationBar
+                  {...history}
+                  onNext={() => setHistoryPage((page) => page + 1)}
+                  onPrevious={() => setHistoryPage((page) => Math.max(0, page - 1))}
+                />
+              ) : null}
+            </FilteredQueue>
+          ) : (
+            // Today carries no count: the slot bar says who is coming (user, 2026-10-19).
+            <View style={{ gap: spacing.md }}>{cards}</View>
           )}
         </View>
       ) : null}
@@ -548,7 +681,10 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
         the list passes under it. */}
     {showEarlierCard && !loading ? (
       <View
+        collapsable={false}
+        onLayout={measureEmptySpace}
         pointerEvents="box-none"
+        ref={stripRef}
         style={{
           backgroundColor: colors.background,
           bottom: 0,
@@ -563,7 +699,15 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
         {earlierCard}
       </View>
     ) : null}
-    </>
+    {tab === "today" && view === "main" && !loading && shownSlot && shownSlot.visits.length === 0 && emptySpace ? (
+      <View
+        pointerEvents="none"
+        style={{ height: emptySpace.height, justifyContent: "center", left: 0, position: "absolute", right: 0, top: emptySpace.top }}
+      >
+        <EmptySlot />
+      </View>
+    ) : null}
+    </View>
   );
 }
 
@@ -632,58 +776,105 @@ function VisitCardView({
   // They said "I'm on my way" (user, 2026-10-04).
   const runningLate = scheduled ? visit.runningLateAt : null;
   const missedTab = tab === "missed";
-  const hasStates = Boolean(missedTab || movedTo || checkedIn || handledBy || runningLate);
+  const hasStates = Boolean(missedTab || movedTo || runningLate || visit.external);
   const formPoints = visited ? visitFormPoints(visit) : [];
   // Missed cards carry nothing to press: a missed visit is the visitor's to move.
   const ownerMissedCheckIn = unmarked && viewerIsOwner && onMissedCheckIn;
-  const hasActions = !missedTab || Boolean(ownerMissedCheckIn);
+  const status = todayStatus(visit, now);
+  // Still to come today: no Upcoming chip, the day says it already, and View enquiry, its one
+  // action, beside the name instead of on a row of its own (user, 2026-10-19).
+  const upcomingToday = onToday && !visit.external && status.label === "Upcoming";
+  // An external visit has no enquiry to view and was recorded once it was over: nothing to press.
+  const hasActions = !visit.external && !upcomingToday && tab !== "history" && (!missedTab || Boolean(ownerMissedCheckIn));
 
   return (
     <Card style={{ gap: 0, overflow: "hidden", padding: 0 }}>
       <View style={{ gap: spacing.md, padding: spacing.lg }}>
-        {/* Who is coming, and their pass. Where the visit stands sits beside
-            the name on Today; on the other tabs the tab itself says it. */}
+        {/* Who is coming, and their pass, with where the visit stands on a grey
+            pill beside the name. */}
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
           <InitialsAvatar name={visit.prospectName} />
           <View style={{ flex: 1, gap: 2 }}>
-            <GhostText
-              ghostWidth="60%"
-              numberOfLines={1}
-              style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}
-            >
-              {visit.prospectName ?? "Visitor"}
-            </GhostText>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+              <GhostText
+                ghostWidth="60%"
+                numberOfLines={1}
+                style={[type.display, { color: colors.ink, flex: 1, fontSize: 18, lineHeight: 23 }]}
+              >
+                {cardName(visit.prospectName ?? "Visitor")}
+              </GhostText>
+              {/* Every card says where its visit stands, except an upcoming one on Today (user, 2026-10-19). */}
+              {(onToday && !upcomingToday) || tab === "upcoming" || tab === "history" ? <VisitStateChip pill {...status} /> : null}
+            </View>
             <GhostText ghostWidth="75%" style={[type.caption, { color: colors.muted }]}>
               {visit.referenceCode}
-              {when ? <Text style={{ color: colors.kicker }}>{"  ·  "}</Text> : null}
-              {when ?? ""}
             </GhostText>
+            {when ? (
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
+                <CalendarDays color={colors.muted} size={13} />
+                <GhostText ghostWidth="75%" style={[type.caption, { color: colors.muted, flex: 1 }]}>
+                  {when}
+                </GhostText>
+              </View>
+            ) : null}
           </View>
-          {onToday ? <VisitStateChip {...todayStatus(visit, now)} /> : null}
+          {upcomingToday ? (
+            <View>
+              <GhostBlock>
+                <ActionButton compact label="View enquiry" onPress={onViewEnquiry} variant="primaryQuiet" />
+              </GhostBlock>
+            </View>
+          ) : null}
         </View>
 
         {/* Each state in its own colour, as on the enquiry's card. */}
         {hasStates ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
             {missedTab ? (
-              <StateChip icon={CalendarX} label={`No visit ${daysAgo(visit.noVisitAt ?? visit.slotEndsAt)}`} tone="danger" />
+              // Dated from the visit's own slot, not from when the night sweep marked it (user, 2026-10-27):
+              // a visit missed on the 20th marked on the 27th read "No visit today".
+              <StateChip icon={CalendarX} label={`No visit ${daysAgo(visit.slotEndsAt)}`} tone="danger" />
             ) : null}
             {movedTo ? <StateChip icon={CalendarClock} label={`Moved to ${movedTo}`} tone="neutral" /> : null}
-            {checkedIn ? (
-              <StateChip
-                icon={CheckCircle2}
-                label={
-                  visit.checkInMethod === "OWNER"
-                    ? "Marked attended by the owner"
-                    : `Checked in ${clockTime(checkedIn)}, ${visit.late ? "late" : "on time"}`
-                }
-                tone={visit.late ? "warning" : "success"}
-              />
-            ) : null}
-            {handledBy ? <StateChip icon={UserCheck} label={`Visit handled by ${handledBy}`} tone="neutral" /> : null}
             {runningLate ? (
               <StateChip icon={Clock} label={`Running late, said ${clockTime(runningLate)}`} tone="danger" />
             ) : null}
+            {/* Recorded by the property, a walk-in with no account (user, 2026-10-19). */}
+            {visit.external ? <StateChip icon={UserPlus} label="External visit" tone="neutral" /> : null}
+          </View>
+        ) : null}
+
+        {/* Checked in and who handled it, side by side across the card, a label over each value with a rule
+            between (user, 2026-10-17), as the lead card's facts are. */}
+        {checkedIn ? (
+          <View style={{ flexDirection: "row" }}>
+            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
+                <CheckCircle2 color={visit.late ? colors.warningText : colors.successText} size={14} strokeWidth={2.2} />
+                {/* "Marked attended - by owner" on the one line (user, 2026-10-19). */}
+                <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+                  {visit.checkInMethod === "OWNER" ? "Marked attended" : "Checked in"}
+                  {visit.checkInMethod === "OWNER" ? <Text style={{ color: colors.successText, fontFamily: fonts.sansBold }}> - by owner</Text> : null}
+                </FitText>
+              </View>
+              {visit.checkInMethod === "OWNER" ? null : (
+                <FitText numberOfLines={1} style={[type.caption, { color: visit.late ? colors.warningText : colors.successText, fontFamily: fonts.sansBold }]}>
+                  {`${clockTime(checkedIn)}, ${visit.late ? "late" : "on time"}`}
+                </FitText>
+              )}
+            </View>
+            {handledBy ? <>
+              <View style={{ alignSelf: "stretch", backgroundColor: colors.border, marginHorizontal: spacing.md, width: 1 }} />
+              <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
+                  <UserCheck color={colors.muted} size={14} strokeWidth={2.2} />
+                  <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>Visit handled by</FitText>
+                </View>
+                <FitText numberOfLines={1} style={[type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>
+                  {handledBy === "you" ? "You" : handledBy}
+                </FitText>
+              </View>
+            </> : null}
           </View>
         ) : null}
 
@@ -820,6 +1011,12 @@ function visitFormPoints(visit: VisitCard) {
  * </ul>
  */
 function todayStatus(visit: VisitCard, now: number): VisitStatus {
+  if (visit.state === "CANCELLED") {
+    return { icon: CalendarX, label: "Cancelled", tone: "muted" };
+  }
+  if (visit.state === "MISSED") {
+    return { icon: CalendarX, label: "No visit", tone: "red" };
+  }
   if (visit.state === "RESCHEDULED") {
     return { icon: CalendarClock, label: "Rescheduled", tone: "muted" };
   }
@@ -848,18 +1045,12 @@ function todayStatus(visit: VisitCard, now: number): VisitStatus {
 }
 
 /**
- * A slot nobody has booked: the screen's own mark, small, and a line (user,
- * 2026-10-04). Roomy by default, so an empty slot stands clear of whatever
- * comes after it, the Earlier today card included.
+ * A slot nobody has booked: the other tabs' empty state, a size down (user,
+ * 2026-10-19). Compact, with no height of its own, so the space between the
+ * slot bar and Record external visit centres it.
  */
 function EmptySlot() {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ alignItems: "center", gap: spacing.xs, paddingVertical: spacing.xl }}>
-      <PropertyVisitsIcon size={36} />
-      <Text style={[type.caption, { color: colors.muted }]}>No visits in this slot</Text>
-    </View>
-  );
+  return <EmptyState artworkNode={<PropertyVisitsIcon size={48} />} compact title="No visits in this slot" />;
 }
 
 type Slot = { key: string; slotEnd: string; slotEndsAt: string; slotStart: string; slotStartsAt: string; visits: VisitCard[] };
@@ -899,86 +1090,6 @@ function groupBySlot(visits: VisitCard[], offered: PropertyVisits["todaySlots"])
     }
   }
   return [...slots.values()].sort((left, right) => left.slotStart.localeCompare(right.slotStart));
-}
-
-/**
- * One of today's slots: its heading on a grey band, and its visits.
- *
- * <p>Only slots still to come or on now are listed, the one on now first, so
- * the pill is Upcoming (pale yellow, brown text) or Ongoing (pale green, dark
- * green text), with no border and no dot, the size of a visit's chip. A slot
- * that has ended leaves the list, and its visits move to Earlier today (user,
- * 2026-10-04).
- */
-function SlotSection({ children, now, slot }: { children: ReactNode; now: number; slot: Slot }) {
-  const { colors, fonts, type } = useTheme();
-  const coming = slot.visits.filter((visit) => visit.state !== "RESCHEDULED").length;
-  const ongoing = now >= Date.parse(slot.slotStartsAt);
-  const pill = ongoing
-    ? { background: colors.successSoft, label: "Ongoing", text: colors.successText }
-    : { background: colors.warningSoft, label: "Upcoming", text: colors.warningText };
-
-  return (
-    <View style={{ gap: spacing.sm }}>
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.neutralSoft,
-          borderCurve: "continuous",
-          borderRadius: radii.card,
-          flexDirection: "row",
-          gap: spacing.sm,
-          paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
-        }}
-      >
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
-            {formatSlotRange(slot.slotStart, slot.slotEnd)}
-          </Text>
-          <Text style={[type.caption, { color: colors.muted }]}>
-            {coming === 0 ? "No visitors" : coming === 1 ? "1 visitor" : `${coming} visitors`}
-          </Text>
-        </View>
-        {/* No border, and the visit chips' own size (user, 2026-10-04). */}
-        <View
-          style={{
-            backgroundColor: pill.background,
-            borderRadius: 999,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 3,
-          }}
-        >
-          <Text style={{ color: pill.text, fontFamily: fonts.sansBold, fontSize: 12.5 }}>{pill.label}</Text>
-        </View>
-      </View>
-      {children}
-    </View>
-  );
-}
-
-/**
- * "2 slots have completed", beside the day's count on Today (user,
- * 2026-10-04), and "All slots have completed" once every one of the day's
- * slots is over. Grey, in the count pill's own shape: it is about what is over.
- */
-function SlotsCompletedPill({ all, count }: { all: boolean; count: number }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View
-      style={{
-        alignSelf: "flex-start",
-        backgroundColor: colors.neutralSoft,
-        borderRadius: 999,
-        paddingHorizontal: spacing.md,
-        paddingVertical: 5,
-      }}
-    >
-      <Text style={{ color: colors.neutralText, fontFamily: fonts.sansBold, fontSize: 12 }}>
-        {all ? "All slots have completed" : count === 1 ? "1 slot has completed" : `${count} slots have completed`}
-      </Text>
-    </View>
-  );
 }
 
 /**
@@ -1039,6 +1150,23 @@ function EarlierTodayCard({
   );
 }
 
+/** Record external visit, over Earlier today (user, 2026-10-19), naming the slot it records into. */
+function RecordExternalVisitCard({ onPress, slot }: { onPress: () => void; slot: Slot | null }) {
+  return (
+    <AddRecordCard
+      caption={slot ? formatSlotDash(slot.slotStart, slot.slotEnd) : null}
+      icon={UserPlus}
+      label="Record external visit"
+      onPress={onPress}
+    />
+  );
+}
+
+/** "9:00 am - 11:00 am", the slot bar's way of writing a slot. */
+function formatSlotDash(start: string, end: string) {
+  return formatSlotRange(start, end).replace(" to ", " - ");
+}
+
 /** One bulleted line on the Earlier today card. */
 function EarlierPoint({ color, text }: { color: string; text: string }) {
   const { type } = useTheme();
@@ -1070,10 +1198,30 @@ function endsOfWeekAndMonth() {
   return { monthEnd: iso(monthEnd), nextWeekEnd: iso(nextWeekEnd), weekEnd: iso(weekEnd) };
 }
 
+/** Today, this week's Monday, the 1st of this month and 29 days ago, in India, as ISO dates. */
+function startsOfWeekAndMonth() {
+  const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: INDIA }).format(new Date());
+  const [year, month, day] = todayIso.split("-").map(Number);
+  // Built from parts, in UTC, only to do calendar arithmetic on the date.
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekStart = new Date(date);
+  weekStart.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  const last30Start = new Date(date);
+  last30Start.setUTCDate(date.getUTCDate() - 29);
+  const iso = (value: Date) => value.toISOString().slice(0, 10);
+  return {
+    last30Start: iso(last30Start),
+    monthStart: iso(new Date(Date.UTC(year, month - 1, 1))),
+    today: todayIso,
+    weekStart: iso(weekStart),
+  };
+}
+
 function noop() {}
 
 /** Sample cards for the loading state. Never shown as text: every leaf is a Ghost. */
 const SAMPLE: VisitCard[] = ["sample-1", "sample-2"].map((visitId) => ({
+  external: false,
   checkInMethod: null,
   checkedInAt: null,
   checkedInByName: null,

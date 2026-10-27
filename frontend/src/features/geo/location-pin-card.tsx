@@ -4,6 +4,7 @@ import { ChevronRight, MapPin, MapPinCheck } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { FitText } from "@/components/fit-text";
 
 /** "Madhapur, Hyderabad · 500081" from the form's own fields, or null. */
 export function addressSummaryLine(area: string, city: string, pincode: string): string | null {
@@ -71,21 +72,21 @@ export function LocationPinCard({
       <View style={{ flex: 1, gap: 2 }}>
         {pinned ? (
           <>
-            <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={2}>
+            <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={2}>
               {addressSummary || "Location set"}
-            </Text>
-            <Text style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+            </FitText>
+            <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
               Tap to adjust
-            </Text>
+            </FitText>
           </>
         ) : (
           <>
             <Text style={[type.bodyStrong, { color: colors.ink }]}>
               Set location on map
             </Text>
-            <Text style={[type.description, { color: colors.muted }]} numberOfLines={2}>
+            <FitText style={[type.description, { color: colors.muted }]} numberOfLines={2}>
               Search your area or drop a pin — the address fills in automatically.
-            </Text>
+            </FitText>
           </>
         )}
       </View>

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Children, Fragment, cloneElement, isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  Animated,
   Dimensions,
   Keyboard,
   Platform,
@@ -9,11 +10,14 @@ import {
   TextInput,
   View,
   type ScrollViewProps,
+  type ViewStyle,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets, type Edge } from "react-native-safe-area-context";
+import { useSafeAreaInsets, type Edge } from "react-native-safe-area-context";
 import { useSegments } from "expo-router";
 
 import { AppBackground } from "@/components/app-background";
+import { contentFitsWithoutScroll, getHeaderScrollMinHeight } from "@/components/header-scroll-layout";
+import { ScreenHeader, ScreenHeaderScrollContext } from "@/components/screen-header";
 import { API_TAGS, api } from "@/store/api";
 import { useAppDispatch } from "@/store/hooks";
 import { fetchCurrentLocation } from "@/store/slices/location-slice";
@@ -29,7 +33,7 @@ type ScreenScrollViewProps = ScrollViewProps & {
    *
    * <p>For screens that are a surface rather than a page — chat, where bubbles
    * need plain ground behind them. It has to be a prop rather than a background
-   * node because the safe-area strips are painted by the SafeAreaView itself: an
+   * node because the safe-area strips are painted by the outer screen itself: an
    * absolutely positioned child sits inside the padding box and leaves the inset
    * at the top and bottom showing the page colour.
    */
@@ -44,6 +48,19 @@ type ScreenScrollViewProps = ScrollViewProps & {
   // True locks scrolling while the content fits the viewport, re-enabling it
   // automatically when it overflows (small/zoomed displays, keyboard open).
   scrollOnlyWhenNeeded?: boolean;
+  /**
+   * On for every screen (user, 2026-10-17: "For all screens that do not have
+   * enough data to enable scrolling there should be no scroll ... app wide").
+   * First asked for a list with nothing in it (2026-10-11).
+   *
+   * <p>A page with a collapsing header used to be given room to scroll that
+   * header away, so even one that fits moved under the thumb. Now no such room
+   * is kept, and scrolling is locked for as long as what is on the page fits
+   * the screen. A page too tall for the screen still scrolls, and so does any
+   * page while the keyboard is up, so nothing is ever out of reach. False
+   * keeps the old room, for a screen that needs it.
+   */
+  fitWithoutScroll?: boolean;
   safeAreaEdges?: Edge[];
 };
 
@@ -54,17 +71,22 @@ export function ScreenScrollView({
   centerContent = false,
   contentContainerStyle,
   onRefresh,
+  onLayout,
+  onContentSizeChange,
   onScroll,
   refreshable = true,
   refreshOffset,
   scrollOnlyWhenNeeded = false,
+  fitWithoutScroll = true,
   safeAreaEdges,
+  stickyHeaderIndices,
   style,
   ...props
 }: ScreenScrollViewProps) {
   const { colors } = useTheme();
   const dispatch = useAppDispatch();
   const [refreshing, setRefreshing] = useState(false);
+  const headerScrollY = useRef(new Animated.Value(0)).current;
   const [viewportHeight, setViewportHeight] = useState(0);
   const insets = useSafeAreaInsets();
 
@@ -130,8 +152,22 @@ export function ScreenScrollView({
     };
   }, [insets.bottom]);
   const [contentHeight, setContentHeight] = useState(0);
-  const scrollEnabled = !scrollOnlyWhenNeeded || viewportHeight === 0 || contentHeight > viewportHeight + 1;
+  /**
+   * Where the page's last item ends, from a zero-height marker after it
+   * (2026-10-18). Unlike the content height it is not raised by the floor
+   * below, so it can say whether the page itself fits.
+   */
+  const [naturalBottom, setNaturalBottom] = useState(0);
   const resolvedSafeAreaEdges: Edge[] = safeAreaEdges ?? (Platform.OS === "web" ? [] : ["top", "bottom"]);
+  // Apply the already-known insets in the initial React layout. A native
+  // SafeAreaView can apply its padding a frame after the entering screen or
+  // its skeleton, making the title drop out of the status bar on every open.
+  const safeAreaPadding = {
+    paddingTop: resolvedSafeAreaEdges.includes("top") ? insets.top : 0,
+    paddingBottom: resolvedSafeAreaEdges.includes("bottom") ? insets.bottom : 0,
+    paddingLeft: resolvedSafeAreaEdges.includes("left") ? insets.left : 0,
+    paddingRight: resolvedSafeAreaEdges.includes("right") ? insets.right : 0,
+  };
   // Every screen gets the shared ambient gradient unless it supplies its own
   // (e.g. the auth hero). Foreground content scrolls over a transparent layer.
   const resolvedBackground = background ?? (surface ? null : <AppBackground />);
@@ -143,9 +179,40 @@ export function ScreenScrollView({
   const bottomPadding = inTabs ? 96 : spacing.xxl;
   // Whatever padding actually applies once the caller's style is merged — the
   // keyboard inset is added on top of that rather than replacing it.
-  const flattenedContentStyle = StyleSheet.flatten(contentContainerStyle) as { paddingBottom?: number } | undefined;
+  const flattenedContentStyle = StyleSheet.flatten(contentContainerStyle) as ViewStyle | undefined;
   const callerPaddingBottom =
     typeof flattenedContentStyle?.paddingBottom === "number" ? flattenedContentStyle.paddingBottom : bottomPadding;
+  const renderedChildren = flattenScreenChildren(children);
+  const detectedHeaderIndex = renderedChildren.findIndex(isScreenHeaderElement);
+  const resolvedStickyHeaderIndices = stickyHeaderIndices ?? (detectedHeaderIndex >= 0 ? [detectedHeaderIndex] : undefined);
+  const stickyScreenHeader = detectedHeaderIndex >= 0 && Boolean(resolvedStickyHeaderIndices?.includes(detectedHeaderIndex));
+  const callerMinHeight = flattenedContentStyle?.minHeight;
+  // A page that is to sit still keeps no room for its header to scroll away into.
+  // Never while the keyboard is up: it covers part of the screen, and the field being typed in must stay reachable.
+  const fits = fitWithoutScroll && keyboardInset === 0
+    && (stickyScreenHeader
+      ? viewportHeight > 0 && naturalBottom > 0 && naturalBottom <= viewportHeight + 1
+      : contentFitsWithoutScroll(contentHeight, callerPaddingBottom, viewportHeight));
+  const scrollEnabled = fitWithoutScroll
+    ? !fits
+    : !scrollOnlyWhenNeeded || viewportHeight === 0 || contentHeight > viewportHeight + 1;
+  // Locked while scrolled down, the page would stay where the thumb left it. It goes back to its top.
+  useEffect(() => {
+    if (fits) {
+      scrollRef.current?.scrollTo({ animated: false, y: 0 });
+      headerScrollY.setValue(0);
+    }
+  }, [fits, headerScrollY]);
+  // Any page that scrolls gets the floor, so its header always collapses the
+  // whole way (user, 2026-10-18). Withheld from pages that fit since
+  // fitWithoutScroll became the default (2026-10-17), a page only a little
+  // taller than the screen ran out of scroll halfway through, and its
+  // description stayed on screen half faded.
+  const resolvedMinHeight = stickyScreenHeader && !fits
+    ? getHeaderScrollMinHeight(viewportHeight, typeof callerMinHeight === "number" ? callerMinHeight :
+        typeof callerMinHeight === "string" && callerMinHeight.endsWith("%")
+          ? viewportHeight * parseFloat(callerMinHeight) / 100 : 0)
+    : undefined;
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -168,7 +235,10 @@ export function ScreenScrollView({
   }
 
   return (
-    <SafeAreaView edges={resolvedSafeAreaEdges} style={{ backgroundColor: surface ?? colors.background, flex: 1 }}>
+    <View style={{ backgroundColor: surface ?? colors.background, flex: 1, ...safeAreaPadding }}>
+      {/* Clip at the safe-content boundary, not the full window: a native
+          sticky header or overscroll must never paint into the status bar. */}
+      <View style={{ flex: 1, overflow: "hidden" }}>
       <View
         pointerEvents="none"
         style={{
@@ -181,66 +251,124 @@ export function ScreenScrollView({
       >
         {resolvedBackground}
       </View>
-      <ScrollView
-        ref={scrollRef}
-        showsVerticalScrollIndicator={false}
+      <ScreenHeaderScrollContext.Provider
+        value={{ scrollY: headerScrollY, sticky: stickyScreenHeader, surface: surface ?? colors.background }}
+      >
+        <ScrollView
+          ref={scrollRef}
+          showsVerticalScrollIndicator={false}
+          stickyHeaderIndices={resolvedStickyHeaderIndices}
         // Pulled out of the prop spread and called through, rather than left to
         // `{...props}` — which lands LAST, so a caller passing onScroll used to
         // replace this handler outright and silently stop the offset tracking
         // that pull-to-refresh depends on.
-        onScroll={(event) => {
-          scrollOffset.current = event.nativeEvent.contentOffset.y;
-          onScroll?.(event);
-        }}
-        scrollEventThrottle={16}
-        automaticallyAdjustKeyboardInsets
-        contentInsetAdjustmentBehavior="never"
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        onContentSizeChange={scrollOnlyWhenNeeded ? (_width, height) => setContentHeight(height) : undefined}
-        onLayout={scrollOnlyWhenNeeded ? (event) => setViewportHeight(event.nativeEvent.layout.height) : undefined}
-        scrollEnabled={scrollEnabled}
-        refreshControl={
-          refreshable ? (
-            <RefreshControl
-              colors={[colors.primary]}
-              progressViewOffset={refreshOffset}
-              onRefresh={handleRefresh}
-              progressBackgroundColor={colors.surface}
-              refreshing={refreshing}
-              tintColor={colors.primary}
-            />
-          ) : undefined
-        }
-        style={[{ backgroundColor: "transparent", flex: 1 }, style]}
-        contentContainerStyle={[
-          {
-            flexGrow: centerContent ? 1 : undefined,
-            gap: spacing.lg,
-            justifyContent: centerContent ? "center" : undefined,
-            paddingBottom: bottomPadding,
-            paddingHorizontal: spacing.lg,
-            // The app's header gap, in one place. Screens used to override this
-            // to 0 and sit their title against the status bar, because a back
-            // arrow sat above it and took the space. With the arrows gone the
-            // title leads every screen, and it wants a few pixels of air rather
-            // than the lg the default carried for a header that no longer
-            // exists. Screens needing more say so themselves.
-            paddingTop: spacing.sm,
-          },
-          contentContainerStyle,
+          onScroll={(event) => {
+            const nextOffset = event.nativeEvent.contentOffset.y;
+            scrollOffset.current = nextOffset;
+            if (stickyScreenHeader) {
+              headerScrollY.setValue(nextOffset);
+            }
+            onScroll?.(event);
+          }}
+          scrollEventThrottle={16}
+          automaticallyAdjustKeyboardInsets
+          contentInsetAdjustmentBehavior="never"
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={(width, height) => {
+            if (scrollOnlyWhenNeeded || fitWithoutScroll) setContentHeight(height);
+            onContentSizeChange?.(width, height);
+          }}
+          onLayout={(event) => {
+            if (stickyScreenHeader || scrollOnlyWhenNeeded || fitWithoutScroll) setViewportHeight(event.nativeEvent.layout.height);
+            onLayout?.(event);
+          }}
+          scrollEnabled={scrollEnabled}
+          refreshControl={
+            refreshable ? (
+              <RefreshControl
+                colors={[colors.primary]}
+                progressViewOffset={refreshOffset}
+                onRefresh={handleRefresh}
+                progressBackgroundColor={colors.surface}
+                refreshing={refreshing}
+                tintColor={colors.primary}
+              />
+            ) : undefined
+          }
+          style={[{ backgroundColor: "transparent", flex: 1 }, style]}
+          contentContainerStyle={[
+            {
+              flexGrow: centerContent ? 1 : undefined,
+              gap: spacing.lg,
+              justifyContent: centerContent ? "center" : undefined,
+              paddingBottom: bottomPadding,
+              paddingHorizontal: spacing.lg,
+            // Titles lead the screen directly below the safe area.
+              paddingTop: spacing.sm,
+            },
+            contentContainerStyle,
           // LAST, so it cannot be overridden. The inset used to live in the
           // default object above, where any caller passing its own
           // paddingBottom silently wiped it — which is why the auth screen kept
           // the keyboard-over-input bug after every other screen was fixed: it
           // is the one screen that sets paddingBottom: 0, because its sheet owns
           // its own padding.
-          { paddingBottom: callerPaddingBottom + keyboardInset },
-        ]}
-        {...props}
-      >
-      {children}
-      </ScrollView>
-    </SafeAreaView>
+            { paddingBottom: callerPaddingBottom + keyboardInset },
+            // The description/title shrink in layout, not just visually. This
+            // floor prevents that shrink from clamping scrolling halfway
+            // through the transition. Long pages keep their natural height;
+            // screens without a sticky header are left unchanged.
+            resolvedMinHeight !== undefined ? { minHeight: resolvedMinHeight } : undefined,
+          ]}
+          {...props}
+        >
+          {renderedChildren}
+          {stickyScreenHeader && fitWithoutScroll ? (
+            <View
+              key="screen/natural-bottom"
+              onLayout={(event) => {
+                // Read with the header open only: its description shrinks the
+                // page as it collapses, and a fit decided mid-collapse would
+                // lock the page and jump it back to the top.
+                if (scrollOffset.current <= 0) setNaturalBottom(event.nativeEvent.layout.y);
+              }}
+              pointerEvents="none"
+              // Cancels the gap the content container puts before it, so it
+              // adds nothing to the page's height.
+              style={{ height: 0, marginTop: -(typeof flattenedContentStyle?.gap === "number" ? flattenedContentStyle.gap : spacing.lg) }}
+            />
+          ) : null}
+        </ScrollView>
+      </ScreenHeaderScrollContext.Provider>
+      </View>
+    </View>
   );
+}
+
+function flattenScreenChildren(children: ReactNode, parentKey = "screen"): ReactNode[] {
+  const flattened: ReactNode[] = [];
+  Children.toArray(children).forEach((child, index) => {
+    const childKey = `${parentKey}/${isValidElement(child) ? String(child.key ?? index) : index}`;
+    if (isValidElement<{ children?: ReactNode }>(child) && child.type === Fragment) {
+      flattened.push(...flattenScreenChildren(child.props.children, childKey));
+      return;
+    }
+    flattened.push(isValidElement(child) ? cloneElement(child, { key: childKey }) : child);
+  });
+  return flattened;
+}
+
+function isScreenHeaderElement(child: ReactNode) {
+  if (!isValidElement(child)) {
+    return false;
+  }
+  if (child.type === ScreenHeader) {
+    return true;
+  }
+  if (typeof child.type === "function") {
+    const component = child.type as { displayName?: string; name?: string };
+    return (component.displayName ?? component.name ?? "").endsWith("Header");
+  }
+  return false;
 }
