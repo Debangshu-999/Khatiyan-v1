@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Paperclip } from "lucide-react-native";
@@ -12,11 +13,11 @@ const BODY_PREVIEW_HEIGHT = 66;
 /**
  * The title / clipped body / attachment line shared by every notice card.
  *
- * <p>The body is clipped to a fixed height rather than a line count, so every
- * card in a list is the same size whatever it says. The gradient fades the last
- * line into the card instead of cutting it mid-stroke — a hard crop reads as a
- * rendering fault, a fade reads as "there is more", which is what the tap is
- * for.
+ * <p>The body takes the height it needs, up to three lines (user, 2026-10-28:
+ * a one-line notice sat above two lines of white space). Past that it is
+ * clipped, and only then does the gradient fade the last line into the card
+ * instead of cutting it mid-stroke: a fade reads as "there is more", which is
+ * what the tap is for.
  *
  * <p>`surface` must match the card's own background or the fade ends in a band
  * of the wrong colour. Pass the tone the card was built with.
@@ -36,6 +37,7 @@ export function NoticeCardBody({
 }) {
   const { colors, type } = useTheme();
   const fadeTo = surface ?? colors.surface;
+  const [overflows, setOverflows] = useState(false);
 
   const content = (
     <>
@@ -43,13 +45,20 @@ export function NoticeCardBody({
         {title}
       </FitText>
 
-      <View style={{ height: BODY_PREVIEW_HEIGHT, overflow: "hidden" }}>
-        <Text style={[type.description, { color: colors.muted }]}>{body}</Text>
-        <LinearGradient
-          colors={["transparent", fadeTo]}
-          pointerEvents="none"
-          style={{ bottom: 0, height: 28, left: 0, position: "absolute", right: 0 }}
-        />
+      <View style={{ maxHeight: BODY_PREVIEW_HEIGHT, overflow: "hidden" }}>
+        <Text
+          onLayout={(event) => setOverflows(event.nativeEvent.layout.height > BODY_PREVIEW_HEIGHT + 1)}
+          style={[type.description, { color: colors.muted }]}
+        >
+          {body}
+        </Text>
+        {overflows ? (
+          <LinearGradient
+            colors={["transparent", fadeTo]}
+            pointerEvents="none"
+            style={{ bottom: 0, height: 28, left: 0, position: "absolute", right: 0 }}
+          />
+        ) : null}
       </View>
 
       <AttachmentNote count={attachmentCount} />

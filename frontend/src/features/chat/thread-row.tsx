@@ -216,7 +216,9 @@ function Preview({ thread }: { thread: ChatThread }) {
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
       {deleted || attachment ? <Icon color={colors.muted} size={13} strokeWidth={2.2} /> : null}
+      {/* A preview is cut, never shrunk: the message runs on by nature (user, 2026-10-28). */}
       <GhostText
+        fit={false}
         ghostWidth={ghostWidthFor(thread.lastMessagePreview, 50, 88)}
         numberOfLines={1}
         style={{

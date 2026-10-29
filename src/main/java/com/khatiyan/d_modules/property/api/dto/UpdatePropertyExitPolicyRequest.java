@@ -30,10 +30,52 @@ public record UpdatePropertyExitPolicyRequest(
          * <p>Null CLEARS, like every other list here — a client that omits the
          * field cannot silently keep a policy the owner meant to empty.
          */
-        Set<DeductionCategory> permittedDeductions) {
+        Set<DeductionCategory> permittedDeductions,
 
+        /** What D1, D2 and D3 mean. Null keeps the current wording (2026-10-29). */
+        @Valid DamageLevelDescriptions damageLevels) {
+
+    /**
+     * An item and its price at each damage level. A client that still sends
+     * one flat {@code chargePaise} gets it at every level.
+     */
     public record DamageChargeInput(
             @NotBlank @Size(max = 80) String name,
-            @NotNull @PositiveOrZero Long chargePaise) {
+            @PositiveOrZero Long chargePaise,
+            @PositiveOrZero Long d1Paise,
+            @PositiveOrZero Long d2Paise,
+            @PositiveOrZero Long d3Paise,
+            /** Room, Amenities or Bathroom. Null is Room. */
+            com.khatiyan.d_modules.property.model.DamageCategory category) {
+
+        public DamageChargeInput(String name, Long chargePaise) {
+            this(name, chargePaise, null, null, null, null);
+        }
+
+        /** No level sent but one flat amount: the old flat charge, at every level. */
+        private boolean flat() {
+            return chargePaise != null && d1Paise == null && d2Paise == null && d3Paise == null;
+        }
+
+        /** Null when the item is not priced yet. */
+        public Long d1() {
+            return flat() ? chargePaise : d1Paise;
+        }
+
+        /** Null when the item has no D2. */
+        public Long d2() {
+            return flat() ? chargePaise : d2Paise;
+        }
+
+        /** Null when the item has no D3. */
+        public Long d3() {
+            return flat() ? chargePaise : d3Paise;
+        }
+    }
+
+    public record DamageLevelDescriptions(
+            @Size(max = 120) String d1,
+            @Size(max = 120) String d2,
+            @Size(max = 120) String d3) {
     }
 }

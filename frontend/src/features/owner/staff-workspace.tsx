@@ -182,9 +182,11 @@ function StaffGroupCard({
             }}
           >
             <Plus color={colors.primary} size={15} strokeWidth={2.1} />
-            <FitText numberOfLines={1} style={[type.caption, { color: colors.primary, fontSize: 12, fontWeight: "700" }]}>
+            {/* Plain text: the button sizes to its label, so a shrink-to-fit label
+                measured itself into nothing and showed only "Add" (2026-10-28). */}
+            <Text numberOfLines={1} style={[type.caption, { color: colors.primary, fontSize: 12, fontWeight: "700" }]}>
               {actionLabel}
-            </FitText>
+            </Text>
           </AnimatedPressable>
         ) : null}
       </View>

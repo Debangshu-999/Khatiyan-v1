@@ -17,5 +17,11 @@ public enum AttestationKind {
     TENANCY_AGREEMENT_ACCEPTANCE,
 
     /** An owner or manager declaring they checked a tenant's government photo ID. */
-    TENANT_ID_DECLARATION
+    TENANT_ID_DECLARATION,
+
+    /**
+     * An owner or manager declaring an existing tenant's identity was verified
+     * before Khatiyan (existing-tenant onboarding, 2026-10-28). V6243.
+     */
+    EXISTING_TENANT_VERIFIED_DECLARATION
 }

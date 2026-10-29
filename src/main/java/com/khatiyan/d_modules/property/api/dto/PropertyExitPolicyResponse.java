@@ -3,6 +3,7 @@ package com.khatiyan.d_modules.property.api.dto;
 import java.util.Arrays;
 import java.util.List;
 
+import com.khatiyan.d_modules.property.model.DamageLevel;
 import com.khatiyan.d_modules.property.model.DeductionCategory;
 import com.khatiyan.d_modules.property.model.Property;
 
@@ -13,6 +14,8 @@ import com.khatiyan.d_modules.property.model.Property;
  */
 public record PropertyExitPolicyResponse(
         List<DamageChargeView> damageCharges,
+        /** NA, D1, D2, D3 in order, each with what it means here (2026-10-29). */
+        List<DamageLevelView> damageLevels,
         List<String> exitChecklist,
         /** Null when the owner has not written one. */
         String prematureExitPolicy,
@@ -21,13 +24,25 @@ public record PropertyExitPolicyResponse(
         /** The property's version (2026-09-29): the policies live on it. */
         long version) {
 
-    public record DamageChargeView(String name, long chargePaise) {
+    /** {@code chargePaise} is D3's price, the one flat amount the deed still prints. */
+    /** D2 and D3 null when the item stops below them. {@code chargePaise} is the highest priced level. */
+    public record DamageChargeView(String name, long chargePaise, Long d1Paise, Long d2Paise, Long d3Paise,
+            com.khatiyan.d_modules.property.model.DamageCategory category) {
+    }
+
+    public record DamageLevelView(DamageLevel level, String description) {
     }
 
     public static PropertyExitPolicyResponse from(Property property) {
         List<DamageChargeView> charges = property.getDamageCharges().stream()
-                .map(charge -> new DamageChargeView(charge.getName(), charge.getChargePaise()))
+                .map(charge -> new DamageChargeView(charge.getName(), charge.getChargePaise(),
+                        charge.getD1Paise(), charge.getD2Paise(), charge.getD3Paise(), charge.getCategory()))
                 .toList();
+        List<DamageLevelView> levels = List.of(
+                new DamageLevelView(DamageLevel.NA, "No damage"),
+                new DamageLevelView(DamageLevel.D1, property.getDamageLevelD1()),
+                new DamageLevelView(DamageLevel.D2, property.getDamageLevelD2()),
+                new DamageLevelView(DamageLevel.D3, property.getDamageLevelD3()));
 
         // Sorted into the enum's own order rather than returned as the set
         // iterates. These are printed verbatim into every deed the property
@@ -40,6 +55,7 @@ public record PropertyExitPolicyResponse(
 
         return new PropertyExitPolicyResponse(
                 charges,
+                levels,
                 List.copyOf(property.getExitChecklist()),
                 property.getPrematureExitPolicy(),
                 deductions, property.getVersion());

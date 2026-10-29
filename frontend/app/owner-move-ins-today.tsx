@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { OwnerDataListSkeleton } from "@/components/skeletons/owner";
-import { CountPill } from "@/features/enquiry/enquiry-tags";
+import { CountPill, InitialsAvatar } from "@/features/enquiry/enquiry-tags";
 import { formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery } from "@/store/services/property-api";
@@ -95,16 +95,20 @@ function MoveInCard({ roomLabel, tenancy }: { roomLabel: string | null; tenancy:
 
   return (
     <Card>
-      <View style={{ gap: 2 }}>
-        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
-          {cardName(tenancy.tenantName?.trim() || "Unnamed tenant")}
-        </FitText>
-        <Text style={[type.caption, { color: colors.muted }]}>
-          {[roomLabel, tenancy.referenceCode].filter(Boolean).join(" · ")}
-        </Text>
-        <Text style={[type.caption, { color: colors.muted, marginTop: spacing.xxs }]}>
-          {[term, rent].filter(Boolean).join(" · ")}
-        </Text>
+      {/* The initials disc the enquiry cards use, beside who is moving in (user, 2026-10-28). */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+        <InitialsAvatar name={tenancy.tenantName?.trim() || "Unnamed tenant"} />
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
+            {cardName(tenancy.tenantName?.trim() || "Unnamed tenant")}
+          </FitText>
+          <Text style={[type.caption, { color: colors.muted }]}>
+            {[roomLabel, tenancy.referenceCode].filter(Boolean).join(" · ")}
+          </Text>
+          <Text style={[type.caption, { color: colors.muted, marginTop: spacing.xxs }]}>
+            {[term, rent].filter(Boolean).join(" · ")}
+          </Text>
+        </View>
       </View>
     </Card>
   );

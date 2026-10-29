@@ -59,7 +59,6 @@ export function InfoModal({
         <View
           style={{ backgroundColor: colors.overlay, bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }}
         />
-        <HelpModalClose onClose={onClose} />
         <View
           style={{
             backgroundColor: colors.surface,
@@ -74,6 +73,7 @@ export function InfoModal({
             width: "100%",
           }}
         >
+          <HelpModalClose corner onClose={onClose} />
           <HelpModalHeader title={title} />
 
           <ScrollView

@@ -52,6 +52,8 @@ import lombok.extern.slf4j.Slf4j;
 public class DepositManagerService {
 
     private static final String OPENING_DEPOSIT_REASON = "Opening deposit";
+    /** The deposit an existing tenant paid before Khatiyan, carried over at onboarding. */
+    static final String CARRIED_OVER_DEPOSIT_REASON = "Deposit carried over from before Khatiyan";
 
     private final DepositAccountRepository depositAccountRepository;
     private final DepositMovementRepository depositMovementRepository;
@@ -129,6 +131,43 @@ public class DepositManagerService {
                 tenancy.userId(),
                 depositAmountPaise);
 
+        return Optional.of(saved);
+    }
+
+    /**
+     * Opens the deposit account of a stay carried over from before Khatiyan
+     * (existing-tenant onboarding, 2026-10-28) with the deposit already held.
+     *
+     * <p>The money was collected before Khatiyan, so it is never billed: the
+     * account opens when billing starts, not when a first bill is paid, and its
+     * opening movement says where the money came from. Exit settlement then
+     * reads it like any other deposit.
+     */
+    @Transactional
+    public Optional<DepositAccount> openCarriedOver(TenancyResponse tenancy, UUID actorUserId) {
+        Long held = tenancy.depositAmountPaise();
+        if (!tenancy.transitioned() || held == null || held <= 0) {
+            return Optional.empty();
+        }
+        Optional<DepositAccount> existingAccount = depositAccountRepository.findByTenancyId(tenancy.id());
+        if (existingAccount.isPresent()) {
+            return existingAccount;
+        }
+        DepositAccount saved = depositAccountRepository.save(DepositAccount.open(
+                tenancy.id(),
+                tenancy.userId(),
+                tenancy.propertyId()));
+        depositMovementRepository.save(DepositMovement.correctionAddition(
+                saved.getId(),
+                CARRIED_OVER_DEPOSIT_REASON,
+                held,
+                actorUserId));
+        log.info(
+                "Deposit account opened as carried over depositAccountId={} tenancyId={} tenantUserId={} heldPaise={}",
+                saved.getId(),
+                tenancy.id(),
+                tenancy.userId(),
+                held);
         return Optional.of(saved);
     }
 

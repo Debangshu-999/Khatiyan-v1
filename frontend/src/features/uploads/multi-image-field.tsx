@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, ImagePlus } from "lucide-react-native";
+import { Camera, FileText, HardDrive, ImagePlus } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AlertModal } from "@/components/alert-modal";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { UploadRulesInfo } from "@/features/uploads/upload-rules-info";
 import { uploadAssets, UploadError, type UploadTarget } from "@/features/uploads/upload-asset";
+import { isDocumentUrl } from "@/features/uploads/upload-limits";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -28,16 +30,27 @@ import { FitText } from "@/components/fit-text";
  */
 export function MultiImageField({
   disabled,
+  documentTarget,
   label,
-  libraryLabel = "Choose image",
+  libraryLabel = "Gallery",
   max,
   onChange,
+  showList = true,
   target,
   urls,
 }: {
+  /** False when the caller draws the photos itself, as a carousel (2026-10-29). */
+  showList?: boolean;
   disabled?: boolean;
+  /**
+   * Take files from the device instead of the gallery: one "Device" button in
+   * Gallery's place opens the file picker for photos and PDFs alike, photos
+   * uploaded to `target` and PDFs here, counted against the same cap. Images
+   * are files too, so there is no separate Gallery (user, 2026-10-28).
+   */
+  documentTarget?: UploadTarget;
   label: string;
-  /** Name shown on the photo-library action. */
+  /** Name shown on the photo-library action. Gallery, app-wide (user, 2026-10-28). */
   libraryLabel?: string;
   /** How many photos this field accepts. */
   max: number;
@@ -113,6 +126,48 @@ export function MultiImageField({
     }
   }
 
+  async function pickDocuments() {
+    if (!documentTarget) return;
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: max - urls.length > 1,
+      type: ["application/pdf", "image/*"],
+    });
+    if (result.canceled) return;
+    const picked = result.assets.slice(0, Math.max(0, max - urls.length));
+    if (picked.length === 0) return;
+    setUploading(true);
+    try {
+      // In the order picked, each to its own target: a PDF must not be stored as an image.
+      const added: string[] = [];
+      for (const [index, asset] of picked.entries()) {
+        const pdf = asset.mimeType === "application/pdf" || /\.pdf$/i.test(asset.name ?? "");
+        const [file] = await uploadAssets(
+          [{
+            mimeType: asset.mimeType,
+            name: asset.name || `${label} ${index + 1}${pdf ? ".pdf" : ""}`,
+            size: asset.size,
+            uri: asset.uri,
+          }],
+          pdf ? documentTarget : target,
+        );
+        added.push(file.url);
+      }
+      onChange([...urls, ...added].slice(0, max));
+    } catch (uploadError) {
+      if (!(uploadError instanceof UploadError)) {
+        console.error("Document upload failed", uploadError);
+      }
+      opErrors.failFromServer(
+        uploadError instanceof UploadError
+          ? uploadError.message
+          : "Could not upload the document. Try again.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function capturePhoto() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
@@ -144,29 +199,39 @@ export function MultiImageField({
         <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
           {label}
         </Text>
-        <UploadRulesInfo max={max} />
+        <UploadRulesInfo documents={documentTarget ? "pdf" : false} max={max} />
       </View>
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <ActionButton
-          disabled={busy || full}
-          icon={ImagePlus}
-          label={libraryLabel}
-          onPress={() => void pickFromLibrary()}
-          variant="secondary"
-        />
+        {documentTarget ? (
+          <ActionButton
+            disabled={busy || full}
+            icon={HardDrive}
+            label="Device"
+            onPress={() => void pickDocuments()}
+            variant="upload"
+          />
+        ) : (
+          <ActionButton
+            disabled={busy || full}
+            icon={ImagePlus}
+            label={libraryLabel}
+            onPress={() => void pickFromLibrary()}
+            variant="upload"
+          />
+        )}
         <ActionButton
           disabled={busy || full}
           icon={Camera}
           label="Camera"
           onPress={() => void capturePhoto()}
-          variant="secondary"
+          variant="upload"
         />
       </View>
 
       {full ? (
         <Text style={[type.caption, { color: colors.kicker }]}>
-          {max} photos attached. Remove one to add another.
+          {max} {documentTarget ? "files" : "photos"} attached. Remove one to add another.
         </Text>
       ) : null}
 
@@ -179,7 +244,7 @@ export function MultiImageField({
         </View>
       ) : null}
 
-      {urls.map((url, index) => (
+      {(showList ? urls : []).map((url, index) => (
         <View
           key={url}
           style={{
@@ -190,14 +255,22 @@ export function MultiImageField({
             borderColor: colors.borderStrong,
           }}
         >
-          <Image resizeMode="cover" source={{ uri: url }} style={{ borderRadius: 8, height: 48, width: 48 }} />
+          {isDocumentUrl(url) ? (
+            <View style={{ alignItems: "center", borderColor: colors.border, borderRadius: 8, borderWidth: 1, height: 48, justifyContent: "center", width: 48 }}>
+              <FileText color={colors.ink} size={22} strokeWidth={2} />
+            </View>
+          ) : (
+            <Image resizeMode="cover" source={{ uri: url }} style={{ borderRadius: 8, height: 48, width: 48 }} />
+          )}
           <FitText numberOfLines={1} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
-            {urls.length > 1 ? `Photo ${index + 1}` : "Photo attached"}
+            {isDocumentUrl(url)
+              ? urls.length > 1 ? `PDF ${index + 1}` : "PDF attached"
+              : urls.length > 1 ? `Photo ${index + 1}` : "Photo attached"}
           </FitText>
           {/* A bin, not a cross. A cross beside an attachment reads as "close
               this", and the only thing it could close is the row itself. */}
           <IconButton
-            accessibilityLabel={`Remove photo ${index + 1}`}
+            accessibilityLabel={`Remove ${isDocumentUrl(url) ? "PDF" : "photo"} ${index + 1}`}
             icon={Trash2}
             onPress={() => onChange(urls.filter((kept) => kept !== url))}
           />

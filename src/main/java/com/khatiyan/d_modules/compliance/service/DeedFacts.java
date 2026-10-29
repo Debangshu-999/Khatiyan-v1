@@ -66,4 +66,12 @@ public record DeedFacts(
     public boolean hasDeposit() {
         return depositAmountPaise > 0;
     }
+
+    /** The same facts with a stay's own move-out checklist (2026-10-29). */
+    public DeedFacts withExitChecklist(List<String> checklist) {
+        return new DeedFacts(startDate, validityMonths, agreementEndDate, rentAmountPaise, depositAmountPaise,
+                dailyBilling, earlyExitRule, foodIncluded, electricityIncluded, rentGraceDays, rentLateFeePerDayPaise,
+                noticePeriodLabel, prematureExitPolicy, permittedDeductions,
+                checklist == null ? List.of() : List.copyOf(checklist), furnishings, unresolved);
+    }
 }

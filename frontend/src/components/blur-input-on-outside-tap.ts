@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
 import { Platform, TextInput, type GestureResponderEvent, type ViewProps } from "react-native";
+import { focusedInput } from "@/components/keyboard-intent";
 
 /** How far a finger may travel and still count as a tap rather than a scroll. */
 const TAP_SLOP = 10;
@@ -43,7 +44,7 @@ export function useBlurInputOnOutsideTap(): ViewProps {
     }
     return {
       onStartShouldSetResponder: (event: GestureResponderEvent) => {
-        start.current = TextInput.State.currentlyFocusedInput() != null
+        start.current = focusedInput() != null
           ? { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }
           : null;
         return false;
@@ -61,9 +62,9 @@ export function useBlurInputOnOutsideTap(): ViewProps {
         if (Math.abs(pageX - from.x) > TAP_SLOP || Math.abs(pageY - from.y) > TAP_SLOP) {
           return;
         }
-        const focused = TextInput.State.currentlyFocusedInput();
+        const focused = focusedInput();
         if (focused) {
-          TextInput.State.blurTextInput(focused);
+          TextInput.State.blurTextInput(focused as Parameters<typeof TextInput.State.blurTextInput>[0]);
         }
       },
     };

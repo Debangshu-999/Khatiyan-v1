@@ -85,8 +85,15 @@ export function DualBarChart({
   // month. Scaled to the raw peak, the best month always touches the ceiling —
   // so every chart looks equally full, the tallest bar can never be seen to
   // grow, and the axis is labelled with an arbitrary number like ₹47,231.
-  const peak = niceCeiling(Math.max(...values, 0), mode);
-  const floor = -niceCeiling(Math.abs(Math.min(...values, 0)), mode);
+  const rawPeak = Math.max(...values, 0);
+  const rawDip = Math.abs(Math.min(...values, 0));
+  // A side that is on the chart at all gets at least a fifth of the other's
+  // height (user, 2026-10-29). A ₹15K loss against a ₹2.5L month was given a
+  // sliver under zero: its point sat on the month names and "₹0" printed over
+  // "-₹15K". The side's axis label is still a round number, just a larger one.
+  const MIN_SIDE = 0.2;
+  const peak = rawPeak > 0 ? niceCeiling(Math.max(rawPeak, rawDip * MIN_SIDE), mode) : 0;
+  const floor = rawDip > 0 ? -niceCeiling(Math.max(rawDip, rawPeak * MIN_SIDE), mode) : 0;
   // Never zero, or every bar divides by nothing and the chart collapses.
   const span = Math.max(peak - floor, 1);
 

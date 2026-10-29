@@ -643,6 +643,117 @@ public class Tenancy extends BaseEntity {
     @Column(name = "early_exit_rule", length = 2000)
     private String earlyExitRule;
 
+    // ---- Existing-tenant onboarding (P1.1, 2026-10-28) ------------------
+    // A person already living in a running PG, brought onto Khatiyan from their
+    // next bill. startDate is that first Khatiyan bill's day; the fields below
+    // keep what came before it. V6241 holds the shape: all of them or none.
+
+    /** Carried over from before Khatiyan, not started here. */
+    @Column(name = "transitioned", nullable = false)
+    private boolean transitioned;
+
+    /** When they really moved in. Tenure counts from here, not from startDate. */
+    @Column(name = "moved_in_on")
+    private LocalDate movedInOn;
+
+    /** What they owed at the switch, raised as an opening one-off bill when billing starts. */
+    @Column(name = "opening_dues_paise")
+    private Long openingDuesPaise;
+
+    @Column(name = "opening_dues_note", length = 120)
+    private String openingDuesNote;
+
+    /** Their paper agreement carries over: its photos are on file and no deed is signed in the app. */
+    @Column(name = "agreement_on_paper", nullable = false)
+    private boolean agreementOnPaper;
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "paper_agreement_photo_urls", columnDefinition = "jsonb")
+    private java.util.List<String> paperAgreementPhotoUrls;
+
+    /** The owner declared their identity was verified before Khatiyan (V6244). */
+    @Column(name = "verified_before_khatiyan", nullable = false)
+    private boolean verifiedBeforeKhatiyan;
+
+    /**
+     * Onboarded from a booking (V6245). Its pending agreement cannot be removed
+     * by the owner or a manager (user, 2026-10-29): onboarding a booking and
+     * removing the stay at once would keep the token while the tenant lost the bed.
+     */
+    @Column(name = "from_booking", nullable = false)
+    private boolean fromBooking;
+
+    /**
+     * What must be done before this stay's deposit is settled, set at onboarding
+     * (user, 2026-10-29): each tenancy has its own. Null on a stay from before,
+     * which reads the property's old list.
+     */
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "move_out_checklist", columnDefinition = "jsonb")
+    private java.util.List<String> moveOutChecklist;
+
+    public void setMoveOutChecklist(java.util.List<String> items) {
+        if (items == null) {
+            this.moveOutChecklist = null;
+            return;
+        }
+        java.util.List<String> cleaned = items.stream()
+                .map(item -> item == null ? "" : item.strip())
+                .filter(item -> !item.isEmpty())
+                .distinct()
+                .toList();
+        if (cleaned.size() > 30) {
+            throw new ValidationException("A move-out checklist can have at most 30 items");
+        }
+        if (cleaned.stream().anyMatch(item -> item.length() > 120)) {
+            throw new ValidationException("Keep each move-out item under 120 characters");
+        }
+        this.moveOutChecklist = cleaned;
+    }
+
+    /** Marks the stay a booking was converted into. Set once, at conversion. */
+    public void markFromBooking() {
+        this.fromBooking = true;
+    }
+
+    /**
+     * Marks a monthly stay as carried over from before Khatiyan. Set once, at
+     * onboarding, before the first save: billing reads it when it starts (no
+     * deposit line, the deposit opened as carried over, the dues raised).
+     */
+    public void markTransitioned(
+            LocalDate movedInOn,
+            Long openingDuesPaise,
+            String openingDuesNote,
+            java.util.List<String> paperAgreementPhotoUrls,
+            boolean verifiedBefore) {
+        if (!isMonthly()) {
+            throw new ValidationException("Only a monthly stay can be carried over");
+        }
+        if (movedInOn == null || startDate == null || !movedInOn.isBefore(startDate)) {
+            throw new ValidationException("The move-in date must be before the first Khatiyan bill");
+        }
+        if (openingDuesPaise != null && openingDuesPaise <= 0) {
+            throw new ValidationException("Dues at the switch must be more than zero, or left out");
+        }
+        boolean onPaper = paperAgreementPhotoUrls != null && !paperAgreementPhotoUrls.isEmpty();
+        if (onPaper && paperAgreementPhotoUrls.size() > 10) {
+            throw new ValidationException("Add at most 10 files of the paper agreement");
+        }
+        this.transitioned = true;
+        this.movedInOn = movedInOn;
+        this.openingDuesPaise = openingDuesPaise;
+        this.openingDuesNote = openingDuesPaise == null ? null : openingDuesNote;
+        this.agreementOnPaper = onPaper;
+        this.paperAgreementPhotoUrls = onPaper ? java.util.List.copyOf(paperAgreementPhotoUrls) : null;
+        this.verifiedBeforeKhatiyan = verifiedBefore;
+    }
+
+    /** The day the tenant really moved in: before Khatiyan on a carried-over stay. */
+    public LocalDate tenureStart() {
+        return movedInOn != null ? movedInOn : startDate;
+    }
+
     /** Whether this agreement runs for a fixed term rather than indefinitely. */
     public boolean hasFixedTerm() {
         return agreementValidityMonths != null;

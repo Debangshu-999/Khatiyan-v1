@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 
 import { store } from "@/store/store";
 import { normalizeApiBaseUrl } from "@/config/api";
+import { isPhoto, shrinkPhoto } from "@/features/uploads/shrink-photo";
 
 /**
  * What every picker in the app produces, reduced to what an upload needs.
@@ -56,7 +57,13 @@ export type UploadTarget =
   | "NOTICE_IMAGE"
   | "NOTICE_DOCUMENT"
   | "CHAT_IMAGE"
-  | "CHAT_FILE";
+  | "CHAT_FILE"
+  /** A page of an existing tenant's paper agreement, kept on file at onboarding (2026-10-28). */
+  | "AGREEMENT_PHOTO"
+  /** The same paper agreement as a PDF (2026-10-28). */
+  | "AGREEMENT_DOCUMENT"
+  /** A photo of the room on its move-in checklist (2026-10-29). */
+  | "MOVE_IN_PHOTO";
 
 type UploadSignature = {
   cloudName: string;
@@ -85,7 +92,17 @@ type UploadSignature = {
  * saved a record with a missing image would be storing a lie, and the two live
  * bugs this replaces were both exactly that.
  */
-export async function uploadAsset(asset: PickedAsset, target: UploadTarget): Promise<UploadedAsset> {
+export async function uploadAsset(picked: PickedAsset, target: UploadTarget): Promise<UploadedAsset> {
+  // Every photo is brought under 500 KB on the phone first (user, 2026-10-28).
+  // If shrinking fails the original goes on, and the size check below decides.
+  let asset = picked;
+  if (isPhoto(picked)) {
+    try {
+      asset = await shrinkPhoto(picked);
+    } catch (shrinkError) {
+      console.warn("Could not shrink the photo before upload", shrinkError);
+    }
+  }
   const signature = await requestSignature(target);
 
   if (!asset.uri) {

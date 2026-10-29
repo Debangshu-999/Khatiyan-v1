@@ -26,6 +26,8 @@ public record SaveRoomMoldRequest(
         @NotNull @PositiveOrZero Long baseRentPaise,
         Set<RoomAmenity> amenities,
         Set<String> customAmenities,
+        // At least one photo of every room type (user, 2026-10-29).
+        @jakarta.validation.constraints.NotEmpty(message = "Add at least one photo of the room")
         @Size(max = 10, message = "A room type can have at most 10 images")
         List<@Valid ImageInput> images) {
 

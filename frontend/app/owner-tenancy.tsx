@@ -1,7 +1,7 @@
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
-import { TenancyAgreementIcon, ExitPolicyIcon } from "@/components/tenancy-rule-icons";
+import { TenancyAgreementIcon } from "@/components/tenancy-rule-icons";
 import { ActiveTenancyIcon, OnNoticeTenancyIcon, StartedTenancyIcon, EndedTenancyIcon, CreateTenancyIcon, RoomChangeIcon, TenancyHistoryIcon, UpcomingExitsIcon } from "@/components/tenancy-line-icons";
 import { useEffect, useMemo, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -68,7 +68,6 @@ export default function OwnerTenancyWorkspaceScreen() {
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = resolveSelectedProperty(properties, selectedPropertyId);
-  const [workspaceReady, setWorkspaceReady] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   // "?open=upcoming-exits" arrives from the action centre, whose Upcoming exits
   // row is about the stays listed in this sheet — not the exit REQUESTS screen,
@@ -145,22 +144,12 @@ export default function OwnerTenancyWorkspaceScreen() {
     { skip: !selectedProperty || !historyOpen },
   );
 
-  // Fast Refresh preserves RTK Query data (and component state). Refresh the
-  // workspace on entry/reload and keep the complete skeleton until it settles,
-  // rather than treating cached data as an already-loaded opening screen.
-  useEffect(() => {
-    if (!selectedProperty) return;
-    let active = true;
-    setWorkspaceReady(false);
-    void Promise.allSettled([
-      dashboardQuery.refetch(),
-      roomsQuery.refetch(),
-      activeTenanciesQuery.refetch(),
-    ]).then(() => { if (active) setWorkspaceReady(true); });
-    return () => { active = false; };
-    // Entry/property changes only; paging and filtering keep their loaded cards.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProperty?.id]);
+  // Opens on what is cached (user, 2026-10-28). It used to refetch all three
+  // reads on every entry and hold the whole screen on a skeleton until they
+  // settled, so the screen loaded afresh each time it was opened. Mutations
+  // invalidate these tags, and an unused cache entry lapses after 60 seconds,
+  // so the skeleton is only for a first load with nothing to show.
+  const workspaceReady = !(dashboardQuery.isLoading || roomsQuery.isLoading || activeTenanciesQuery.isLoading);
 
   const rooms = roomsQuery.data ?? [];
   const activeTenancies = useAccumulatedPages(`${selectedProperty?.id}:${committedQuery}:${statusFilter}`, activeTenanciesQuery.currentData);
@@ -354,14 +343,7 @@ export default function OwnerTenancyWorkspaceScreen() {
               description="Choose whether monthly tenancies need an accepted agreement, and author its default terms."
               onPress={() => guard("TENANCY_RULES", "Tenancy agreement", () => router.push("/owner-tenancy-agreement"))}
             />
-            <ActionCard
-              borderRadius={radii.card}
-              icon={ExitPolicyIcon}
-              iconSize={36}
-              title="Exit policies"
-              description="Set the damage-charge schedule and move-out checklist used when a tenancy ends and its deposit is settled."
-              onPress={() => guard("TENANCY_RULES", "Exit policies", () => router.push("/owner-exit-policies"))}
-            />
+            {/* Exit policies moved to the Property module as the Item catalogue & damage (user, 2026-10-29). */}
           </Section>
 
           </>}
@@ -556,6 +538,7 @@ export default function OwnerTenancyWorkspaceScreen() {
               }}
               roomLabel={rooms.find((room) => room.id === tenancy.roomId)?.roomNumber ?? null}
               tenancy={tenancy}
+              timingChipOnly
             />
           ))
         )}

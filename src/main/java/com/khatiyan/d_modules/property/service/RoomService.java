@@ -255,6 +255,7 @@ public class RoomService {
                 request.roomType(),
                 request.conditioning(),
                 Money.ofPaise(request.baseRentPaise()));
+        room.matchToilet(property.getBathroomType());
 
         Room saved = roomRepository.save(room);
         log.info(
@@ -298,6 +299,7 @@ public class RoomService {
                         roomRequest.conditioning(),
                         Money.ofPaise(roomRequest.baseRentPaise())))
                 .toList();
+        rooms.forEach(room -> room.matchToilet(property.getBathroomType()));
 
         List<Room> savedRooms = roomRepository.saveAll(rooms);
         log.info(
@@ -372,6 +374,7 @@ public class RoomService {
                         spec.amenities(),
                         spec.customAmenities()))
                 .toList();
+        rooms.forEach(room -> room.matchToilet(property.getBathroomType()));
         List<Room> saved = roomRepository.saveAll(rooms);
 
         log.info("Rooms cut from molds propertyId={} molds={} count={} actorUserId={}",
@@ -390,7 +393,7 @@ public class RoomService {
      */
     @Transactional
     public RoomResponse recutRoom(UUID actorUserId, UUID propertyId, UUID roomId, RecutRoomRequest request) {
-        getManageableActiveProperty(actorUserId, propertyId);
+        Property property = getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInPropertyForUpdate(propertyId, roomId);
         VersionGuard.claim(room);
         // Room.recut already refuses to shrink below the beds in use. This is
@@ -401,6 +404,7 @@ public class RoomService {
         RoomMold mold = roomMoldService.requireActive(propertyId, request.moldId());
 
         room.recut(mold);
+        room.matchToilet(property.getBathroomType());
         log.info("Room recut roomId={} propertyId={} moldId={} actorUserId={}",
                 roomId, propertyId, mold.getId(), actorUserId);
 
@@ -415,11 +419,12 @@ public class RoomService {
     public RoomResponse updateRoomAmenities(
             UUID actorUserId, UUID propertyId, UUID roomId, UpdateRoomAmenitiesRequest request) {
 
-        getManageableActiveProperty(actorUserId, propertyId);
+        Property property = getManageableActiveProperty(actorUserId, propertyId);
         Room room = getActiveRoomInPropertyForUpdate(propertyId, roomId);
         VersionGuard.claim(room);
 
         room.updateAmenities(request.amenities(), request.customAmenities());
+        room.matchToilet(property.getBathroomType());
         // Flushed so the reply carries the bumped version (2026-09-29): the
         // edit-room screen chains recut, update and amenities on it.
         roomRepository.flush();

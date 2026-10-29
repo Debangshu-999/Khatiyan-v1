@@ -27,33 +27,33 @@ function hostNameFromUri(uri: string) {
   }
 }
 
-export function resolveDefaultApiBaseUrl() {
-  // Set when Metro starts, for testing with no adb tunnel: the Aadhaar App will
-  // not run with Developer options on, and turning it off kills adb, so the
-  // phone reaches the backend over Wi-Fi instead (2026-09-27). Inlined into the
-  // bundle, so a Metro restart applies it and no rebuild is needed.
-  const override = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
-  if (override) {
-    return normalizeApiBaseUrl(override);
-  }
-
-  if (Platform.OS === "web") {
-    return "http://localhost:8080";
-  }
-
-  const hostUri = expoHostUri();
-  const hostName = hostUri ? hostNameFromUri(hostUri) : null;
-
-  if (hostName) {
-    return `http://${hostName}:${backendPort}`;
-  }
-
-  return "http://localhost:8080";
-}
-
 // export function resolveDefaultApiBaseUrl() {
-//   return normalizeApiBaseUrl("https://headcount-handbrake-cotton.ngrok-free.dev");
+//   // Set when Metro starts, for testing with no adb tunnel: the Aadhaar App will
+//   // not run with Developer options on, and turning it off kills adb, so the
+//   // phone reaches the backend over Wi-Fi instead (2026-09-27). Inlined into the
+//   // bundle, so a Metro restart applies it and no rebuild is needed.
+//   const override = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+//   if (override) {
+//     return normalizeApiBaseUrl(override);
+//   }
+
+//   if (Platform.OS === "web") {
+//     return "http://localhost:8080";
+//   }
+
+//   const hostUri = expoHostUri();
+//   const hostName = hostUri ? hostNameFromUri(hostUri) : null;
+
+//   if (hostName) {
+//     return `http://${hostName}:${backendPort}`;
+//   }
+
+//   return "http://localhost:8080";
 // }
+
+export function resolveDefaultApiBaseUrl() {
+  return normalizeApiBaseUrl("https://headcount-handbrake-cotton.ngrok-free.dev");
+}
 
 /**
  * Cleans a base URL before anything is concatenated onto it.

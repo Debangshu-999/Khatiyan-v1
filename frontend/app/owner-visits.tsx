@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
-import { Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AlarmClock,
@@ -28,7 +27,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { FilteredQueue } from "@/components/filtered-queue";
-import { PaginationBar } from "@/components/pagination-bar";
+import { ListEnd } from "@/components/list-end";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SelectionTabs } from "@/components/selection-tabs";
@@ -40,7 +39,6 @@ import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, ConfirmDialog, NoticeBar } from "@/features/owner/owner-ui";
 import { PropertyVisitsIcon } from "@/features/property/property-control-icons";
 import { CompleteVisitSheet } from "@/features/visits/complete-visit-sheet";
-import { useVisitTabsSeen } from "@/features/visits/use-visit-tabs-seen";
 import { VisitStateChip, type VisitStatus } from "@/features/visits/visit-state-chip";
 import { MarkAttendanceSheet } from "@/features/visits/mark-attendance-sheet";
 import { useNow } from "@/features/visits/visit-clock";
@@ -65,6 +63,9 @@ import { cardName } from "@/lib/person-name";
 
 type Tab = "today" | "upcoming" | "missed" | "history";
 type Range = "ALL" | "WEEK" | "NEXT_WEEK" | "MONTH";
+/** How many cards a list tab draws before the next screenful (user, 2026-10-29: infinite scroll). */
+const VISIT_PAGE_SIZE = 10;
+
 /** How far back the Missed tab looks (user, 2026-10-18). Its own daily review: no screen of its own. */
 type MissedRange = "ALL" | "TODAY" | "WEEK" | "MONTH" | "LAST_30";
 
@@ -166,6 +167,19 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     refetchOnMountOrArgChange: true,
   });
   const history = historyQuery.currentData;
+  // Infinite scroll on every list tab (user, 2026-10-29): History's pages are
+  // kept as they arrive, for its status and property only.
+  const historyKey = `${property?.id ?? ""}:${historyStatus}`;
+  const [historyPages, setHistoryPages] = useState<{ key: string; items: VisitCard[] }>({ items: [], key: "" });
+  useEffect(() => {
+    if (!history) return;
+    setHistoryPages((previous) => {
+      const base = previous.key === historyKey && history.page > 0 ? previous.items : [];
+      const kept = new Set(base.map((visit) => visit.visitId));
+      return { items: [...base, ...history.items.filter((visit) => !kept.has(visit.visitId))], key: historyKey };
+    });
+  }, [history, historyKey]);
+  const historyItems = historyPages.key === historyKey ? historyPages.items : history?.items ?? [];
   useEffect(() => setHistoryPage(0), [property?.id, historyStatus]);
   const [range, setRange] = useState<Range>("ALL");
   // Today first: the Missed tab is where the day's no-shows are reviewed (user, 2026-10-18). With none
@@ -197,29 +211,19 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
       });
     });
   }, []);
-  // Upcoming and Missed count what has been added to them since the tab was
-  // last looked at, not everything in them (user, 2026-10-04): a tab that has
-  // been visited shows no count, until something new arrives. A tab is seen
-  // when it is left, or when the screen is, so the count stays readable while
-  // its list is open, as on the Enquiries tabs. Today counts what is still to
-  // come instead.
-  const { markSeen, seenAt } = useVisitTabsSeen(
-    currentUserId && property ? `${currentUserId}.${property.id}` : null,
-  );
-  const openTab = useRef(tab);
-  openTab.current = tab;
-  useFocusEffect(
-    useCallback(
-      () => () => {
-        if (openTab.current === "upcoming" || openTab.current === "missed") markSeen(openTab.current);
-      },
-      [markSeen],
-    ),
-  );
+  // Every tab counts what it lists (user, 2026-10-29). Upcoming and Missed
+  // counted only what was new since the tab was last seen (2026-10-04), so a
+  // tab holding two visits showed no count once it had been opened.
   function changeTab(next: Tab) {
-    if (next !== tab && (tab === "upcoming" || tab === "missed")) markSeen(tab);
     setTab(next);
   }
+  // Upcoming and Missed arrive whole and are drawn a screenful at a time.
+  const [shown, setShown] = useState(VISIT_PAGE_SIZE);
+  // History's total, for its tab's count, whichever tab is open: page 0 of all
+  // statuses, the tab's own first page when it opens on All.
+  const historyCountQuery = useGetPropertyVisitHistoryQuery({ propertyId: property?.id ?? "", page: 0, status: "ALL" }, {
+    skip: !property || view !== "main",
+  });
 
   // The Earlier today card is fixed to the bottom of the screen, always
   // (user, 2026-10-04): with one slot left the list is short, and a card
@@ -305,7 +309,17 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
   const loading = tab === "history"
     ? historyQuery.isFetching && !history
     : visitsQuery.isLoading && !visitsQuery.data;
-  const list = tab === "today" ? today : tab === "upcoming" ? upcomingBy[range] : tab === "history" ? history?.items ?? [] : missedBy[missedRange];
+  const list = tab === "today" ? today : tab === "upcoming" ? upcomingBy[range] : tab === "history" ? historyItems : missedBy[missedRange];
+  useEffect(() => setShown(VISIT_PAGE_SIZE), [tab, range, missedRange, property?.id]);
+  const visibleList = tab === "history" ? list : list.slice(0, shown);
+  const moreToShow = tab === "history" ? Boolean(history?.hasNext) : list.length > shown;
+  function loadMore() {
+    if (tab === "history") {
+      if (history?.hasNext && !historyQuery.isFetching) setHistoryPage(history.page + 1);
+    } else if (tab !== "today" && list.length > shown) {
+      setShown((count) => count + VISIT_PAGE_SIZE);
+    }
+  }
   // The tab's own badge counts only what the tab still lists: visits in a slot
   // that is on now or still to come. It used to be the day's total, so it went
   // on saying 1 with nothing left on the tab, for a visit already attended in
@@ -313,15 +327,6 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
   const stillListedToday = today.filter(
     (visit) => visit.state !== "RESCHEDULED" && now <= Date.parse(visit.slotEndsAt),
   ).length;
-  // New on Upcoming: booked, or moved onto a later day, since it was seen.
-  const newUpcoming = seenAt
-    ? upcoming.filter((visit) => Date.parse(visit.placedAt) > seenAt.upcoming).length
-    : 0;
-  // New on Missed: became No visit since it was seen. Until the night's sweep
-  // has stamped it, the end of its slot stands in.
-  const newMissed = seenAt
-    ? missed.filter((visit) => Date.parse(visit.noVisitAt ?? visit.slotEndsAt) > seenAt.missed).length
-    : 0;
   // A slot that has ended leaves Today (user, 2026-10-04): its visits move to
   // Earlier today, in the order the day ran, earliest slot first. What is left is the slot that is on
   // now, at the top, and the ones still to come, with or without visits.
@@ -418,7 +423,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     </View>
   ) : (
     <View style={{ gap: spacing.md }}>
-      {list.map((visit) => (
+      {visibleList.map((visit) => (
         <VisitCardView
           currentUserId={currentUserId}
           key={visit.visitId}
@@ -431,6 +436,11 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
       ))}
     </View>
   );
+
+  // The foot of a list tab: more on the way, or the end (user, 2026-10-29).
+  const listFoot = tab === "today" || loading || list.length === 0 ? null
+    : moreToShow ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} />
+    : <ListEnd />;
 
   const sheets = (
     <>
@@ -555,7 +565,11 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
       // card itself (user, 2026-10-04): scrolled to the end, the list stops
       // just above it, with no extra space beneath.
       contentContainerStyle={{ paddingBottom: EARLIER_CARD_GAP }}
+      onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+        if (contentSize.height - contentOffset.y - layoutMeasurement.height <= 240) loadMore();
+      }}
       safeAreaEdges={["top", "bottom"]}
+      scrollEventThrottle={64}
     >
       <ScreenHeader
         subtitle={
@@ -588,10 +602,11 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
             horizontalPadding={spacing.sm}
             onChange={changeTab}
             options={[
-              { badge: stillListedToday, label: "Today", value: "today" },
-              { badge: newUpcoming, label: "Upcoming", value: "upcoming" },
-              { badge: newMissed, label: "Missed", value: "missed" },
-              { label: "History", value: "history" },
+              // A count on a tab that is not open only: the open one's list says it (user, 2026-10-29).
+              { badge: tab === "today" ? undefined : stillListedToday, label: "Today", value: "today" },
+              { badge: tab === "upcoming" ? undefined : upcoming.length, label: "Upcoming", value: "upcoming" },
+              { badge: tab === "missed" ? undefined : missed.length, label: "Missed", value: "missed" },
+              { badge: tab === "history" ? undefined : historyCountQuery.currentData?.totalElements ?? 0, label: "History", value: "history" },
             ]}
           />
 
@@ -610,6 +625,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
               value={range}
             >
               {cards}
+              {listFoot}
             </FilteredQueue>
           ) : tab === "missed" ? (
             <FilteredQueue<MissedRange>
@@ -627,6 +643,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
               value={missedRange}
             >
               {cards}
+              {listFoot}
             </FilteredQueue>
           ) : tab === "history" ? (
             // A status filter, All first and by default (user, 2026-10-19). Counted on the server, so
@@ -645,13 +662,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
               value={historyStatus}
             >
               {cards}
-              {history && history.totalPages > 1 ? (
-                <PaginationBar
-                  {...history}
-                  onNext={() => setHistoryPage((page) => page + 1)}
-                  onPrevious={() => setHistoryPage((page) => Math.max(0, page - 1))}
-                />
-              ) : null}
+              {listFoot}
             </FilteredQueue>
           ) : (
             // Today carries no count: the slot bar says who is coming (user, 2026-10-19).

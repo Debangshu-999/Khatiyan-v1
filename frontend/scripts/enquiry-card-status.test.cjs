@@ -166,3 +166,10 @@ test("a person who keeps walking away carries the leads mark and its reason on t
   assert.equal(spam.props.icon, "ShieldAlert");
   assert.equal(spam.props.tone, "danger");
 });
+
+// "Why are these enquiries which had scheduled visits still showing respond button" (user, 2026-10-28):
+// reached is the server's first-reached time, not only a written reply.
+test("an enquiry already reached offers Follow up, with or without a written reply", () => {
+  const screen = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "app/owner-enquiries.tsx"), "utf8");
+  assert.match(screen, /return enquiry\.responses\.length > 0 \|\| Boolean\(enquiry\.respondedAt\);/);
+});

@@ -16,6 +16,7 @@ import { FitText } from "@/components/fit-text";
 
 const AMENITY_LABELS: Record<string, string> = {
   ATTACHED_TOILET: "Attached toilet",
+  COMMON_TOILET: "Common toilet",
   BEDDING: "Bedding",
   CUPBOARD: "Cupboard",
   GEYSER: "Geyser",

@@ -807,9 +807,9 @@ export default function ChatThreadScreen() {
             width: 180,
           }}
         >
-          <AttachChoice icon={ImageIcon} label="Photo" onPress={() => void attach(pickImages)} />
+          <AttachChoice icon={ImageIcon} label="Photos" onPress={() => void attach(pickImages)} />
           <View style={{ backgroundColor: colors.border, height: 1 }} />
-          <AttachChoice icon={FileText} label="Document" onPress={() => void attach(pickFiles)} />
+          <AttachChoice icon={FileText} label="Files" onPress={() => void attach(pickFiles)} />
         </View>
       ) : null}
 

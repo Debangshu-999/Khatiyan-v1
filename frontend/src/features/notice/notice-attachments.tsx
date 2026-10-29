@@ -488,8 +488,8 @@ function AttachChoiceSheet({
   return (
     <SheetShell onClose={onClose} title="Attach to this notice">
       <View style={{ gap: spacing.sm }}>
-        <ActionButton icon={ImageIcon} label="Photos" onPress={onPickImages} variant="secondary" />
-        <ActionButton icon={FileText} label="Documents" onPress={onPickDocuments} variant="secondary" />
+        <ActionButton icon={ImageIcon} label="Gallery" onPress={onPickImages} variant="upload" />
+        <ActionButton icon={FileText} label="Device" onPress={onPickDocuments} variant="upload" />
       </View>
     </SheetShell>
   );

@@ -448,6 +448,12 @@ export type ConvertBookingPayload = {
   device?: OnboardWithAgreementPayload["device"];
   tenant: TenantDetailsInput;
   earlyExitRule?: string | null;
+  /** This stay's clauses, edited on the agreement step. The booking agreed the money and the term, not the deed. */
+  template?: OnboardWithAgreementPayload["template"];
+  /** The room's condition at move-in (2026-10-29). Null when the step was skipped. */
+  moveInChecklist?: OnboardWithAgreementPayload["moveInChecklist"];
+  /** This stay's own move-out checklist (2026-10-29). */
+  moveOutChecklist?: string[] | null;
 };
 
 export type BookingConversion = {
@@ -850,7 +856,8 @@ export const bookingApi = api.injectEndpoints({
         method: "POST",
         url: `${atProperty(propertyId, requestId)}/convert`,
       }),
-      invalidatesTags: ["Booking", "Tenancy"],
+      // A stay was created and the bed passed to it, as ordinary onboarding does.
+      invalidatesTags: ["Booking", "Tenancy", "Compliance", "Property", "Notification"],
     }),
 
     /**

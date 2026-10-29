@@ -179,9 +179,9 @@ export function UpiQrField({
           <ActionButton
             disabled={busy}
             icon={ImagePlus}
-            label={uploading ? "Uploading…" : "Add from gallery"}
+            label={uploading ? "Uploading…" : "Gallery"}
             onPress={() => void pickFromLibrary()}
-            variant="secondary"
+            variant="upload"
           />
         )}
       </View>

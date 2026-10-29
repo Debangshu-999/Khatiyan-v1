@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AlertTriangle, Check, DoorOpen, Info, Plus, Shield } from "lucide-react-native";
+import { AlertTriangle, Check, DoorOpen, Info, LogOut, Plus, Shield } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -110,8 +110,10 @@ export default function OwnerEndTenancyScreen() {
   const canManageDeposits = canManageResource("DEPOSITS");
 
   const policiesQuery = useGetPropertyExitPoliciesQuery(propertyId, { skip: !propertyId });
-  const checklist = policiesQuery.data?.exitChecklist ?? [];
-  const damageCharges = useMemo(() => policiesQuery.data?.damageCharges ?? [], [policiesQuery.data]);
+  // The stay's own move-out checklist, set at onboarding; a stay from before reads the property's (2026-10-29).
+  const checklist = tenancy?.moveOutChecklist ?? policiesQuery.data?.exitChecklist ?? [];
+  // Priced items only: an item on the list not priced yet charges nothing (2026-10-29).
+  const damageCharges = useMemo(() => (policiesQuery.data?.damageCharges ?? []).filter((item) => item.d1Paise != null), [policiesQuery.data]);
 
   const depositQuery = useGetManagedTenancyDepositQuery(tenancyId, { skip: !tenancyId || isDaily });
   const deposit = depositQuery.data ?? null;
@@ -970,6 +972,8 @@ export default function OwnerEndTenancyScreen() {
         <PinnedFooter>
           <ActionButton
             disabled={endState.isLoading || Boolean(blockingMessage)}
+            // The logout mark every End tenancy button carries (user, 2026-10-28).
+            icon={LogOut}
             label={endState.isLoading ? "Ending..." : "End tenancy"}
             onPress={() => setConfirmEndOpen(true)}
             variant="dangerFilled"

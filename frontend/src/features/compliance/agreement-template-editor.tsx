@@ -70,10 +70,7 @@ export function AgreementTemplateEditor({
   return (
     <View style={{ gap: spacing.xl }}>
       <View style={{ gap: spacing.sm }}>
-        <SectionHeading
-          description="The terms every agreement here carries. Their wording is fixed — to change what a term says, remove it and add your own in its place."
-          title="Main clauses"
-        />
+        <SectionHeading title="Main clauses" />
 
         <ClausePanel>
           {clauses.map((clause, index) => {
@@ -136,10 +133,7 @@ export function AgreementTemplateEditor({
         onLayout={(event) => onMiscLayout?.(event.nativeEvent.layout.y)}
         style={{ gap: spacing.sm }}
       >
-        <SectionHeading
-          description="Optional terms we have written for you. Tick any that apply — they follow the main clauses in their own numbered section."
-          title={`Miscellaneous clauses (${miscOptions.length})`}
-        />
+        <SectionHeading title={`Miscellaneous clauses (${miscOptions.length})`} />
 
         <ClausePanel>
           {miscOptions.map((option, index) => (
@@ -174,14 +168,15 @@ export function AgreementTemplateEditor({
  * whether to keep a term needs to read it, and a heading like "Possession" does
  * not say what the clause commits their tenant to.
  */
+// No box of its own: the list sits straight in its section, rows kept apart by
+// the dividers alone (user, 2026-10-28: "remove the inner boxes").
 function ClausePanel({ children }: { children: ReactNode }) {
-  const { colors } = useTheme();
-  return <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radii.card, overflow: "hidden" }}>{children}</View>;
+  return <View>{children}</View>;
 }
 
 function ClauseDivider({ dotted = false }: { dotted?: boolean }) {
   const { colors } = useTheme();
-  return <View style={{ marginHorizontal: spacing.md }}><Svg width="100%" height={2}><Line x1="0" y1="1" x2="100%" y2="1" stroke={colors.borderStrong} strokeWidth={1} strokeDasharray={dotted ? "1 5" : undefined} strokeLinecap={dotted ? "round" : "butt"} /></Svg></View>;
+  return <View><Svg width="100%" height={2}><Line x1="0" y1="1" x2="100%" y2="1" stroke={colors.borderStrong} strokeWidth={1} strokeDasharray={dotted ? "1 5" : undefined} strokeLinecap={dotted ? "round" : "butt"} /></Svg></View>;
 }
 
 function ClauseRow({ clause, onRemove }: { clause: AgreementClause; onRemove: () => void }) {
@@ -196,10 +191,8 @@ function ClauseRow({ clause, onRemove }: { clause: AgreementClause; onRemove: ()
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.surface,
           flexDirection: "row",
           gap: spacing.sm,
-          paddingHorizontal: spacing.md,
           paddingVertical: spacing.md,
         }}
       >
@@ -354,10 +347,8 @@ function MiscRow({
       accessibilityState={{ checked: ticked }}
       onPress={onToggle}
       style={{
-        backgroundColor: colors.surface,
         flexDirection: "row",
         gap: spacing.sm,
-        paddingHorizontal: spacing.md,
         paddingVertical: spacing.md,
       }}
     >
@@ -393,7 +384,7 @@ function SectionHeading({
   small,
   title,
 }: {
-  description: string;
+  description?: string;
   small?: boolean;
   title: string;
 }) {
@@ -401,7 +392,7 @@ function SectionHeading({
   return (
     <View style={{ gap: 4 }}>
       <ScreenSectionHeading title={title} />
-      <Text style={[type.description, { color: colors.muted }]}>{description}</Text>
+      {description ? <Text style={[type.description, { color: colors.muted }]}>{description}</Text> : null}
     </View>
   );
 }

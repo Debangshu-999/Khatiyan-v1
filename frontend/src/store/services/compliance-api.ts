@@ -1,4 +1,5 @@
 import { api, ifMatch } from "@/store/api";
+import type { MoveInChecklistInput } from "@/store/services/tenancy-api";
 import type { TenancySummary } from "@/store/services/tenancy-api";
 import type { VerificationGrant } from "@/store/services/verification-api";
 
@@ -263,12 +264,66 @@ export type OnboardWithAgreementPayload = {
    * "not specified" from "no fixed term".
    */
   term?: { months: number | null; earlyExitRule?: string | null };
+  /** The room's condition at move-in (2026-10-29). Null when the step was skipped. */
+  moveInChecklist?: MoveInChecklistInput | null;
+  /** This stay's own move-out checklist (2026-10-29). */
+  moveOutChecklist?: string[] | null;
 };
 
 export type OnboardWithAgreementResult = {
   tenantAccountCreated: boolean;
   tenancy: TenancySummary;
   agreement: TenancyAgreement;
+};
+
+/**
+ * A person already living here, onto Khatiyan from their next bill
+ * (existing-tenant onboarding, 2026-10-28). Ordinary onboarding with what came
+ * before kept: when they moved in, the deposit already held (never billed),
+ * what they owed at the switch (an opening one-off bill) and how their
+ * agreement carries over.
+ */
+export type OnboardExistingTenantPayload = {
+  tenantPhone: string;
+  tenantName?: string | null;
+  propertyId: string;
+  roomId: string;
+  rentAmountPaise: number;
+  depositHeldPaise: number;
+  /** `YYYY-MM-DD`, before the first Khatiyan bill. */
+  movedInOn: string;
+  /** `YYYY-MM-DD`, today to a month ahead: their next rent day. */
+  firstBillOn: string;
+  openingDuesPaise?: number | null;
+  openingDuesNote?: string | null;
+  idCheck?: OnboardWithAgreementPayload["idCheck"];
+  idCheckStatementText?: string | null;
+  verification?: OnboardWithAgreementPayload["verification"];
+  /** The owner declares their identity was verified before Khatiyan, instead of either check. */
+  verifiedBefore?: boolean | null;
+  /** EXISTING_TENANT_VERIFIED_DECLARATION as shown, when `verifiedBefore`. */
+  verifiedBeforeStatementText?: string | null;
+  device: OnboardWithAgreementPayload["device"];
+  /** Required for a deed signed in the app. On paper it may be left for the tenant to fill in. */
+  tenant?: TenantDetailsInput | null;
+  /** PAPER keeps their paper agreement, its photos on file. IN_APP issues a deed they sign. */
+  agreement: "PAPER" | "IN_APP";
+  /** 1 to 10 on PAPER, none on IN_APP. */
+  paperAgreementPhotoUrls?: string[] | null;
+  template?: AgreementTemplate | null;
+  /** From the first Khatiyan bill. On paper, what is left of the paper agreement. */
+  term?: { months: number | null; earlyExitRule?: string | null };
+  /** The room's condition at the switch (2026-10-29). Null when the step was skipped. */
+  moveInChecklist?: MoveInChecklistInput | null;
+  /** This stay's own move-out checklist (2026-10-29). */
+  moveOutChecklist?: string[] | null;
+};
+
+/** On PAPER no deed is written, so `agreement` is null and the stay has started. */
+export type OnboardExistingTenantResult = {
+  tenantAccountCreated: boolean;
+  tenancy: TenancySummary;
+  agreement: TenancyAgreement | null;
 };
 
 /**
@@ -424,6 +479,12 @@ export const complianceApi = api.injectEndpoints({
       invalidatesTags: ["Compliance", "Tenancy", "Property", "Notification"],
     }),
 
+    onboardExistingTenant: builder.mutation<OnboardExistingTenantResult, OnboardExistingTenantPayload>({
+      query: (body) => ({ body, method: "POST", url: "/api/v1/compliance/tenancies/onboard-existing" }),
+      // The stay holds a bed at once and, on paper, starts billing: rooms, bills and deposits all move.
+      invalidatesTags: ["Compliance", "Tenancy", "Property", "Notification", "BillingCycle", "Deposit"],
+    }),
+
     getTenancyAgreement: builder.query<TenancyAgreement, string>({
       query: (tenancyId) => ({ url: `/api/v1/compliance/tenancies/${tenancyId}/agreement` }),
       providesTags: ["Compliance"],
@@ -569,6 +630,7 @@ export const {
   useGetTenancyAgreementQuery,
   useListMiscClausesQuery,
   useOnboardTenantWithAgreementMutation,
+  useOnboardExistingTenantMutation,
   usePreviewTenancyAgreementQuery,
   useProvideVerificationAttemptsMutation,
   useUpdatePropertyAgreementSettingsMutation,

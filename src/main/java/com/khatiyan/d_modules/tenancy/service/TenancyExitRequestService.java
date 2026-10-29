@@ -256,7 +256,7 @@ public class TenancyExitRequestService {
             throw new ValidationException(
                     "The earliest checkout date is " + minimumCheckoutDate + " (10 days from today)");
         }
-        if (!earlyExitAllowed(tenancy.getAgreementValidityMonths(), tenancy.getStartDate(), currentCycle.cycleNumber(), today)) {
+        if (!earlyExitAllowed(tenancy.getAgreementValidityMonths(), tenancy.tenureStart(), currentCycle.cycleNumber(), today)) {
             throw new ValidationException(earlyExitRestriction(tenancy.getAgreementValidityMonths()));
         }
         if (!tenancy.isWithinTerm(requestedCheckoutDate)) {
@@ -750,7 +750,7 @@ public class TenancyExitRequestService {
             LocalDate anchor,
             boolean reRaise) {
         LocalDate earliestPossible = minimumCheckoutDate(LocalDate.now(EXIT_ZONE));
-        boolean prematureAllowed = earlyExitAllowed(tenancy.getAgreementValidityMonths(), tenancy.getStartDate(), cycle.cycleNumber(), LocalDate.now(EXIT_ZONE));
+        boolean prematureAllowed = earlyExitAllowed(tenancy.getAgreementValidityMonths(), tenancy.tenureStart(), cycle.cycleNumber(), LocalDate.now(EXIT_ZONE));
         String restrictionMessage = prematureAllowed
                 ? null
                 : earlyExitRestriction(tenancy.getAgreementValidityMonths());
@@ -822,6 +822,8 @@ public class TenancyExitRequestService {
         return cycleNumber != null && cycleNumber > 1;
     }
 
+    // startDate is the tenure's start: a stay carried over from before Khatiyan
+    // counts from when they really moved in, not its first Khatiyan bill (2026-10-28).
     static boolean earlyExitAllowed(Integer fixedMonths, LocalDate startDate, Integer cycleNumber, LocalDate today) {
         if (fixedMonths != null) {
             return fixedMonths >= 2;

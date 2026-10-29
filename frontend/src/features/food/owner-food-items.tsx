@@ -910,7 +910,7 @@ function FoodItemSheet({
           <PhotoSourceRow
             description="Pick one you have already taken."
             icon="image-multiple-outline"
-            label="Choose from gallery"
+            label="Gallery"
             onPress={() => {
               setPickingSource(false);
               void pickImage("library");
@@ -947,11 +947,11 @@ function PhotoSourceRow({
     <AnimatedPressable
       accessibilityLabel={label}
       onPress={onPress}
+      // Grey fill, no border: a file picker's button (user, 2026-10-28).
       style={{
         alignItems: "center",
-        borderColor: colors.border,
+        backgroundColor: colors.surfaceSunken,
         borderRadius: radii.card,
-        borderWidth: 1,
         flexDirection: "row",
         gap: spacing.sm,
         padding: spacing.md,

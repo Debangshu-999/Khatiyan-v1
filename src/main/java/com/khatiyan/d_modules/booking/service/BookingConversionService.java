@@ -37,6 +37,7 @@ import com.khatiyan.d_modules.compliance.ComplianceModule;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest.AgreementTermInput;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementResponse;
+import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.property.model.ManagerResource;
@@ -93,6 +94,7 @@ public class BookingConversionService {
     private final Validator validator;
     private final Clock clock;
     private final BookingAnnouncer announcer;
+    private final TenancyModule tenancies;
 
     public BookingConversionService(
             BookingRequestRepository requests,
@@ -106,7 +108,8 @@ public class BookingConversionService {
             AuthModule auth,
             Validator validator,
             Clock clock,
-            BookingAnnouncer announcer) {
+            BookingAnnouncer announcer,
+            TenancyModule tenancies) {
         this.requests = requests;
         this.actions = actions;
         this.bedOffers = bedOffers;
@@ -119,6 +122,7 @@ public class BookingConversionService {
         this.validator = validator;
         this.clock = clock;
         this.announcer = announcer;
+        this.tenancies = tenancies;
     }
 
     // ---- The property --------------------------------------------------------
@@ -194,9 +198,11 @@ public class BookingConversionService {
                 // The day they actually move in. A late arrival is never billed from the day they booked for.
                 today,
                 input.idCheck(), input.idCheckStatementText(), input.verification(), input.device(), input.tenant(),
-                // The property's own agreement template, as its settings hold it.
-                null,
-                months == null && earlyExitRule == null ? null : new AgreementTermInput(months, earlyExitRule));
+                // The clauses as edited on arrival, or the property's own template when none are sent.
+                input.template(),
+                months == null && earlyExitRule == null ? null : new AgreementTermInput(months, earlyExitRule),
+                input.moveInChecklist(),
+                input.moveOutChecklist());
         // The checks the onboarding endpoint runs on its body. This call does not pass through it.
         Set<ConstraintViolation<OnboardTenancyWithAgreementRequest>> problems = validator.validate(onboarding);
         if (!problems.isEmpty()) {
@@ -215,6 +221,8 @@ public class BookingConversionService {
             throw new IllegalStateException("The stay was created for a different account than the booking's");
         }
         request.convert(stay.tenancy().id(), actorUserId, now);
+        // Not the property's to remove while pending: the token is kept from here (user, 2026-10-29).
+        tenancies.markFromBooking(stay.tenancy().id());
         // Onboarded: a token received is non refundable from here (user, 2026-10-28).
         writes.tokenOnboarded(request, now);
         actions.save(BookingRequestAction.by(request.getId(), BookingActionType.CONVERTED, BookingParty.MANAGEMENT,

@@ -591,14 +591,15 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
   return (
     <View
       style={{
-        alignItems: "flex-start",
+        alignItems: "center",
         backgroundColor: occupant ? "#FFFAE9" : colors.surfaceSunken,
         borderColor: daily ? colors.accent : "transparent",
         borderRadius: 12,
         borderStyle: daily ? "dashed" : "solid",
         borderWidth: daily ? 1.5 : 1,
         flex: 1,
-        gap: 6,
+        flexDirection: "row",
+        gap: spacing.sm,
         minWidth: 0,
         paddingHorizontal: 10,
         paddingVertical: 12,
@@ -609,6 +610,7 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
           alignItems: "center",
           backgroundColor: occupant ? "#FFF2CC" : "rgba(255,255,255,0.7)",
           borderRadius: 999,
+          flexShrink: 0,
           height: 40,
           justifyContent: "center",
           width: 40,
@@ -616,7 +618,7 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
       >
         <Bed color={occupant ? colors.accent : colors.muted} size={22} strokeWidth={2.2} />
       </View>
-      <View style={{ alignSelf: "stretch", minWidth: 0, gap: 5 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
         <FitText numberOfLines={1} style={[type.caption, { color: occupant ? colors.accent : colors.ink, fontSize: 13, fontWeight: "800" }]}>
           Bed {index + 1}
@@ -632,7 +634,7 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
             {firstName ?? "Tenant"}
           </FitText>
           {daily && occupant.plannedEndDate ? (
-            <Text style={{ color: colors.accent, fontFamily: fonts.sansBold, fontSize: 11, textAlign: "center" }}>
+            <Text style={{ color: colors.accent, fontFamily: fonts.sansBold, fontSize: 11 }}>
               Until {shortDate(occupant.plannedEndDate)}
             </Text>
           ) : null}
@@ -643,6 +645,26 @@ function BedTile({ index, occupant }: { index: number; occupant: TenancySummary 
         </Text>
       )}
       </View>
+    </View>
+  );
+}
+
+/** Keep every bed the same half-row width, including an odd final bed. */
+function RoomBedGrid({ beds }: { beds: (TenancySummary | null)[] }) {
+  return (
+    <View style={{ gap: spacing.sm }}>
+      {Array.from({ length: Math.ceil(beds.length / 2) }, (_, row) => (
+        <View key={row} style={{ flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <BedTile index={row * 2} occupant={beds[row * 2]} />
+          </View>
+          {row * 2 + 1 < beds.length ? (
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <BedTile index={row * 2 + 1} occupant={beds[row * 2 + 1]} />
+            </View>
+          ) : <View accessible={false} pointerEvents="none" style={{ flex: 1, minWidth: 0 }} />}
+        </View>
+      ))}
     </View>
   );
 }
@@ -763,16 +785,7 @@ function RoomCard({
             </View>
           </View>
 
-          <View style={{ gap: spacing.sm }}>
-            {Array.from({ length: Math.ceil(beds.length / 2) }, (_, row) => (
-              <View key={row} style={{ flexDirection: "row", gap: spacing.sm }}>
-                <BedTile index={row * 2} occupant={beds[row * 2]} />
-                {row * 2 + 1 < beds.length ? (
-                  <BedTile index={row * 2 + 1} occupant={beds[row * 2 + 1]} />
-                ) : <View style={{ flex: 1, minWidth: 0 }} />}
-              </View>
-            ))}
-          </View>
+          <RoomBedGrid beds={beds} />
 
           {/* One line, not two tiles. Rent and vacancy were a pair of cards
               stacked under a grid of bed tiles — three boxed things in one

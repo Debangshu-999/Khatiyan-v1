@@ -129,6 +129,36 @@ public enum LegalStatement {
             To record that I made this declaration, Khatiyan will store the date and time, my \
             internet address, my device details, my signed-in session, and a cryptographic \
             fingerprint of this declaration.\
+            """),
+
+    /**
+     * Shown to the owner bringing an existing tenant onto Khatiyan who says the
+     * tenant's identity was verified before (user, 2026-10-28). Nothing is
+     * checked here: the declaration is about a check made in the past.
+     */
+    EXISTING_TENANT_VERIFIED_DECLARATION(
+            1,
+            """
+            I solemnly declare that this tenant was already living at my property before it \
+            came onto Khatiyan, and that I, or someone acting for me, verified their identity \
+            against an original government-issued identification document when they moved in.
+
+            I acknowledge that Khatiyan has not seen that document, holds no copy of it, does \
+            not cross-verify any government database, and does not vouch for this tenant's \
+            identity or legal background. This record is my own declaration and nothing more.
+
+            I accept that verifying tenant identity, and complying with state-mandated police \
+            tenant verification and registration requirements, is my sole responsibility as \
+            the landlord or the landlord's agent. I understand that a false declaration may \
+            expose me to liability.
+
+            I agree to indemnify and hold harmless Khatiyan, its operators and its directors \
+            against any claim, statutory liability or dispute arising out of this tenancy or \
+            out of this declaration.
+
+            To record that I made this declaration, Khatiyan will store the date and time, my \
+            internet address, my device details, my signed-in session, and a cryptographic \
+            fingerprint of this declaration.\
             """);
 
     private final int version;

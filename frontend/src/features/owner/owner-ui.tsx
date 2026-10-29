@@ -152,7 +152,14 @@ export function ActionButton({
     | "dangerFilled"
     | "success"
     | "successQuiet"
-    | "neutral";
+    | "neutral"
+    /** A file picker's button (Device, Gallery, Camera): grey fill, no border, ink label (user, 2026-10-28). */
+    | "upload"
+    /**
+     * The blocked button's shape, live: a pale blue fill, its border and an
+     * ink label (user, 2026-10-29: Verification, asked for in pale blue by name).
+     */
+    | "soft";
 }) {
   const { colors, fonts } = useTheme();
   const primary = variant === "primary";
@@ -167,13 +174,15 @@ export function ActionButton({
     variant === "secondary" || variant === "outline" || variant === "primaryQuiet" || variant === "successQuiet";
   // The grey white button, kept for one that removes or discards something.
   const neutral = variant === "neutral";
+  const upload = variant === "upload";
+  const soft = variant === "soft";
   const foreground = disabled
     ? colors.muted
     : dangerFilled || success
       ? "#FFFFFF"
       : danger || dangerQuiet
         ? colors.danger
-        : neutral
+        : neutral || upload || soft
           ? colors.ink
           : primary
             ? colors.onPrimary
@@ -181,7 +190,11 @@ export function ActionButton({
   // A ghost screen must not carry a live-looking control. Same footprint, so
   // the layout it reserves is exact — only the fill and the label go.
   const isSkeleton = useIsSkeleton();
-  const backgroundColor = disabled
+  const backgroundColor = upload
+    ? colors.surfaceSunken
+    : soft && !disabled
+    ? colors.primarySoft
+    : disabled || soft
     ? colors.neutralSoft
     : dangerFilled
       ? colors.danger
@@ -211,9 +224,9 @@ export function ActionButton({
         // page colour, which is invisible on its own and more so inside a
         // PinnedFooter, where the gradient washes the whole strip — the button
         // read as translucent because nothing marked where it stopped.
-        borderColor: isSkeleton
+        borderColor: isSkeleton || upload
           ? "transparent"
-          : borderColor ?? (disabled
+          : borderColor ?? (disabled || soft
           ? colors.borderStrong
           : danger || dangerFilled
             ? colors.danger

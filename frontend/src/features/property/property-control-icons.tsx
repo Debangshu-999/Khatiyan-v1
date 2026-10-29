@@ -119,3 +119,18 @@ export function PropertyLeadsIcon(props: LucideProps) {
     <Path d="M39 42a5 5 0 0 1 5-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
   </Mark>;
 }
+
+// A checklist on a clipboard with a price tag: what a room has and what damage to it costs.
+export function ItemCatalogueIcon(props: LucideProps) {
+  return <Mark {...props}>
+    <Rect x={4} y={8} width={42} height={54} rx={6} />
+    <Rect x={14} y={2} width={22} height={11} rx={3} stroke="#FFFFFF" strokeWidth={2} />
+    <Rect x={20} y={5} width={10} height={4} rx={1.5} fill="#FFFFFF" />
+    <Rect x={11} y={20} width={8} height={8} rx={2} fill="#FFFFFF" />
+    <Rect x={11} y={33} width={8} height={8} rx={2} fill="#FFFFFF" />
+    <Rect x={11} y={46} width={8} height={8} rx={2} fill="#FFFFFF" />
+    <Path d="M24 24h15M24 37h9M24 50h7" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
+    <Path d="M36 38h15l11 11-11 11H36Z" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" />
+    <Circle cx={51} cy={49} r={3} fill="#FFFFFF" />
+  </Mark>;
+}

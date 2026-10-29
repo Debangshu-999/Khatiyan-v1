@@ -28,6 +28,7 @@ import com.khatiyan.d_modules.compliance.ComplianceModule;
 import com.khatiyan.d_modules.compliance.api.dto.CancelPendingTenancyRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementResponse;
+import com.khatiyan.d_modules.compliance.api.dto.OnboardExistingTenantRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardingReadinessResponse;
 import com.khatiyan.d_modules.compliance.api.dto.TenancyAgreementResponse;
 import com.khatiyan.d_modules.compliance.api.dto.UpdateAgreementCustomClausesRequest;
@@ -116,6 +117,23 @@ public class TenancyAgreementController {
             @Valid @RequestBody OnboardTenancyWithAgreementRequest request,
             HttpServletRequest servletRequest) {
         return complianceModule.onboardTenancyWithAgreement(
+                user.userId(),
+                request,
+                clientIpResolver.resolve(servletRequest),
+                user.sessionId());
+    }
+
+    /**
+     * Existing-tenant onboarding (2026-10-28): a person already living here,
+     * onto Khatiyan from their next bill, on their paper agreement or a deed
+     * signed in the app.
+     */
+    @PostMapping("/tenancies/onboard-existing")
+    public OnboardTenancyWithAgreementResponse onboardExisting(
+            @AuthenticationPrincipal UserPrincipal user,
+            @Valid @RequestBody OnboardExistingTenantRequest request,
+            HttpServletRequest servletRequest) {
+        return complianceModule.onboardExistingTenant(
                 user.userId(),
                 request,
                 clientIpResolver.resolve(servletRequest),

@@ -291,6 +291,13 @@ function ThemedRootStack() {
           }}
         />
         <Stack.Screen
+          name="move-in-checklist"
+          options={{
+            headerShown: false,
+            presentation: "card",
+          }}
+        />
+        <Stack.Screen
           name="tenancy-room-change-request"
           options={{
             headerShown: false,

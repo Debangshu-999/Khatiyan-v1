@@ -7,7 +7,7 @@ import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { formatDate } from "@/features/owner/bill-views";
 import { ActionButton, IconButton, humanizeToken } from "@/features/owner/owner-ui";
 import { formatIndianPhone } from "@/features/owner/phone-display";
-import { billTitle, type BillingCycle } from "@/store/services/billing-api";
+import { billTitle, bookingTokenPaise, type BillingCycle } from "@/store/services/billing-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
@@ -88,6 +88,8 @@ export function BillReceiptDocument({
   const deposits = receiptLineItems(cycle).filter((item) => item.type === "DEPOSIT");
   const depositTotal = deposits.reduce((sum, item) => sum + item.amountPaise, 0);
   const subtotal = cycle.baseAmountPaise + depositTotal + cycle.extraChargePaise + cycle.lateFeeAmountPaise;
+  // Money received, not a discount, so its own row under it (2026-10-28), as the PDF prints it.
+  const token = bookingTokenPaise(cycle);
   const billDetails: ReceiptDetail[] = [
     { code: true, label: "Bill Number", value: cycle.referenceCode },
     { label: "Bill Cycle", value: billTitle(cycle) },
@@ -106,9 +108,8 @@ export function BillReceiptDocument({
 
   return (
     <View style={{ backgroundColor: colors.surface, gap: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.lg }}>
+      {/* The property's details on the left, the logo on the right (user, 2026-10-28). */}
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <ReceiptBrandMark />
-
         <View style={{ flex: 1, minWidth: 0 }}>
           <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 17, lineHeight: 21 }}>
             {property?.name ?? "Tenancy bill"}
@@ -118,6 +119,8 @@ export function BillReceiptDocument({
           {contact.phone ? <ReceiptContactLine icon={Phone} text={formatIndianPhone(contact.phone)} /> : null}
           {contact.email ? <ReceiptContactLine icon={Mail} lines={1} text={contact.email} /> : null}
         </View>
+
+        <ReceiptBrandMark />
       </View>
 
       <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 23, lineHeight: 30, textAlign: "center" }}>
@@ -142,6 +145,7 @@ export function BillReceiptDocument({
         {unitemised > 0 ? <DocRow amount={formatReceiptMoney(unitemised)} label="Extra charges" /> : null}
         <DocRow amount={formatReceiptMoney(cycle.lateFeeAmountPaise)} label="Late Fee" />
         <DocRow amount={`- ${formatReceiptMoney(cycle.discountAmountPaise)}`} label="Discount" />
+        {token > 0 ? <DocRow amount={`- ${formatReceiptMoney(token)}`} label="Booking token received" /> : null}
       </View>
 
       <View style={{ borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, overflow: "hidden" }}>
@@ -233,11 +237,13 @@ function DocRow({
   );
 }
 
-const RECEIPT_LOGO = require("../../../assets/icons/brand/logo-light-trimmed.png");
+// The real logo with its tagline cropped off (2026-10-28): at this size "Your Property, Our
+// Platform" came out a few pixels tall and blurred. The mark and the wordmark are the same image.
+const RECEIPT_LOGO = require("../../../assets/icons/brand/logo-light-no-tagline.png");
 
 /** The Khatiyan logo, the real image (user, 2026-10-18). A receipt is paper, so always the light one. */
 function ReceiptBrandMark() {
-  return <Image accessibilityLabel="Khatiyan" resizeMode="contain" source={RECEIPT_LOGO} style={{ height: 62, width: 62 }} />;
+  return <Image accessibilityLabel="Khatiyan" resizeMode="contain" source={RECEIPT_LOGO} style={{ height: 64, width: 75 }} />;
 }
 
 /** One contact line under the property name: its icon, then the text, wrapped lines kept clear of the icon. */

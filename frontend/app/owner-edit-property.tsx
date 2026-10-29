@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, CalendarDays } from "lucide-react-native";
+import { ArrowLeft, CalendarDays, CircleHelp } from "lucide-react-native";
+import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 
 import { ChoiceCard, ChoiceGrid, ChoiceSection } from "@/components/choice-section";
 import { SectionHeading } from "@/components/section-heading";
@@ -163,6 +164,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const keyboardInset = useKeyboardInset();
   const onClose = () => router.back();
   const [name, setName] = useState(property.name);
+  const [roomTypesHelp, setRoomTypesHelp] = useState(false);
   const [address, setAddress] = useState(property.address);
   const [area, setArea] = useState(property.area);
   const [city, setCity] = useState(property.city);
@@ -551,16 +553,12 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
               ) : null}
 
               {tab === "types" ? (
-              <ModalSection title="Room types">
-                <ChoiceCard style={{ gap: spacing.md }}>
-                  <View style={{ gap: 4 }}>
-                    {ROOM_TYPE_INTRO.map((line) => (
-                      <Text key={line} style={[type.body, { color: colors.muted }]}>
-                        {"• "}
-                        {line}
-                      </Text>
-                    ))}
-                  </View>
+              <ModalSection
+                title="Room types"
+                // The two rules behind the ?, in the bottom-up How it works sheet, and no box (user, 2026-10-29).
+                trailing={<IconButton accessibilityLabel="How room types work" icon={CircleHelp} onPress={() => setRoomTypesHelp(true)} />}
+              >
+                <View style={{ gap: spacing.md }}>
 
                   {/* Saves as it goes, like the images below it — a room type is
                       not a field of the property, and making it wait for Save
@@ -572,7 +570,18 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                     propertyId={property.id}
                     tabBleed={0}
                   />
-                </ChoiceCard>
+                </View>
+                {roomTypesHelp ? (
+                  <HowItWorksSheet
+                    eyebrow="Room types"
+                    onClose={() => setRoomTypesHelp(false)}
+                    steps={[
+                      { body: ROOM_TYPE_INTRO[0], title: "Set once, here" },
+                      { body: ROOM_TYPE_INTRO[1], title: "AC and non-AC are separate" },
+                    ]}
+                    title="How room types work"
+                  />
+                ) : null}
               </ModalSection>
               ) : null}
 

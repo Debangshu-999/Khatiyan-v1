@@ -363,7 +363,7 @@ function PhotoAttachmentSection({
           paddingTop: spacing.xs,
         }}
       >
-        <PhotoActionButton icon={ImagePlus} label="Choose photos" onPress={onPickFromDevice} />
+        <PhotoActionButton icon={ImagePlus} label="Gallery" onPress={onPickFromDevice} />
         <PhotoActionButton icon={Camera} label="Take a photo" onPress={onOpenCamera} />
       </View>
 
@@ -436,12 +436,11 @@ function PhotoActionButton({
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
+      // Grey fill, no border, ink label: a file picker's button (user, 2026-10-28).
       style={{
         alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
+        backgroundColor: colors.surfaceSunken,
         borderRadius: 12,
-        borderWidth: 1,
         flex: 1,
         flexDirection: "row",
         gap: spacing.sm,
@@ -454,7 +453,7 @@ function PhotoActionButton({
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.surfaceSunken,
+          backgroundColor: colors.surface,
           borderRadius: 999,
           height: 30,
           justifyContent: "center",

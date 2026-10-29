@@ -1,4 +1,5 @@
 import type { OwnerModule, OwnerModuleKey } from "@/features/owner/owner-modules";
+import { buildActionItems, type ActionSource } from "@/features/owner/action-center";
 import type { OwnerDashboard } from "@/store/services/dashboard-api";
 
 /**
@@ -31,32 +32,42 @@ export function pendingMarkKey(propertyId: string, moduleKey: string) {
 }
 
 /**
- * How many things are waiting on the owner in each module, from the dashboard's
- * own attention counts. Meals and notices have nothing that waits.
+ * How many things are waiting on the owner in each module: the Action Center's
+ * own items, each counted under the module it opens into (2026-10-28). It used
+ * to be a hand-picked sum of a few dashboard counts, so anything left out, a
+ * stay ending today, a booking to answer, a token to decide, put no dot on its
+ * card and never moved it up the Dynamic order.
  *
- * <p>Only what asks for the owner's action. An agreement waiting on the tenant
- * or a tenant on notice is not counted: nothing is theirs to do about it.
+ * <p>Only what asks for the owner's action. Upcoming exits, tenants on notice
+ * and agreements waiting on the tenant are in the Action Center to inform, and
+ * nothing is theirs to do about them. The budget has no card here.
  */
 export function pendingByModule(dashboard: OwnerDashboard | undefined): Record<OwnerModuleKey, number> {
-  const attention = dashboard?.attention;
-  return {
-    billing:
-      (attention?.paymentsOverdue ?? 0) +
-      (attention?.pendingDepositSettlements ?? 0) +
-      (dashboard?.paymentIntents?.awaitingReview ?? 0),
-    // Unassigned and escalated: the count on the Concern card's own badge.
-    concern: (dashboard?.concerns?.open ?? 0) + (dashboard?.concerns?.escalated ?? 0),
-    food: 0,
-    notice: 0,
-    // Enquiries are answered from the Property workspace.
-    property: attention?.newEnquiries ?? 0,
-    staff: attention?.salaryPaymentsDue ?? 0,
-    tenancy:
-      (attention?.pendingExitRequests ?? 0) +
-      (attention?.pendingRoomChangeRequests ?? 0) +
-      (attention?.exitsPastDue ?? 0),
-  };
+  const counts: Record<OwnerModuleKey, number> = { billing: 0, concern: 0, food: 0, notice: 0, property: 0, staff: 0, tenancy: 0 };
+  if (!dashboard) return counts;
+  for (const item of buildActionItems(dashboard)) {
+    if (INFORMATIONAL_ITEMS.has(item.key)) continue;
+    const module = MODULE_OF_SOURCE[item.source];
+    if (module) counts[module] += item.count;
+  }
+  return counts;
 }
+
+/** Where each kind of Action Center item is handled. Bookings, visits and enquiries live under Property. */
+const MODULE_OF_SOURCE: Record<ActionSource, OwnerModuleKey | null> = {
+  billing: "billing",
+  booking: "property",
+  budget: null,
+  concern: "concern",
+  deposit: "billing",
+  enquiry: "property",
+  staff: "staff",
+  tenancy: "tenancy",
+  visit: "property",
+};
+
+/** Action Center rows that inform rather than ask: no dot for them. */
+const INFORMATIONAL_ITEMS = new Set(["upcoming", "notice", "agreements-pending"]);
 
 /**
  * The marks after looking at the dashboard again. A module whose count went up

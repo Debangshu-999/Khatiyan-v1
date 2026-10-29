@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Text, View } from "react-native";
+import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BellRing, MessageCircle, MessageCirclePlus, UsersRound, type LucideProps } from "lucide-react-native";
 import OwnerNudgesScreen from "../owner-nudges";
@@ -50,7 +50,20 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 
-const NO_CHATS_ILLUSTRATION = require("../../assets/empty-states/No-Chats_512x512.png");
+// The top of the empty-chats artwork, the bubbles, rays and the no sign, without the tray under them (user, 2026-10-28).
+const NO_CHATS_ILLUSTRATION = require("../../assets/empty-states/No-Chats-bubbles.png");
+
+/** The empty-chats artwork, a little smaller than the empty state's usual 132 (user, 2026-10-28). */
+function NoChatsArtwork() {
+  return (
+    <Image
+      accessibilityIgnoresInvertColors
+      resizeMode="contain"
+      source={NO_CHATS_ILLUSTRATION}
+      style={{ height: 100, marginBottom: spacing.sm - spacing.md, width: 90 }}
+    />
+  );
+}
 
 // BOOKINGS: chats about bookings made in the app (user, 2026-10-27).
 type Section = "TENANTS" | "MINE" | "ENQUIRIES" | "BOOKINGS" | "NUDGES";
@@ -259,7 +272,14 @@ function ManagementChats() {
       {/* Pills rather than tabs: Enquiries is empty until that module is wired,
           and an empty TAB reads as something failing to load where an
           unselected pill reads as a place you have not gone. */}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+      {/* One row that slides sideways, never a second line, kept inside the screen's side
+          padding so it never touches the edge (user, 2026-10-28). */}
+      <ScrollView
+        contentContainerStyle={{ gap: spacing.xs }}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0 }}
+      >
         <SectionPill
           count={mine.data?.filter((thread) => thread.unread).length ?? 0}
           label="My chats"
@@ -287,7 +307,7 @@ function ManagementChats() {
           selected={section === "BOOKINGS"}
         />
         <SectionPill count={0} label="Nudges" onPress={() => goToSection("NUDGES")} selected={section === "NUDGES"} />
-      </View>
+      </ScrollView>
 
       <SlideInView from={arrivedFrom} key={section}>
       {section === "NUDGES" ? <OwnerNudgesScreen embedded /> : null}
@@ -298,7 +318,7 @@ function ManagementChats() {
           <EmptyState
             compact
             description={emptyCopy(section)}
-            artwork={NO_CHATS_ILLUSTRATION}
+            artworkNode={<NoChatsArtwork />}
             title={emptyTitle(section)}
           />
         </CentredEmpty>
@@ -680,7 +700,14 @@ function PersonalChats() {
 
       </View>
 
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+      {/* One row that slides sideways, never a second line, kept inside the screen's side
+          padding so it never touches the edge (user, 2026-10-28). */}
+      <ScrollView
+        contentContainerStyle={{ gap: spacing.xs }}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0 }}
+      >
         <SectionPill
           count={(pinned?.unread ? 1 : 0) + personal.filter((thread) => thread.unread).length}
           label="My chats"
@@ -705,7 +732,7 @@ function PersonalChats() {
           onPress={() => goToPersonal("NUDGES")}
           selected={section === "NUDGES"}
         />
-      </View>
+      </ScrollView>
 
       <SlideInView from={personalArrivedFrom} key={section}>
       {section === "NUDGES" ? <NudgesScreen embedded /> : null}
@@ -722,7 +749,7 @@ function PersonalChats() {
                   ? "Chats about your bookings appear here. Start one with Chat on a booking."
                   : "When a property answers your enquiry over chat, it appears here."
             }
-            artwork={NO_CHATS_ILLUSTRATION}
+            artworkNode={<NoChatsArtwork />}
             title={section === "MINE" ? "No chats yet" : section === "BOOKINGS" ? "No booking chats" : "No enquiry chats"}
           />
         </CentredEmpty>

@@ -753,7 +753,7 @@ export default function AccountScreen() {
           <View style={{ gap: spacing.xs }}>
             <PhotoAction
               icon={ImageIcon}
-              label="Choose from library"
+              label="Gallery"
               onPress={() => {
                 setPhotoSheetOpen(false);
                 void pickProfileImage();
@@ -855,9 +855,11 @@ function PhotoAction({
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
+      // A file picker's row is grey with no border (user, 2026-10-28). Remove keeps its red edge.
       style={{
         alignItems: "center",
-        borderColor: destructive ? colors.danger : colors.border,
+        backgroundColor: destructive ? undefined : colors.surfaceSunken,
+        borderColor: destructive ? colors.danger : "transparent",
         borderCurve: "continuous",
         borderRadius: 12,
         borderWidth: 1,

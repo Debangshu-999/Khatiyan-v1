@@ -7,7 +7,6 @@ import { Check, Expand, X } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { FitText } from "@/components/fit-text";
 
 // The click-wrap block, shared by the owner's ID declaration at onboarding and
 // the tenant's agreement acceptance. Two consents with the same shape and the
@@ -27,11 +26,19 @@ import { FitText } from "@/components/fit-text";
  * rather than two that have to be kept in step.
  */
 export function ClickwrapConsent({
+  boxed = false,
   checked,
   expanded = false,
+  expandedHeight = 230,
   onToggle,
   statement,
 }: {
+  /**
+   * The expanded form in a box of its own, for a screen where it sits under a
+   * card rather than in one. The box frames text and tick together, so no
+   * line runs between them (user, 2026-10-28).
+   */
+  boxed?: boolean;
   checked: boolean;
   /**
    * Show the declaration in full, scrolling, with the tick beneath it.
@@ -46,6 +53,8 @@ export function ClickwrapConsent({
    * form it was designed for.
    */
   expanded?: boolean;
+  /** The expanded declaration's scrolling height. */
+  expandedHeight?: number;
   onToggle: () => void;
   statement: string;
 }) {
@@ -57,7 +66,21 @@ export function ClickwrapConsent({
       // No box of its own. This already sits inside the step's card, and a
       // second border around it drew a card inside a card — the scrollbar is
       // what says the text continues, not a frame.
-      <View style={{ gap: spacing.md }}>
+      <View
+        style={[
+          { gap: spacing.md },
+          boxed
+            ? {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderCurve: "continuous",
+                borderRadius: radii.card,
+                borderWidth: 1,
+                padding: spacing.md,
+              }
+            : null,
+        ]}
+      >
         {/* A fixed height, not one that grows with the text. The tick has to
             stay where it is whichever declaration is showing, and a body that
             resized with the wording would move the control under the reader's
@@ -70,12 +93,12 @@ export function ClickwrapConsent({
           // and a bar that has already faded tells them nothing.
           persistentScrollbar
           showsVerticalScrollIndicator
-          style={{ height: 230 }}
+          style={{ height: expandedHeight }}
         >
           <Text style={[type.caption, { color: colors.inkSoft, lineHeight: 20 }]}>{statement}</Text>
         </ScrollView>
 
-        <View style={{ backgroundColor: colors.border, height: 1 }} />
+        {boxed ? null : <View style={{ backgroundColor: colors.border, height: 1 }} />}
 
         {/* Pinned under the words it agrees to. Pressing the text scrolls it,
             pressing the box agrees — the same separation the compact form
@@ -98,7 +121,8 @@ export function ClickwrapConsent({
     <View
       style={{
         backgroundColor: colors.surface,
-        borderColor: checked ? colors.jade : colors.border,
+        // The tick alone says it is agreed, the card keeps its plain border (user, 2026-10-28).
+        borderColor: colors.border,
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
@@ -113,9 +137,11 @@ export function ClickwrapConsent({
           made the block feel like one big button (owner's call, 2026-09-27). */}
       <ConsentTick checked={checked} onToggle={onToggle} />
 
-      <FitText numberOfLines={2} style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 19 }]}>
+      {/* Cut off, never shrunk: it is a preview of five paragraphs, and fitting
+          them into two lines made the text unreadably small on a phone (2026-10-28). */}
+      <Text numberOfLines={2} style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 19 }]}>
         {statement}
-      </FitText>
+      </Text>
 
       <AnimatedPressable
         accessibilityLabel="Read the full declaration"
@@ -216,6 +242,8 @@ export function FullDeclarationModal({
               borderBottomWidth: 1,
               flexDirection: "row",
               gap: spacing.sm,
+              // The title keeps to its slot, so the close is pushed to the far edge.
+              justifyContent: "space-between",
               padding: spacing.md,
             }}
           >

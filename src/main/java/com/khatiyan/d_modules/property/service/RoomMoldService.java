@@ -163,6 +163,7 @@ public class RoomMoldService {
                 request.amenities(),
                 request.customAmenities(),
                 toImages(request)));
+        mold.matchToilet(bathroomOf(propertyId));
 
         log.info("Room mold created moldId={} propertyId={} sharingType={} conditioning={} beds={}",
                 mold.getId(), propertyId, mold.getSharingType(), mold.getConditioning(), mold.getBedCount());
@@ -189,6 +190,7 @@ public class RoomMoldService {
         }
 
         mold.update(request.baseRentPaise(), request.amenities(), request.customAmenities(), toImages(request));
+        mold.matchToilet(bathroomOf(propertyId));
         log.info("Room mold updated moldId={} propertyId={}", moldId, propertyId);
 
         return RoomMoldResponse.from(mold, roomRepository.countByMoldId(moldId));
@@ -243,5 +245,12 @@ public class RoomMoldService {
         return request.images().stream()
                 .map(image -> MoldImage.of(image.url(), image.publicId()))
                 .toList();
+    }
+
+    /** The property's bathroom type, which sets every room's toilet (2026-10-29). */
+    private com.khatiyan.d_modules.property.model.BathroomType bathroomOf(UUID propertyId) {
+        return propertyRepository.findById(propertyId)
+                .map(com.khatiyan.d_modules.property.model.Property::getBathroomType)
+                .orElse(com.khatiyan.d_modules.property.model.BathroomType.ATTACHED);
     }
 }

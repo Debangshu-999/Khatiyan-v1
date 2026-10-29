@@ -13,11 +13,20 @@ package com.khatiyan.d_modules.property.model;
  */
 public enum RoomAmenity {
     CUPBOARD,
+
+    /**
+     * Set by the property's bathroom type, never ticked (user, 2026-10-29):
+     * ATTACHED_TOILET on a property with attached bathrooms, COMMON_TOILET on
+     * one with common ones. Like AC, answered and not answerable.
+     */
     ATTACHED_TOILET,
     TV,
 
     /** Spelt correctly, whatever the label on the switch says. */
     GEYSER,
 
-    BEDDING
+    BEDDING,
+
+    /** The toilet is shared: the property's bathroom type is COMMON. See ATTACHED_TOILET. */
+    COMMON_TOILET
 }

@@ -128,6 +128,9 @@ public class TenancyAnalytics {
                     FROM tenancy.tenancies
                     WHERE property_id = :propertyId AND COALESCE(billing_type, 'MONTHLY') = 'MONTHLY'
                       AND status NOT IN ('CANCELLED', 'PENDING_ACCEPTANCE', 'SCHEDULED')
+                      -- A stay carried over from before Khatiyan did not move in here: its
+                      -- start is its first Khatiyan bill (P1.1.d, nothing before Khatiyan counts).
+                      AND NOT transitioned
                       AND start_date BETWEEN :from AND :to
                     UNION ALL
                     SELECT end_date, 0, 1

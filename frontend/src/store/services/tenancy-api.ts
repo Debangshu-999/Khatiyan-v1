@@ -1,7 +1,7 @@
 import { api, ifMatch } from "@/store/api";
 import type { Gender } from "@/store/services/auth-api";
 import type { Page } from "@/store/pagination";
-import type { NoticePeriod } from "@/store/services/property-api";
+import type { DamageLevel, NoticePeriod } from "@/store/services/property-api";
 
 export type TenancyBillingType = "DAILY" | "MONTHLY";
 export type TenancyStatus =
@@ -168,6 +168,25 @@ export type TenancySummary = {
    * the stay, so a stay someone else changed since is refused, not overwritten.
    */
   version: number;
+  /**
+   * Existing-tenant onboarding (2026-10-28): carried over from before Khatiyan.
+   * `startDate` is then the first Khatiyan bill's day and `movedInOn` the day
+   * they really moved in. Optional so a cached response from before still reads.
+   */
+  transitioned?: boolean;
+  movedInOn?: string | null;
+  /** Owed at the switch, raised as an opening one-off bill when billing starts. */
+  openingDuesPaise?: number | null;
+  openingDuesNote?: string | null;
+  /** Their paper agreement carries over, its photos on file: no deed is signed in the app. */
+  agreementOnPaper?: boolean;
+  paperAgreementPhotoUrls?: string[] | null;
+  /** The owner declared their identity was verified before Khatiyan. */
+  verifiedBeforeKhatiyan?: boolean;
+  /** Onboarded from a booking: management cannot remove it while its agreement is pending (2026-10-29). */
+  fromBooking?: boolean;
+  /** This stay's own move-out checklist (2026-10-29); null on a stay from before, which reads the property's. */
+  moveOutChecklist?: string[] | null;
 };
 
 export type TenantPropertySummary = {
@@ -457,8 +476,48 @@ export type TenancyOnboardingResult = {
   tenancy: TenancySummary;
 };
 
+/** The room's condition at move-in, as filled in at onboarding (2026-10-29). */
+export type MoveInChecklistInput = {
+  /** Each item with 1 to 3 photos of it (2026-10-29). */
+  items: { name: string; damageLevel: DamageLevel; note: string | null; custom: boolean; photoUrls: string[]; section: MoveInSection }[];
+  /** At least 1 (2026-10-29). */
+  keysHandedOver: number | null;
+};
+
+/** Room: basic things and anything added. Amenities: the room's own. Bathroom: an attached bathroom's things. */
+export type MoveInSection = "ROOM" | "AMENITY" | "BATHROOM";
+
+export type MoveInChecklist = {
+  tenancyId: string;
+  items: { name: string; damageLevel: DamageLevel; note: string | null; custom: boolean; photoUrls: string[]; section: MoveInSection }[];
+  keysHandedOver: number | null;
+  recordedAt: string;
+  /** 48 hours after it was recorded. */
+  respondBy: string;
+  status: "PENDING" | "ACCEPTED" | "NOTED" | "ACCEPTED_BY_DEFAULT";
+  tenantNote: string | null;
+  respondedAt: string | null;
+  /** True for the stay's tenant while they may still answer. */
+  canRespond: boolean;
+  /** NA to D3 and what each means at the stay's property. */
+  levels: { level: DamageLevel; description: string }[];
+};
+
 export const tenancyApi = api.injectEndpoints({
   endpoints: (builder) => ({
+    // The move-in checklist (2026-10-29): read by the tenant and management, answered by the tenant.
+    getMoveInChecklist: builder.query<MoveInChecklist | null, string>({
+      query: (tenancyId) => `/api/v1/tenancies/${tenancyId}/move-in-checklist`,
+      providesTags: ["Tenancy"],
+    }),
+    respondMoveInChecklist: builder.mutation<MoveInChecklist, { tenancyId: string; looksRight: boolean; note: string | null }>({
+      query: ({ looksRight, note, tenancyId }) => ({
+        body: { looksRight, note },
+        method: "POST",
+        url: `/api/v1/tenancies/${tenancyId}/move-in-checklist/response`,
+      }),
+      invalidatesTags: ["Tenancy"],
+    }),
     lookupTenant: builder.query<TenantLookup, { phone: string; propertyId?: string }>({
       // propertyId lets the answer account for the property being onboarded
       // into — notably that this person already manages it, which the phone
@@ -695,6 +754,8 @@ export const tenancyApi = api.injectEndpoints({
 });
 
 export const {
+  useGetMoveInChecklistQuery,
+  useRespondMoveInChecklistMutation,
   useApproveExitRequestMutation,
   useApproveRoomChangeRequestMutation,
   useEndTenancyMutation,

@@ -1,4 +1,4 @@
-import { ExitTenancyIcon } from "@/components/artwork-icon";
+import { LogOut } from "lucide-react-native";
 import { DigestMoveOutsEmptyIcon } from "@/components/tenancy-line-icons";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
@@ -142,7 +142,7 @@ function MoveOutCard({
   roomLabel: string | null;
 }) {
   const { colors, fonts, type } = useTheme();
-  const { ended, reason, tenancy } = moveOut;
+  const { ended, tenancy } = moveOut;
 
   return (
     <Card>
@@ -156,10 +156,15 @@ function MoveOutCard({
               {[roomLabel, tenancy.referenceCode].filter(Boolean).join(" · ")}
             </Text>
           </View>
-          <StatusPill label={ended ? "ENDED" : "ENDING TODAY"} tone={ended ? "neutral" : "warning"} />
+          {/* Every card here ends today, so only an ended one is marked (user, 2026-10-28). */}
+          {ended ? <StatusPill label="ENDED" tone="neutral" /> : null}
         </View>
-        <Text style={[type.caption, { color: colors.muted }]}>{reason}</Text>
-        {canEnd && !ended ? <ActionButton icon={ExitTenancyIcon} label="End tenancy" onPress={onEnd} variant="danger" /> : null}
+        {/* The tenancy cards' own button: red fill, white text, the logout mark (user, 2026-10-28). */}
+        {canEnd && !ended ? (
+          <View style={{ flexDirection: "row" }}>
+            <ActionButton icon={LogOut} label="End tenancy" onPress={onEnd} variant="dangerFilled" />
+          </View>
+        ) : null}
       </View>
     </Card>
   );

@@ -16,6 +16,7 @@ import { useSafeAreaInsets, type Edge } from "react-native-safe-area-context";
 import { useSegments } from "expo-router";
 
 import { AppBackground } from "@/components/app-background";
+import { focusedInput } from "@/components/keyboard-intent";
 import { contentFitsWithoutScroll, getHeaderScrollMinHeight } from "@/components/header-scroll-layout";
 import { ScreenHeader, ScreenHeaderScrollContext } from "@/components/screen-header";
 import { API_TAGS, api } from "@/store/api";
@@ -61,6 +62,12 @@ type ScreenScrollViewProps = ScrollViewProps & {
    * keeps the old room, for a screen that needs it.
    */
   fitWithoutScroll?: boolean;
+  /**
+   * The bottom padding sits under a pinned footer, so it is not empty room:
+   * content reaching into it is hidden, and the page only fits when it fits
+   * whole (2026-10-28, the booking wizard's last line was locked under Continue).
+   */
+  bottomPaddingCovered?: boolean;
   safeAreaEdges?: Edge[];
 };
 
@@ -78,6 +85,7 @@ export function ScreenScrollView({
   refreshOffset,
   scrollOnlyWhenNeeded = false,
   fitWithoutScroll = true,
+  bottomPaddingCovered = false,
   safeAreaEdges,
   stickyHeaderIndices,
   style,
@@ -128,8 +136,8 @@ export function ScreenScrollView({
         // immediately meant scrolling to an offset that did not exist yet, so
         // nothing moved and the field stayed hidden.
         setTimeout(() => {
-          const focused = TextInput.State.currentlyFocusedInput();
-          focused?.measureInWindow((_x, y, _width, height) => {
+          const focused = focusedInput();
+          focused?.measureInWindow?.((_x, y, _width, height) => {
             const keyboardTop = Dimensions.get("window").height - event.endCoordinates.height;
             const overlap = y + height - keyboardTop + spacing.xl;
             if (overlap > 0) {
@@ -189,10 +197,19 @@ export function ScreenScrollView({
   const callerMinHeight = flattenedContentStyle?.minHeight;
   // A page that is to sit still keeps no room for its header to scroll away into.
   // Never while the keyboard is up: it covers part of the screen, and the field being typed in must stay reachable.
+  const contentFits = contentFitsWithoutScroll(contentHeight, bottomPaddingCovered ? 0 : callerPaddingBottom, viewportHeight);
   const fits = fitWithoutScroll && keyboardInset === 0
     && (stickyScreenHeader
       ? viewportHeight > 0 && naturalBottom > 0 && naturalBottom <= viewportHeight + 1
-      : contentFitsWithoutScroll(contentHeight, callerPaddingBottom, viewportHeight));
+        // A pinned footer covers the end of the viewport. Collapsing cards
+        // must not lock scrolling while their last row is behind that footer.
+        && (!bottomPaddingCovered || naturalBottom + callerPaddingBottom <= viewportHeight + 1)
+        // On web onLayout fires on a size change only (a ResizeObserver), and the
+        // marker is zero high: when content loads and pushes it down, nothing is
+        // reported, so it kept its first, short reading and the page stayed
+        // locked (user, 2026-10-29). The content's own height has to agree.
+        && (Platform.OS !== "web" || contentFits)
+      : contentFits);
   const scrollEnabled = fitWithoutScroll
     ? !fits
     : !scrollOnlyWhenNeeded || viewportHeight === 0 || contentHeight > viewportHeight + 1;

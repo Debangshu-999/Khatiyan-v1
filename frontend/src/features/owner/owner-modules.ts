@@ -34,6 +34,12 @@ export type OwnerModule = {
    * with it.
    */
   description: string;
+  /**
+   * The Manage tab card's line (user, 2026-10-28): what can be done here,
+   * starting "Manage", one or two lines in a narrow column. The longer description stays for the staff
+   * permissions list, which reads it as a bullet.
+   */
+  summary: string;
   icon: ComponentType<LucideProps>;
   route: OwnerModuleRoute;
   // True for a module no manager may ever open, regardless of grants. Staff is
@@ -59,6 +65,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   {
     artwork: require("../../../assets/images/workspace/tenancy-module.png"),
     description: "Move tenants in and see them out. Their stays, agreements, rules and exit requests all live here.",
+    summary: "Manage move-ins, agreements, exits and room changes.",
     icon: UsersRound,
     key: "tenancy",
     resources: ["TENANCIES", "TENANCY_CREATE", "EXIT_REQUESTS", "ROOM_CHANGES", "TENANCY_RULES"],
@@ -68,6 +75,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   {
     artwork: require("../../../assets/images/workspace/billing-module.png"),
     description: "Rent, extra charges and deposits in one place. See what is paid, what is due and what has gone late.",
+    summary: "Manage rent bills, extra charges, deposits and payments.",
     icon: Banknote,
     key: "billing",
     resources: ["BILLING_CYCLES", "DEPOSITS"],
@@ -77,6 +85,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   {
     artwork: require("../../../assets/images/workspace/property-module.png"),
     description: "Everything about the place itself. Rooms and beds, your listing, the board and visiting hours.",
+    summary: "Manage rooms, your listing, the board and visiting hours.",
     // The property mark, not a spanner. A spanner says "settings", which is one
     // of four things behind this tile — and it is now the Manage tab's own
     // icon, so the module and the tab it lives in were wearing the same glyph.
@@ -89,6 +98,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   {
     artwork: require("../../../assets/images/workspace/food-preference-module-card.png"),
     description: "Set the week's menu and who eats what. Know how many plates to cook before every meal.",
+    summary: "Manage menus, meal plans and daily plate counts.",
     icon: foodIcon("silverware-fork-knife"),
     key: "food",
     resources: ["FOOD"],
@@ -100,6 +110,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   {
     artwork: require("../../../assets/icons/workspace/notice-module.png"),
     description: "Tell the whole property at once. Post a notice now, schedule it for later, or set it to repeat.",
+    summary: "Manage notices to post, schedule or repeat for everyone.",
     icon: Megaphone,
     key: "notice",
     resources: ["NOTICES"],
@@ -109,6 +120,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   {
     artwork: require("../../../assets/images/workspace/concern-module.png"),
     description: "Everything your tenants raise, from open to resolved. See who has taken each one up and what is stuck.",
+    summary: "Manage tenant concerns from raised to resolved.",
     icon: AlertCircle,
     key: "concern",
     resources: ["CONCERNS"],
@@ -118,6 +130,7 @@ export const OWNER_MODULES: OwnerModule[] = [
   {
     artwork: require("../../../assets/images/workspace/staff-module.png"),
     description: "Your managers and staff in one place. Keep their details, their pay and every salary you have given.",
+    summary: "Manage your managers, staff and their salaries.",
     icon: BriefcaseBusiness,
     key: "staff",
     ownerOnly: true,

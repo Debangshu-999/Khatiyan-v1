@@ -162,7 +162,7 @@ export default function OwnerScreen() {
       <ServiceCard
         artwork={module.artwork}
         artworkVariant={module.artworkVariant}
-        description={module.description}
+        description={module.summary}
         handle={handle}
         held={held}
         icon={module.icon}
@@ -304,6 +304,7 @@ function ServiceCard({
 }: {
   artwork?: ImageSourcePropType;
   artworkVariant?: "compact" | "large" | "wide";
+  /** One short line under the title, kept narrow (user, 2026-10-28). */
   description: string;
   /**
    * Given while the cards are being arranged by hand: the pin gives way to
@@ -324,18 +325,20 @@ function ServiceCard({
   // Small enough that the words decide the card's height, not the picture
   // (user, 2026-10-04): at its old 82 the artwork was taller than three lines
   // of description, so every card came out the same height whatever it said.
+  // Trimmed again with the short descriptions (user, 2026-10-28): a title and two
+  // lines stand about 56 tall, and the art was holding every card open past it.
   const artworkFrame = artworkVariant === "wide"
-    ? { height: 64, width: 84 }
+    ? { height: 56, width: 74 }
     : artworkVariant === "large"
-      ? { height: 66, width: 66 }
-      : { height: 64, width: 64 };
+      ? { height: 58, width: 58 }
+      : { height: 56, width: 56 };
   const artworkImage = artworkVariant === "wide"
-    ? { height: 61, width: 83 }
+    ? { height: 54, width: 73 }
     : artworkVariant === "large"
-      ? { height: 65, width: 65 }
+      ? { height: 57, width: 57 }
       : artworkVariant === "compact"
-        ? { height: 55, width: 55 }
-        : { height: 61, width: 61 };
+        ? { height: 48, width: 48 }
+        : { height: 54, width: 54 };
 
   // The pin remains a sibling overlay rather than a nested pressable, keeping
   // the whole module card tappable while preserving a separate pin action.
@@ -356,7 +359,7 @@ function ServiceCard({
           // No fixed height: a two-line description makes a shorter card than
           // a three-line one.
           paddingHorizontal: spacing.md,
-          paddingVertical: spacing.md,
+          paddingVertical: spacing.sm,
           ...tabShadow(colors.shadow, 4, 11, 0.7),
         }}
       >
@@ -384,7 +387,7 @@ function ServiceCard({
             )}
           </View>
 
-          <View style={{ flex: 1, gap: spacing.xs, paddingRight: 34 }}>
+          <View style={{ flex: 1, gap: 2, paddingRight: 34 }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
               <Text
                 style={{
@@ -404,7 +407,8 @@ function ServiceCard({
                 />
               ) : null}
             </View>
-            <Text style={[type.description, { color: colors.muted }]}>
+            {/* Short and narrow: one or two lines, never a paragraph beside the art (user, 2026-10-28). */}
+            <Text numberOfLines={2} style={[type.description, { color: colors.muted, maxWidth: 230 }]}>
               {description}
             </Text>
           </View>
@@ -443,7 +447,8 @@ function ServiceCard({
             justifyContent: "center",
             marginTop: -22,
             position: "absolute",
-            right: spacing.sm,
+            // Nearer the edge and a size smaller (user, 2026-10-28).
+            right: spacing.xxs,
             top: "50%",
             width: 44,
           }}
@@ -452,7 +457,7 @@ function ServiceCard({
             <Pin
               color={colors.primary}
               fill={pinned ? colors.primary : "transparent"}
-              size={21}
+              size={18}
               strokeWidth={2.1}
             />
           </View>

@@ -173,6 +173,8 @@ function BillingSummary({ cycle }: { cycle: BillingCycle }) {
 }
 
 function LineItemCard({ item }: { item: BillingCycleLineItem }) {
+  // Money already received, taken off the bill (2026-10-28): a minus, and said plainly.
+  const token = item.type === "BOOKING_TOKEN";
   return (
     <Card tone="sunken">
       <View style={{ gap: spacing.sm }}>
@@ -180,9 +182,9 @@ function LineItemCard({ item }: { item: BillingCycleLineItem }) {
           <DetailKicker text={lineItemKindLabel(item)} />
           <StatusPill label={lineItemStatusLabel(item)} tone={item.amountPaise === 0 ? "success" : "neutral"} />
         </View>
-        <DetailLine label={item.label} value={formatMoney(item.amountPaise)} strong />
+        <DetailLine label={item.label} value={`${token ? "− " : ""}${formatMoney(item.amountPaise)}`} strong />
         {item.description ? <DetailText text={item.description} /> : null}
-        <DetailLine label="Settlement" value={humanizeToken(item.settlementAction)} />
+        <DetailLine label="Settlement" value={token ? "Taken off the bill" : humanizeToken(item.settlementAction)} />
         {item.settlementAmountPaise ? <DetailLine label="Settlement amount" value={formatMoney(item.settlementAmountPaise)} /> : null}
       </View>
     </Card>

@@ -807,16 +807,6 @@ function PaymentHistorySection({
   );
 }
 
-function PendingGenerationNote({ count }: { count: number }) {
-  const { colors, type } = useTheme();
-  return (
-    <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
-      {count} more cycle{count === 1 ? "" : "s"} will appear here shortly before {count === 1 ? "its" : "their"} due
-      date{count === 1 ? "" : "s"} this month.
-    </Text>
-  );
-}
-
 function BillingCyclesSection({
   footer,
   canManage,
@@ -894,7 +884,6 @@ function BillingCyclesSection({
             />
           </CycleListFrame>
           {!hasMore ? footer : null}
-          {!hasMore && notGeneratedCount > 0 ? <PendingGenerationNote count={notGeneratedCount} /> : null}
           {hasMore ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />}
         </View>
       )}
@@ -3430,7 +3419,6 @@ function CycleWindowModal({
       {/* Closes by its × or the device back button, not a tap on the scrim
           (user, 2026-09-29). */}
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
-        <HelpModalClose onClose={onClose} />
         <View
           style={{
             alignSelf: "center",
@@ -3446,6 +3434,7 @@ function CycleWindowModal({
             width: "100%",
           }}
         >
+          <HelpModalClose corner onClose={onClose} />
           <HelpModalHeader />
 
           {/* The tenant's rows, icon, label and value (user, 2026-09-29). The

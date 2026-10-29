@@ -12,16 +12,33 @@
  */
 export const PHOTO_UPLOAD = {
   extensions: ["jpg", "jpeg", "png", "webp", "heic", "heif"],
-  maxBytes: 8 * 1024 * 1024,
+  // 500 KB (user, 2026-10-28). Photos are shrunk on the phone to fit: shrink-photo.ts.
+  maxBytes: 500 * 1024,
   label: "JPG, PNG, WEBP or HEIC",
-  maxLabel: "8 MB",
+  maxLabel: "500 KB",
 } as const;
+
+/** The paper agreement's PDF: `AGREEMENT_DOCUMENT`, PDF only (2026-10-28). */
+export const PDF_UPLOAD = {
+  extensions: ["pdf"],
+  maxBytes: 5 * 1024 * 1024,
+  label: "PDF",
+  maxLabel: "5 MB",
+} as const;
+
+/**
+ * Whether a stored file is a document rather than a picture: a Cloudinary RAW
+ * upload, or anything ending in .pdf. Decides a thumbnail against a file row.
+ */
+export function isDocumentUrl(url: string): boolean {
+  return /\/raw\/upload\//.test(url) || /\.pdf($|[?#])/i.test(url);
+}
 
 export const DOCUMENT_UPLOAD = {
   extensions: ["pdf", "doc", "docx", "xls", "xlsx", "txt"],
-  maxBytes: 10 * 1024 * 1024,
+  maxBytes: 5 * 1024 * 1024,
   label: "PDF, DOC, DOCX, XLS, XLSX or TXT",
-  maxLabel: "10 MB",
+  maxLabel: "5 MB",
   /** For DocumentPicker, which filters by MIME type rather than extension. */
   mimeTypes: [
     "application/pdf",

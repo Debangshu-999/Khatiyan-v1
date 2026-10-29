@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentProps, type ComponentType } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
-import { ActivityIndicator, BackHandler, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { ActivityIndicator, BackHandler, Image, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { deviceFingerprint, primeInstallId } from "@/auth/device-fingerprint";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, CircleX, ClipboardList, Clock3, DoorOpen, Expand, Hotel, Info, KeyRound, Lock, type LucideProps, MapPin, Phone, Plus, ShieldCheck, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
+import { ArrowLeft, BadgeCheck, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardList, Clock3, DoorOpen, Expand, FileCheck, Hotel, Info, KeyRound, Lock, type LucideProps, MapPin, Phone, Plus, ScanFace, ShieldCheck, UserCheck, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -21,6 +21,7 @@ import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-foote
 import { StepProgress } from "@/components/step-progress";
 import { PinnedWizardHeader, usePinnedWizardHeader } from "@/components/pinned-wizard-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { api } from "@/store/api";
 import {
   OwnerOnboardingPropertySkeleton,
   OwnerOnboardingRoomsSkeleton,
@@ -50,8 +51,11 @@ import {
 import { formatFloor } from "@/features/property/floor";
 import { AgreementTemplateEditor } from "@/features/compliance/agreement-template-editor";
 import { OnboardingGateBoard } from "@/features/compliance/onboarding-gate-board";
-import { Section } from "@/components/section";
-import { ActionButton, FormInput, formatMoneyPaise } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, formatMoneyPaise, IconButton, RequiredMark } from "@/features/owner/owner-ui";
+import { HowItWorksSheet } from "@/components/how-it-works-sheet";
+import { ChevronDisc } from "@/components/chevron-disc";
+import { SheetShell } from "@/components/sheet-shell";
+import { BookingConfirmedIcon } from "@/components/booking-vector-icons";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { clearAgreementPreview, showAgreementPreview } from "@/store/slices/agreement-preview-slice";
@@ -74,8 +78,10 @@ import {
   type TenantPrefill,
 } from "@/store/services/tenancy-api";
 import {
+  useGetPropertyExitPoliciesQuery,
   useListMyPropertiesQuery,
   useListPropertyRoomsQuery,
+  type DamageLevel,
   type OwnerProperty,
   type OwnerRoom,
 } from "@/store/services/property-api";
@@ -83,8 +89,26 @@ import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
+import { useConvertBookingMutation, useGetPropertyBookingRequestQuery } from "@/store/services/booking-api";
+import { useOnboardExistingTenantMutation } from "@/store/services/compliance-api";
+import { MultiImageField } from "@/features/uploads/multi-image-field";
+import { Lightbox } from "@/components/image-carousel";
+import { AMENITY_LABELS } from "@/features/property/amenity-picker";
+import { DamageLevelDropdown } from "@/features/tenancy/damage-level";
+import { ItemIcon } from "@/features/property/item-icon";
 
-type Step = "type" | "tenant" | "details" | "verify" | "review" | "agreement" | "done";
+type Step = "type" | "tenant" | "details" | "verify" | "handover" | "review" | "agreement" | "done";
+/** One line of the move-in checklist while it is filled in. */
+/** Each item carries its own 1 to 3 photos (user, 2026-10-29). */
+/**
+ * Room: basic things and anything added by hand, removable. Amenities: the
+ * room's own, not removable. Bathroom: things in an attached bathroom.
+ */
+type MoveInSection = "ROOM" | "AMENITY" | "BATHROOM";
+/** `fixed`: one of the room's own amenities, which stays on the list. */
+type MoveInItem = { name: string; damageLevel: DamageLevel; note: string; custom: boolean; photoUrls: string[]; section: MoveInSection; fixed: boolean };
+
+
 type IdDocumentType = "AADHAAR" | "PASSPORT" | "DRIVING_LICENCE" | "VOTER_ID" | "PAN" | "OTHER";
 
 /**
@@ -94,12 +118,17 @@ type IdDocumentType = "AADHAAR" | "PASSPORT" | "DRIVING_LICENCE" | "VOTER_ID" | 
  * than a sixth task, and including it would leave the bar short of full on the
  * screen that says the work is finished.
  */
-const STEP_ORDER: Step[] = ["type", "tenant", "details", "verify", "review", "agreement"];
+const STEP_ORDER: Step[] = ["type", "tenant", "details", "verify", "handover", "review", "agreement"];
+/** From a booking the kind is already monthly, so the wizard starts at the tenant (user, 2026-10-28). */
+const BOOKING_STEP_ORDER: Step[] = ["tenant", "details", "verify", "handover", "review", "agreement"];
+/** A daily guest has no move-in checklist: a register entry, not a handover. */
+const DAILY_STEP_ORDER: Step[] = ["type", "tenant", "details", "verify", "review", "agreement"];
 
 const STEP_TITLE: Record<Step, string> = {
   agreement: "Agreement",
   details: "Room and dates",
   verify: "Verify tenant",
+  handover: "Move in & move out",
   done: "Complete",
   review: "Review",
   tenant: "Tenant",
@@ -116,7 +145,8 @@ const STEP_TITLE: Record<Step, string> = {
 const PREVIOUS_STEP: Partial<Record<Step, Step>> = {
   agreement: "review",
   details: "tenant",
-  review: "verify",
+  handover: "verify",
+  review: "handover",
   tenant: "type",
   verify: "details",
 };
@@ -225,10 +255,21 @@ export default function OwnerOnboardTenantScreen() {
     | "rent"
     | "deposit"
     | "verification"
+    | "movedInOn"
+    | "dues"
   >();
 
   const router = useRouter();
   const dispatch = useAppDispatch();
+  // Onboarding a confirmed booking (user, 2026-10-28): the same wizard, with
+  // what the booking agreed locked. The room, the rent, the deposit, the term
+  // and the person are the booking's. The room can only change, from the
+  // booking's own card, when the booked bed is not free on the move-in day.
+  const params = useLocalSearchParams<{ bookingId?: string; propertyId?: string }>();
+  const bookingId = typeof params.bookingId === "string" && params.bookingId ? params.bookingId : null;
+  // The booking's property, named by the screen that opened this, so the flow never rests on Home's choice.
+  const bookingPropertyId = bookingId && typeof params.propertyId === "string" && params.propertyId ? params.propertyId : null;
+  const fromBooking = bookingId !== null;
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -244,7 +285,7 @@ export default function OwnerOnboardTenantScreen() {
   // hold an account, and a daily guest gets a register form because they will
   // not. Asking for the phone first meant looking up an account for somebody
   // who was about to turn out not to need one.
-  const [step, setStep] = useState<Step>("type");
+  const [step, setStep] = useState<Step>(fromBooking ? "tenant" : "type");
   useEffect(() => {
     if (step !== "agreement") dispatch(clearAgreementPreview());
   }, [dispatch, step]);
@@ -261,6 +302,8 @@ export default function OwnerOnboardTenantScreen() {
   const [footerHeight, setFooterHeight] = useState(0);
   const idStatementQuery = useGetLegalStatementQuery("TENANT_ID_DECLARATION");
   const idStatement = idStatementQuery.data?.text ?? "";
+  const beforeStatementQuery = useGetLegalStatementQuery("EXISTING_TENANT_VERIFIED_DECLARATION");
+  const beforeStatement = beforeStatementQuery.data?.text ?? "";
 
   /** The IDs a tenant may produce. Aadhaar is one of them, never the default. */
   const ID_DOCUMENT_OPTIONS = [
@@ -271,7 +314,7 @@ export default function OwnerOnboardTenantScreen() {
     { label: "PAN", value: "PAN" as const },
     { label: "Other", value: "OTHER" as const },
   ];
-  const previousStep = PREVIOUS_STEP[step] ?? null;
+  // From a booking the tenant step is the first: Back from it leaves.
 
   /**
    * Field errors withdraw themselves after a few seconds.
@@ -292,12 +335,29 @@ export default function OwnerOnboardTenantScreen() {
   }, [form, nameError]);
 
   const [billingType, setBillingType] = useState<BillingKind | null>(null);
+  // A daily stay has no move-in checklist, so Back from its review goes to Verify.
+  const previousStep = fromBooking && step === "tenant" ? null
+    : step === "review" && billingType === "DAILY" ? "verify"
+    : PREVIOUS_STEP[step] ?? null;
+  // Existing-tenant onboarding (P1.1, 2026-10-28): someone already living here,
+  // brought onto Khatiyan from their next bill. A monthly stay that keeps when
+  // they moved in, the deposit already held, what they owed at the switch, and
+  // either their paper agreement (its photos) or a Khatiyan deed to sign.
+  const [existingTenant, setExistingTenant] = useState(false);
+  const [movedInOn, setMovedInOn] = useState<Date | null>(null);
+  const [showMovedInPicker, setShowMovedInPicker] = useState(false);
+  const [dues, setDues] = useState("");
+  const [duesNote, setDuesNote] = useState("");
+  const [agreementKind, setAgreementKind] = useState<"PAPER" | "IN_APP" | null>(null);
+  const [paperPhotos, setPaperPhotos] = useState<string[]>([]);
   const [phone, setPhone] = useState("");
   const [lookup, setLookup] = useState<TenantLookup | null>(null);
   const [tenantName, setTenantName] = useState("");
   const [roomId, setRoomId] = useState<string | null>(null);
   const [rent, setRent] = useState("");
   const [deposit, setDeposit] = useState("");
+  const [carryOverHelp, setCarryOverHelp] = useState(false);
+  const [agreementHelp, setAgreementHelp] = useState(false);
   const [startDate, setStartDate] = useState<Date>(startOfToday());
   const [plannedEndDate, setPlannedEndDate] = useState<Date>(addDays(startOfToday(), 1));
   const [showPicker, setShowPicker] = useState(false);
@@ -309,6 +369,31 @@ export default function OwnerOnboardTenantScreen() {
   // The owner's declaration. Khatiyan verifies nothing — this records that they
   // did, which is where the legal duty actually sits.
   const [idCheckConfirmed, setIdCheckConfirmed] = useState(false);
+  // An existing tenant's first choice on the verify step (user, 2026-10-28):
+  // verified before Khatiyan, declared with a tick, or verified now by one of
+  // the two ordinary routes.
+  const [existingRoute, setExistingRoute] = useState<"BEFORE" | "NOW" | null>(null);
+  const [verifiedBeforeConfirmed, setVerifiedBeforeConfirmed] = useState(false);
+  // The move-in checklist (user, 2026-10-29): optional, between Verify and
+  // Review. Items start from the room's amenities and the property's damage
+  // list, each with a damage level; 1 to 10 photos are required once it is filled in.
+  const [moveInItems, setMoveInItems] = useState<MoveInItem[] | null>(null);
+  // A photo opened full size from an item on the checklist.
+  const [moveInLightbox, setMoveInLightbox] = useState<{ images: string[]; index: number } | null>(null);
+  // 1 by default (user, 2026-10-29): every tenant gets at least one key.
+  const [keysHandedOver, setKeysHandedOver] = useState("1");
+  const [moveInSkipped, setMoveInSkipped] = useState(false);
+  // What is being typed to add, per section: every section but Amenities takes its own (user, 2026-10-29).
+  // The Add sheet: which section it adds to, and the name typed (user, 2026-10-29).
+  const [addingTo, setAddingTo] = useState<MoveInSection | null>(null);
+  const [newItemName, setNewItemName] = useState("");
+  // The item whose removal is being confirmed.
+  const [removingItem, setRemovingItem] = useState<number | null>(null);
+  const [moveInHelp, setMoveInHelp] = useState(false);
+  // This stay's own move-out checklist, set here and printed on its deed (user, 2026-10-29).
+  const [moveOutItems, setMoveOutItems] = useState<string[]>(["Keys returned", "Dues cleared", "Final inspection completed"]);
+  const [addingMoveOut, setAddingMoveOut] = useState(false);
+  const [newMoveOutItem, setNewMoveOutItem] = useState("");
 
   // Which route the owner took, and how far a digital check has got.
   //
@@ -379,14 +464,17 @@ export default function OwnerOnboardTenantScreen() {
   const verificationMode: VerificationMode | null = isDaily ? "MANUAL" : chosenVerificationMode;
   // Manual: the deed and the account take what the owner checked.
   const manualCheck = verificationMode === "MANUAL";
+  const verifiedBefore = existingTenant && existingRoute === "BEFORE";
   const goBackStep = useCallback(() => {
     if (step === "verify" && !isDaily && verificationMode !== null) {
       setVerificationMode(null);
       form.clearAll();
+    } else if (step === "verify" && existingTenant && existingRoute !== null) {
+      setExistingRoute(null);
     } else if (previousStep) {
       setStep(previousStep);
     }
-  }, [step, isDaily, verificationMode, previousStep, form.clearAll]);
+  }, [step, isDaily, verificationMode, existingTenant, existingRoute, previousStep, form.clearAll]);
 
   useFocusEffect(useCallback(() => {
     if (!previousStep) return;
@@ -431,8 +519,8 @@ export default function OwnerOnboardTenantScreen() {
   const propertiesQuery = useListMyPropertiesQuery(undefined);
   const properties = propertiesQuery.data ?? [];
   const selectedProperty = useMemo<OwnerProperty | undefined>(
-    () => resolveSelectedProperty(properties, selectedPropertyId),
-    [properties, selectedPropertyId],
+    () => resolveSelectedProperty(properties, bookingPropertyId ?? selectedPropertyId),
+    [properties, bookingPropertyId, selectedPropertyId],
   );
   const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   const rooms = roomsQuery.data ?? [];
@@ -459,11 +547,101 @@ export default function OwnerOnboardTenantScreen() {
     () => rooms.find((room) => room.id === roomId),
     [roomId, rooms],
   );
-  const selectedRoomAvailableFrom = selectedRoom && selectedRoom.availableVacancies <= 0
+  // The move-in checklist starts from the room's amenities and the property's
+  // damage list, without repeats, every item at NA (2026-10-29).
+  const exitPoliciesQuery = useGetPropertyExitPoliciesQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  useEffect(() => {
+    if (step !== "handover" || moveInItems !== null || exitPoliciesQuery.isLoading) return;
+    // Only what the room's type picked (user, 2026-10-29), sorted into Room and
+    // Bathroom by the damage list, the one list of what a room can have. AC is
+    // the variant; the toilet is never an item; a common toilet's things are
+    // not one tenant's, so they stay off.
+    const attached = selectedProperty?.bathroomType === "ATTACHED";
+    const categoryOf = new Map((exitPoliciesQuery.data?.damageCharges ?? []).map((charge) => [charge.name.toLowerCase(), charge.category]));
+    const seen = new Set<string>();
+    const items: MoveInItem[] = [];
+    const add = (name: string) => {
+      const key = name.trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      const category = categoryOf.get(key) ?? (key === "geyser" ? (attached ? "BATHROOM" : "COMMON_TOILET") : "ROOM");
+      if (category === "COMMON_TOILET") return;
+      if (category === "BATHROOM" && !attached) return;
+      seen.add(key);
+      items.push({ custom: false, damageLevel: "NA", fixed: true, name: name.trim(), note: "", photoUrls: [], section: category === "BATHROOM" ? "BATHROOM" : "ROOM" });
+    };
+    // The variant's own thing: AC, or a fan on a non-AC room (user, 2026-10-29).
+    if (selectedRoom) add(selectedRoom.conditioning === "AC" ? "AC" : "Fan");
+    (selectedRoom?.amenities ?? []).forEach((amenity) => {
+      if (amenity === "ATTACHED_TOILET" || amenity === "COMMON_TOILET") return;
+      add(AMENITY_LABELS[amenity]);
+    });
+    (selectedRoom?.customAmenities ?? []).forEach(add);
+    setMoveInItems(items);
+  }, [exitPoliciesQuery.data, exitPoliciesQuery.isLoading, moveInItems, selectedProperty, selectedRoom, step]);
+  // Sent only when filled in: skipped, or not yet complete, nothing is recorded.
+  // Every item needs at least one photo before the step can go on (user, 2026-10-29).
+  // Keys at least 1, every item a photo, every damage described (user, 2026-10-29).
+  const moveInReady = Boolean(
+    moveInItems && moveInItems.length > 0
+      && moveInItems.every((item) => item.photoUrls.length > 0 && (item.damageLevel === "NA" || item.note.trim()))
+      && Number(keysHandedOver) >= 1,
+  );
+  const moveInPayload = billingType !== "DAILY" && !moveInSkipped && moveInItems && moveInReady
+    ? {
+        items: moveInItems.map((item) => ({
+          custom: item.custom,
+          damageLevel: item.damageLevel,
+          name: item.name,
+          note: item.damageLevel === "NA" || !item.note.trim() ? null : item.note.trim(),
+          photoUrls: item.photoUrls,
+          section: item.section,
+        })),
+        keysHandedOver: keysHandedOver ? Number(keysHandedOver) : null,
+      }
+    : null;
+  // What each level means at this property, for the ⓘ beside every dropdown.
+  const levelWords = exitPoliciesQuery.data?.damageLevels ?? [
+    { description: "No damage", level: "NA" as const },
+    { description: "Light wear. Cleaning or a small fix", level: "D1" as const },
+    { description: "Damaged. Needs repair", level: "D2" as const },
+    { description: "Broken or missing. Must be replaced", level: "D3" as const },
+  ];
+  // Never for an existing tenant: they live here now, so their bed must be free now.
+  const selectedRoomAvailableFrom = !existingTenant && selectedRoom && selectedRoom.availableVacancies <= 0
     ? upcomingRoomVacancies.get(selectedRoom.id) ?? null
     : null;
   const minimumStartDate = selectedRoomAvailableFrom ? dateFromStr(selectedRoomAvailableFrom) : startOfToday();
   const [onboardDailyStay, onboardState] = useOnboardDailyStayMutation();
+  const [convertBooking, convertState] = useConvertBookingMutation();
+  const [onboardExisting, onboardExistingState] = useOnboardExistingTenantMutation();
+  const bookingQuery = useGetPropertyBookingRequestQuery(
+    { propertyId: selectedProperty?.id ?? "", requestId: bookingId ?? "" },
+    { skip: !fromBooking || !selectedProperty },
+  );
+  const booking = fromBooking ? bookingQuery.currentData ?? bookingQuery.data ?? null : null;
+  const [bookingSeeded, setBookingSeeded] = useState(false);
+  // The booking can no longer be onboarded: closing the refusal leaves the wizard.
+  const [bookingGone, setBookingGone] = useState(false);
+  // Everything the booking agreed, poured in once. The account lookup runs on
+  // the booking's own number, so the address it holds comes with it.
+  useEffect(() => {
+    if (!booking || bookingSeeded) return;
+    setBookingSeeded(true);
+    setBillingType("MONTHLY");
+    setPhone(booking.tenantPhone);
+    setTenantName(booking.tenantName);
+    setTenantEmail(booking.tenantEmail ?? "");
+    setTenantGender(booking.tenantGender);
+    setTenantDob(booking.tenantDateOfBirth);
+    setRoomId(booking.roomId);
+    setRent(String(Math.round((booking.agreedRentPaise ?? booking.currentRentPaise) / 100)));
+    setDeposit(String(Math.round(booking.depositPaise / 100)));
+    // They are moving in now: the stay starts today, whatever day was booked.
+    setStartDate(startOfToday());
+    void triggerLookup({ phone: booking.tenantPhone, propertyId: booking.propertyId }).unwrap()
+      .then((found) => setLookup(found))
+      .catch((caught: unknown) => setMessage(errorText(caught)));
+  }, [booking, bookingSeeded]);
   const [onboardWithAgreement, onboardWithAgreementState] = useOnboardTenantWithAgreementMutation();
 
   // Property agreement mode decides whether monthly onboarding routes through
@@ -476,6 +654,8 @@ export default function OwnerOnboardTenantScreen() {
   // TENANCY_CREATE without it, so they onboard on the property's stored terms
   // and cannot alter them here. The server drops submitted prose regardless.
   const { canManage: canManageResource } = usePropertyPermissions(selectedProperty?.id);
+  // The booking agreed the room, the money and the term, never the deed: its clauses are
+  // edited here as on any onboarding (user, 2026-10-28).
   const clausesReadOnly = !canManageResource("TENANCY_RULES");
 
   // Every monthly tenancy is agreement-backed. There is no opt-out any more:
@@ -490,6 +670,14 @@ export default function OwnerOnboardTenantScreen() {
     skip: !selectedProperty || !withAgreement,
   });
   const gateBlocked = Boolean(readinessQuery.data && !readinessQuery.data.landlordReady);
+  // An existing tenant's paper agreement names no landlord, so the profile gate
+  // only stands in front of a Khatiyan deed: their step shows the choice first.
+  const paperChosen = existingTenant && agreementKind === "PAPER";
+  const agreementGateBlocked = gateBlocked && !existingTenant;
+  /** The term picker: always, except an existing tenant who has not chosen yet. */
+  const showTerm = !existingTenant || agreementKind !== null;
+  /** The deed's clauses: not on paper, and not before an existing tenant has chosen. */
+  const showDeed = !existingTenant || (agreementKind === "IN_APP" && !gateBlocked);
 
   const settingsQuery = useGetPropertyAgreementSettingsQuery(selectedProperty?.id ?? "", {
     skip: !selectedProperty || !withAgreement,
@@ -514,6 +702,12 @@ export default function OwnerOnboardTenantScreen() {
     setTermMonths(stored.defaultValidityMonths);
     setEarlyExitRule(stored.defaultEarlyExitRule);
   }, [settingsQuery.data, template]);
+  // From a booking the term is the one it agreed, not the property's default.
+  useEffect(() => {
+    if (!booking || !template) return;
+    setFixedTerm(booking.agreementMonths != null);
+    setTermMonths(booking.agreementMonths);
+  }, [booking, template]);
 
   // The preview carries the room and the term, not just the money: the period
   // clause prints the term's dates and the furniture clause lists the room's
@@ -567,7 +761,6 @@ export default function OwnerOnboardTenantScreen() {
       // response rather than the seeded state, which is still null for the one
       // frame between the settings arriving and the effect copying them.
       || (settingsQuery.isSuccess && !settingsQuery.data?.template));
-  const termSummary = fixedTerm ? `Fixed term, ${termMonths ?? "Choose"} months` : "Indefinite";
 
   // Daily renting is available when the property has at least one nightly rate
   // configured; the rate that applies depends on the chosen room's AC type.
@@ -615,7 +808,8 @@ export default function OwnerOnboardTenantScreen() {
   function clearRoom() {
     setRoomId(null);
     setRent("");
-    setDeposit("");
+    // An existing tenant's deposit is what the owner holds, not the room's.
+    if (!existingTenant) setDeposit("");
   }
 
   function selectRoom(room: OwnerRoom) {
@@ -627,7 +821,9 @@ export default function OwnerOnboardTenantScreen() {
       setStartDate(earliest);
       setPlannedEndDate((current) => dateToStr(current) <= availableFrom ? addDays(earliest, 1) : current);
     }
-    if (selectedProperty) {
+    // An existing tenant's deposit is typed, never taken from the property
+    // policy: part of it may already have been used before Khatiyan.
+    if (selectedProperty && !existingTenant) {
       setDeposit(String(Math.round(selectedProperty.standardDepositPaise / 100)));
     }
   }
@@ -655,6 +851,9 @@ export default function OwnerOnboardTenantScreen() {
       setMessage("Look up a valid tenant phone number before continuing.");
       return false;
     }
+    // Required on this step for every monthly tenant, existing ones too
+    // (user, 2026-10-29). It was optional here for an existing tenant and only
+    // demanded at Create tenancy when a deed was chosen, two steps too late.
     const cleared = form.validate({
       ...(tenantName.trim() && tenantName.trim().length <= 120 ? {} : { tenantName: "Enter the tenant's full name (up to 120 characters)." }),
       ...(tenantAddress.trim() && tenantAddress.trim().length <= 300 ? {} : { tenantAddress: "Enter the tenant's permanent address (up to 300 characters)." }),
@@ -697,7 +896,7 @@ export default function OwnerOnboardTenantScreen() {
     return cleared;
   }
 
-  function chooseBilling(kind: BillingKind) {
+  function chooseBilling(kind: BillingKind, existing = false) {
     setMessage(null);
     // Whoever was being entered is cleared when the KIND changes, not on every
     // tap. A monthly lookup prefills name, email, address and PIN from the
@@ -706,7 +905,7 @@ export default function OwnerOnboardTenantScreen() {
     // different person's details. Re-picking the same kind leaves the form
     // alone, because going Back and choosing again is not a decision to discard
     // what you already typed.
-    if (billingType !== null && billingType !== kind) {
+    if (billingType !== null && (billingType !== kind || existing !== existingTenant)) {
       setLookup(null);
       setPhone("");
       setTenantName("");
@@ -720,10 +919,24 @@ export default function OwnerOnboardTenantScreen() {
       form.clearAll();
     }
     setBillingType(kind);
+    setExistingTenant(existing);
+    if (!existing) {
+      setMovedInOn(null);
+      setDues("");
+      setDuesNote("");
+      setAgreementKind(null);
+      setPaperPhotos([]);
+    }
+    setExistingRoute(null);
+    setVerifiedBeforeConfirmed(false);
+    setMoveInItems(null);
+    setKeysHandedOver("1");
+    setMoveInSkipped(false);
     // Reset room-derived inputs so a switch between kinds starts clean.
     setRoomId(null);
     setRent("");
     setDeposit("");
+    setStartDate(startOfToday());
     setStep("tenant");
   }
 
@@ -738,6 +951,15 @@ export default function OwnerOnboardTenantScreen() {
 
   function roomAndDatesValid(): boolean {
     setMessage(null);
+    // The booking holds its bed, so the room shows no vacancy of its own. The
+    // server checks the bed is free before it creates anything.
+    if (fromBooking) {
+      if (!selectedProperty || !booking || !roomId) {
+        setMessage("The booking has not loaded yet. Try again in a moment.");
+        return false;
+      }
+      return true;
+    }
     if (!selectedProperty || !selectedRoom) {
       setMessage("Select a property on Home and choose a room.");
       return false;
@@ -767,6 +989,32 @@ export default function OwnerOnboardTenantScreen() {
         setMessage("Daily stay must be between 1 and 29 nights.");
         return false;
       }
+    } else if (existingTenant) {
+      // The deposit held now is typed by the owner, and may be none at all.
+      const { deposit: depositIssue, ...amountErrors } = monthlyAmountErrors(rent, deposit);
+      const noDeposit = /^0+(\.0{1,2})?$/.test(deposit.trim());
+      const duesIssue = dues.trim() && !(/^\d+(\.\d{1,2})?$/.test(dues.trim()) && Number(dues) > 0)
+        ? "Enter the dues in rupees, or leave it empty."
+        : null;
+      const movedInIssue = !movedInOn
+        ? "Pick the day they moved in."
+        : dateToStr(movedInOn) > istToday() || dateToStr(movedInOn) >= dateToStr(startDate)
+          ? "They moved in before the first Khatiyan bill, on a day already past."
+          : null;
+      if (!form.validate({
+        ...amountErrors,
+        ...(!deposit.trim()
+          ? { deposit: "Enter the deposit you hold for them now, 0 if none." }
+          : depositIssue && !noDeposit ? { deposit: "Enter the deposit you hold for them now, 0 if none." } : {}),
+        ...(movedInIssue ? { movedInOn: movedInIssue } : {}),
+        ...(duesIssue ? { dues: duesIssue } : {}),
+      })) {
+        return false;
+      }
+      if (dateToStr(startDate) > dateToStr(addDays(startOfToday(), 31))) {
+        setMessage("The first Khatiyan bill must be on their next rent day, within a month from today.");
+        return false;
+      }
     } else if (!form.validate(monthlyAmountErrors(rent, deposit))) {
       return false;
     }
@@ -782,6 +1030,21 @@ export default function OwnerOnboardTenantScreen() {
    * made yet.
    */
   function idCheckMissing() {
+    if (verifiedBefore) {
+      if (!beforeStatement.trim()) {
+        setMessage("The declaration has not loaded. Try again before continuing.");
+        return true;
+      }
+      if (!verifiedBeforeConfirmed) {
+        setMessage("Read the declaration and tick it before continuing.");
+        return true;
+      }
+      return false;
+    }
+    if (existingTenant && existingRoute === null) {
+      setMessage("Choose whether they were verified before or are verified now.");
+      return true;
+    }
     const errors = identityErrors({
       mode: verificationMode,
       dob: idDob,
@@ -847,7 +1110,7 @@ export default function OwnerOnboardTenantScreen() {
     gender: idGender,
     lastFour: idLastFour,
   };
-  const idCheckPayload = verificationMode === "KYC" ? null : manualIdCheck;
+  const idCheckPayload = verificationMode === "KYC" || verifiedBefore ? null : manualIdCheck;
 
   /** What the owner ordered, priced and charged per attempt the tenant uses. */
   const verificationPayload =
@@ -892,6 +1155,139 @@ export default function OwnerOnboardTenantScreen() {
     }
   }
 
+  /**
+   * Onboards a booking (user, 2026-10-28). Only what a booking does not hold is
+   * sent: the ID check or the ordered checks, the address the agreement names
+   * them by, and the early-exit rule. The stay is built from what was agreed.
+   */
+  async function handleConvertBooking() {
+    if (!priorStepsValid() || !selectedProperty || !booking) return;
+    setMessage(null);
+    if (!template || !previewQuery.data || previewQuery.isFetching || previewQuery.isError || readinessQuery.isFetching
+      || !readinessQuery.data?.landlordReady) {
+      setMessage("Wait for the agreement to load successfully before onboarding.");
+      return;
+    }
+    try {
+      const res = await convertBooking({
+        body: {
+          device: deviceFingerprint(),
+          earlyExitRule: earlyExitRule.trim() ? earlyExitRule : null,
+          idCheck: idCheckPayload,
+          idCheckStatementText: idCheckPayload ? idStatement : null,
+          tenant: {
+            dateOfBirth: (manualCheck ? idDob : tenantDob).trim() || null,
+            gender: manualCheck ? idGender : tenantGender,
+            permanentAddress: tenantAddress.trim(),
+            permanentAddressPincode: tenantPincode.trim(),
+          },
+          // The clauses as edited here, the same as any onboarding sends them.
+          template,
+          verification: verificationPayload,
+          moveInChecklist: moveInPayload,
+          moveOutChecklist: billingType === "DAILY" ? null : moveOutItems,
+        },
+        propertyId: selectedProperty.id,
+        requestId: booking.id,
+        version: booking.version,
+      }).unwrap();
+      setBookedForFuture(false);
+      setResult({ tenancy: res.stay.tenancy, tenantAccountCreated: res.stay.tenantAccountCreated });
+      setStep("done");
+    } catch (e) {
+      // Onboarded or closed elsewhere meanwhile, on another device (user, 2026-10-28): the refusal
+      // says so, and its OK leaves, since there is nothing left to onboard here. Read before the
+      // refusal shows, so OK never closes it a moment too early to know.
+      const fresh = await bookingQuery.refetch().then((read) => read.data ?? null).catch(() => null);
+      if (fresh && !fresh.allowedMoveInActions.includes("CONVERT")) {
+        setBookingGone(true);
+        // The list it goes back to drops the booking too.
+        dispatch(api.util.invalidateTags(["Booking"]));
+      }
+      setMessage(errorText(e));
+    }
+  }
+
+  /**
+   * An existing tenant onto Khatiyan (P1.1, 2026-10-28). On their paper
+   * agreement the stay starts now. On a Khatiyan deed it waits for them to
+   * sign, as any onboarding does. Either way the server keeps when they moved
+   * in, opens the deposit already held and raises the dues at the switch.
+   */
+  async function handleOnboardExisting() {
+    if (!priorStepsValid() || !selectedProperty || !roomId || !movedInOn) return;
+    setMessage(null);
+    if (!agreementKind) {
+      setMessage("Choose how their agreement carries over.");
+      return;
+    }
+    const onPaper = agreementKind === "PAPER";
+    if (onPaper && paperPhotos.length === 0) {
+      setMessage("Add their paper agreement, as photos or a PDF.");
+      return;
+    }
+    const termIssue = agreementTermIssue(fixedTerm, termMonths);
+    if (termIssue) {
+      setMessage(termIssue);
+      return;
+    }
+    const hasAddress = Boolean(tenantAddress.trim()) && /^\d{6}$/.test(tenantPincode.trim());
+    if (!onPaper && !hasAddress) {
+      setStep("tenant");
+      form.validate({
+        ...(tenantAddress.trim() ? {} : { tenantAddress: "A Khatiyan agreement names them by their permanent address." }),
+        ...(/^\d{6}$/.test(tenantPincode.trim()) ? {} : { tenantPincode: "Enter a 6-digit PIN code." }),
+      });
+      return;
+    }
+    if (!onPaper && (!template || !previewQuery.data || previewQuery.isFetching || settingsQuery.isFetching
+      || previewQuery.isError || settingsQuery.isError || readinessQuery.isFetching
+      || !readinessQuery.data?.landlordReady)) {
+      setMessage("Wait for the agreement to load successfully before creating the tenancy.");
+      return;
+    }
+    try {
+      const res = await onboardExisting({
+        agreement: agreementKind,
+        depositHeldPaise: Math.round(Number(deposit || "0") * 100),
+        device: deviceFingerprint(),
+        firstBillOn: dateToStr(startDate),
+        idCheck: idCheckPayload,
+        idCheckStatementText: idCheckPayload ? idStatement : null,
+        verifiedBefore: verifiedBefore || null,
+        verifiedBeforeStatementText: verifiedBefore ? beforeStatement : null,
+        movedInOn: dateToStr(movedInOn),
+        openingDuesNote: dues.trim() && duesNote.trim() ? duesNote.trim() : null,
+        openingDuesPaise: dues.trim() ? Math.round(Number(dues) * 100) : null,
+        paperAgreementPhotoUrls: onPaper ? paperPhotos : null,
+        propertyId: selectedProperty.id,
+        rentAmountPaise: Math.round(Number(rent) * 100),
+        roomId,
+        template: onPaper ? null : template,
+        // On paper they may fill this in themselves: only sent once it is complete.
+        tenant: hasAddress
+          ? {
+              dateOfBirth: (manualCheck ? idDob : tenantDob).trim() || null,
+              gender: manualCheck ? idGender : tenantGender,
+              permanentAddress: tenantAddress.trim(),
+              permanentAddressPincode: tenantPincode.trim(),
+            }
+          : null,
+        tenantName: tenantName.trim() ? tenantName.trim() : null,
+        tenantPhone: phone.trim(),
+        term: { earlyExitRule: earlyExitRule.trim() ? earlyExitRule : null, months: fixedTerm ? termMonths : null },
+        verification: verificationPayload,
+          moveInChecklist: moveInPayload,
+          moveOutChecklist: billingType === "DAILY" ? null : moveOutItems,
+      }).unwrap();
+      setBookedForFuture(false);
+      setResult({ tenancy: res.tenancy, tenantAccountCreated: res.tenantAccountCreated });
+      setStep("done");
+    } catch (e) {
+      setMessage(errorText(e));
+    }
+  }
+
   async function handleConfirmWithAgreement() {
     if (!priorStepsValid() || !selectedProperty || !roomId) return;
     setMessage(null);
@@ -926,6 +1322,8 @@ export default function OwnerOnboardTenantScreen() {
         // send, because nobody made one.
         idCheckStatementText: idCheckPayload ? idStatement : null,
         verification: verificationPayload,
+          moveInChecklist: moveInPayload,
+          moveOutChecklist: billingType === "DAILY" ? null : moveOutItems,
         device: deviceFingerprint(),
         tenantName: tenantName.trim() ? tenantName.trim() : null,
         tenantPhone: phone.trim(),
@@ -939,13 +1337,15 @@ export default function OwnerOnboardTenantScreen() {
   }
 
   const wizardHeader = usePinnedWizardHeader();
-  const stepIndex = STEP_ORDER.indexOf(step);
+  const stepOrder = fromBooking ? BOOKING_STEP_ORDER : isDaily ? DAILY_STEP_ORDER : STEP_ORDER;
+  const stepIndex = stepOrder.indexOf(step);
   const onDone = step === "done";
   const tenantStepCanContinue = isDaily || Boolean(lookup?.canOnboard);
   const hasStandardFooter =
     (step === "tenant" && tenantStepCanContinue) ||
     step === "details" ||
-    (step === "verify" && verificationMode !== null) ||
+    step === "handover" ||
+    (step === "verify" && (verificationMode !== null || verifiedBefore)) ||
     step === "review" ||
     step === "done";
 
@@ -991,7 +1391,7 @@ export default function OwnerOnboardTenantScreen() {
             style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
           >
             {onDone ? "Tenant " : "Onboard "}
-            <Text style={{ color: colors.primary }}>{onDone ? (bookedForFuture ? "booked" : "onboarded") : "tenant"}</Text>
+            <Text style={{ color: colors.primary }}>{onDone ? (bookedForFuture ? "booked" : "onboarded") : fromBooking ? "booking" : "tenant"}</Text>
           </FitText>
 
           <View style={{ alignItems: "flex-end", width: 40 }}>
@@ -999,7 +1399,7 @@ export default function OwnerOnboardTenantScreen() {
           </View>
         </View>
 
-        {onDone ? null : <StepProgress step={stepIndex} totalSteps={STEP_ORDER.length} />}
+        {onDone ? null : <StepProgress step={stepIndex} totalSteps={stepOrder.length} />}
       </View>
     </PinnedWizardHeader>
 
@@ -1013,10 +1413,13 @@ export default function OwnerOnboardTenantScreen() {
         paddingBottom: hasStandardFooter ? PINNED_FOOTER_CLEARANCE : undefined,
         paddingTop: wizardHeader.contentInset + spacing.xl,
       }}
+      // The clearance lies under the pinned footer: a step only sits still when nothing is behind it.
+      bottomPaddingCovered={hasStandardFooter}
       surface={colors.formSurface}
     >
       {step === "type" ? (
-        <Section title="Select a kind">
+        // No heading over the four kinds (user, 2026-10-29).
+        <View style={{ gap: spacing.md }}>
           {propertiesQuery.isLoading ? <OwnerStayTypeOptionsSkeleton /> : null}
           {!propertiesQuery.isLoading && !selectedProperty ? (
             <EmptyState
@@ -1027,13 +1430,16 @@ export default function OwnerOnboardTenantScreen() {
           ) : null}
           {selectedProperty ? (
             <>
+              {/* An icon each, as the verify step's routes have (user, 2026-10-29). */}
               <SelectRow
+                icon={CalendarDays}
                 title="Monthly tenancy"
                 subtitle="Recurring monthly rent with a security deposit and billing cycles"
-                selected={billingType === "MONTHLY"}
+                selected={billingType === "MONTHLY" && !existingTenant}
                 onPress={() => chooseBilling("MONTHLY")}
               />
               <SelectRow
+                icon={BedDouble}
                 title="Daily tenancy"
                 subtitle={
                   dailyAvailable
@@ -1046,14 +1452,23 @@ export default function OwnerOnboardTenantScreen() {
               />
               {/* A confirmed booking arriving: its own screen of today's and missed move-ins (user, 2026-10-27). */}
               <SelectRow
+                icon={BookingConfirmedIcon}
                 title="From booking"
                 subtitle="Onboard tenants from confirmed bookings for your property"
                 selected={false}
                 onPress={() => router.push("/owner-booking-onboarding")}
               />
+              {/* Someone already living here, onto Khatiyan from their next bill (P1.1, 2026-10-28). Last of the four (user, 2026-10-29). */}
+              <SelectRow
+                icon={UserCheck}
+                title="Existing tenant"
+                subtitle="Someone already living here, brought onto Khatiyan from their next bill"
+                selected={billingType === "MONTHLY" && existingTenant}
+                onPress={() => chooseBilling("MONTHLY", true)}
+              />
             </>
           ) : null}
-        </Section>
+        </View>
       ) : null}
 
       {step === "tenant" ? (
@@ -1102,14 +1517,32 @@ export default function OwnerOnboardTenantScreen() {
           />
         ) : (
           <>
-            {/* The auth screen's own phone field, not a bare digits input: the
+            {fromBooking ? (
+              /* The person who booked, by the booking's own number: nothing to look up or retype. */
+              <>
+                <NoticeBar
+                  icon={Lock}
+                  message="The room, rent, deposit and term agreed in the booking cannot be changed here."
+                  title={booking ? `From booking ${booking.referenceCode}` : "Loading the booking"}
+                  tone="info"
+                />
+                <Card style={{ borderRadius: 8 }}>
+                  <Field label="Tenant phone">
+                    {booking ? <LockedValue value={formatIndianPhone(booking.tenantPhone)} /> : <ActivityIndicator color={colors.muted} />}
+                  </Field>
+                  {lookupState.isFetching ? <ActivityIndicator color={colors.muted} /> : null}
+                </Card>
+              </>
+            ) : (
+            /* The auth screen's own phone field, not a bare digits input: the
                 flag and fixed +91 are how this app asks for a number everywhere
                 else, and a plain box here made the same question look like a
-                different one. It also clamps to ten digits by itself. */}
+                different one. It also clamps to ten digits by itself. */
             <Card style={{ borderRadius: 8 }}>
               <PhoneField label="Tenant phone" onChangeText={handlePhoneChange} value={phone} />
               <PrimaryButton label="Look up" onPress={handleLookup} busy={lookupState.isFetching} />
             </Card>
+            )}
 
             {/* A card of its own beneath the lookup, not an expansion inside it.
                 The answer is about a person, and a person's details reading as an
@@ -1123,6 +1556,7 @@ export default function OwnerOnboardTenantScreen() {
                 existingName={lookup.fullName ?? null}
                 message={lookup.message}
                 name={tenantName}
+                nameLockedTo={fromBooking ? booking?.tenantName ?? null : null}
                 nameError={nameError}
                 onAddress={(value) => {
                   setTenantAddress(value);
@@ -1166,7 +1600,30 @@ export default function OwnerOnboardTenantScreen() {
             )}
           </Card>
 
-          {selectedProperty ? (
+          {selectedProperty && fromBooking ? (
+            <Card>
+              <Text style={[type.eyebrow, { color: colors.kicker }]}>
+                Agreed in the booking
+              </Text>
+              <Field label="Room">
+                <LockedValue value={booking ? `Room ${booking.roomNumber}` : "-"} />
+              </Field>
+              <Field label="Rent / month">
+                <LockedValue value={booking ? rupees(booking.agreedRentPaise ?? booking.currentRentPaise) : "-"} />
+              </Field>
+              <Field label="Deposit">
+                <LockedValue value={booking ? rupees(booking.depositPaise) : "-"} />
+              </Field>
+              <Field label="Start date">
+                <LockedValue value={formatDateLong(startDate)} />
+              </Field>
+              <Text style={[type.description, { color: colors.muted }]}>
+                The stay starts today, the day they move in. The room can only be changed from the booking&apos;s card, when the booked bed is not free.
+              </Text>
+            </Card>
+          ) : null}
+
+          {selectedProperty && !fromBooking ? (
             <Card>
               <Text style={[type.eyebrow, { color: colors.kicker }]}>
                 Room
@@ -1175,7 +1632,7 @@ export default function OwnerOnboardTenantScreen() {
                 <OwnerOnboardingRoomsSkeleton />
               ) : (
                 <RoomPicker
-                  availableFrom={(room) => !isDaily && room.availableVacancies <= 0
+                  availableFrom={(room) => !isDaily && !existingTenant && room.availableVacancies <= 0
                     ? upcomingRoomVacancies.get(room.id) ?? null
                     : null}
                   onClear={clearRoom}
@@ -1197,7 +1654,7 @@ export default function OwnerOnboardTenantScreen() {
                       room.conditioning === "AC"
                         ? selectedProperty.dailyGuestAcRatePaise
                         : selectedProperty.dailyGuestNonAcRatePaise;
-                    return (room.availableVacancies <= 0 && (isDaily || !upcomingRoomVacancies.has(room.id)))
+                    return (room.availableVacancies <= 0 && (isDaily || existingTenant || !upcomingRoomVacancies.has(room.id)))
                       || (isDaily && perNight == null);
                   }}
                 />
@@ -1205,7 +1662,7 @@ export default function OwnerOnboardTenantScreen() {
             </Card>
           ) : null}
 
-          {roomId ? (
+          {roomId && !fromBooking ? (
             <Card>
               {isDaily ? (
                 <Field label="Daily rate">
@@ -1225,15 +1682,15 @@ export default function OwnerOnboardTenantScreen() {
                 </Field>
               ) : (
                 <>
-                  <Field error={form.errors.rent} label="Rent / month">
+                  <Field error={form.errors.rent} label="Rent / month" required>
                     <Input invalid={Boolean(form.errors.rent)} value={rent} onChangeText={(value) => { setRent(value); form.clearField("rent"); }} placeholder="From room base rent" keyboardType="number-pad" prefix="₹" />
                   </Field>
-                  <Field error={form.errors.deposit} label="Deposit">
-                    <Input invalid={Boolean(form.errors.deposit)} value={deposit} onChangeText={(value) => { setDeposit(value); form.clearField("deposit"); }} placeholder="From property policy" keyboardType="number-pad" prefix="₹" />
+                  <Field error={form.errors.deposit} label={existingTenant ? "Deposit already held" : "Deposit"} required>
+                    <Input invalid={Boolean(form.errors.deposit)} value={deposit} onChangeText={(value) => { setDeposit(value); form.clearField("deposit"); }} placeholder={existingTenant ? "What you hold for them now" : "From property policy"} keyboardType="number-pad" prefix="₹" />
                   </Field>
                 </>
               )}
-              <Field label="Start date">
+              <Field label={existingTenant ? "First Khatiyan bill" : "Start date"} required>
                 <AnimatedPressable
                   onPress={() => setShowPicker(true)}
                   style={{
@@ -1261,6 +1718,8 @@ export default function OwnerOnboardTenantScreen() {
                   mode="date"
                   display={Platform.OS === "ios" ? "inline" : "default"}
                   minimumDate={minimumStartDate}
+                  // An existing tenant's first bill is their next rent day, within the month ahead.
+                  maximumDate={existingTenant ? addDays(startOfToday(), 31) : undefined}
                   onChange={(event: DateTimePickerEvent, selected?: Date) => {
                     if (Platform.OS !== "ios") {
                       setShowPicker(false);
@@ -1279,7 +1738,7 @@ export default function OwnerOnboardTenantScreen() {
 
               {isDaily ? (
                 <>
-                  <Field label="Checkout date">
+                  <Field label="Checkout date" required>
                     <AnimatedPressable
                       onPress={() => setShowEndPicker(true)}
                       style={{
@@ -1331,7 +1790,90 @@ export default function OwnerOnboardTenantScreen() {
 
             </Card>
           ) : null}
+
+          {/* What came before Khatiyan (P1.1, 2026-10-28): when they moved in, and what they owed. */}
+          {roomId && existingTenant ? (
+            <Card>
+              {/* The deposit and dues notes sit behind the question mark (user, 2026-10-28). */}
+              <View style={{ position: "absolute", right: spacing.sm, top: spacing.sm, zIndex: 1 }}>
+                <IconButton accessibilityLabel="How the deposit and dues work" icon={CircleHelp} onPress={() => setCarryOverHelp(true)} />
+              </View>
+              <Field error={form.errors.movedInOn} label="Moved in on" required>
+                <AnimatedPressable
+                  onPress={() => setShowMovedInPicker(true)}
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: colors.surfaceRaised,
+                    borderColor: form.errors.movedInOn ? colors.danger : colors.border,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    flexDirection: "row",
+                    gap: spacing.sm,
+                    minHeight: 48,
+                    paddingHorizontal: spacing.md,
+                  }}
+                >
+                  <CalendarDays color={colors.primary} size={18} strokeWidth={2.1} />
+                  <Text style={[type.bodyStrong, { color: movedInOn ? colors.ink : colors.muted, flex: 1 }]}>
+                    {movedInOn ? formatDateLong(movedInOn) : "Pick the day they moved in"}
+                  </Text>
+                </AnimatedPressable>
+              </Field>
+              {showMovedInPicker ? (
+                <DateTimePicker
+                  value={movedInOn ?? addDays(startOfToday(), -30)}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  maximumDate={addDays(startOfToday(), -1)}
+                  onChange={(event: DateTimePickerEvent, selected?: Date) => {
+                    if (Platform.OS !== "ios") {
+                      setShowMovedInPicker(false);
+                    }
+                    if (event.type === "set" && selected) {
+                      setMovedInOn(startOfDay(selected));
+                      form.clearField("movedInOn");
+                    }
+                  }}
+                />
+              ) : null}
+              {showMovedInPicker && Platform.OS === "ios" ? (
+                <PrimaryButton label="Done" muted onPress={() => setShowMovedInPicker(false)} />
+              ) : null}
+              <Field error={form.errors.dues} label="Dues at the switch">
+                <Input
+                  invalid={Boolean(form.errors.dues)}
+                  keyboardType="number-pad"
+                  onChangeText={(value) => { setDues(value); form.clearField("dues"); }}
+                  placeholder="Rent or charges they still owe"
+                  prefix="₹"
+                  value={dues}
+                />
+              </Field>
+              {dues.trim() ? (
+                <Field label="What the dues are for">
+                  <Input maxLength={120} onChangeText={setDuesNote} placeholder="Dues before Khatiyan" value={duesNote} />
+                </Field>
+              ) : null}
+            </Card>
+          ) : null}
+          {carryOverHelp ? (
+            <HowItWorksSheet
+              eyebrow="Existing tenant"
+              onClose={() => setCarryOverHelp(false)}
+              steps={[
+                { title: "Deposit already held", body: "The deposit is what you hold for them now, after anything already taken from it. It is kept as held and never billed again." },
+                { title: "Dues at the switch", body: "Dues become an opening bill when their billing starts." },
+              ]}
+              title="Deposit and dues"
+            />
+          ) : null}
         </>
+      ) : null}
+
+      {step === "verify" ? (
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.2 }}>
+          Tenant verification
+        </Text>
       ) : null}
 
       {step === "verify" ? (
@@ -1339,12 +1881,42 @@ export default function OwnerOnboardTenantScreen() {
           {/* A stack, not a long page. The picker is the whole card until a
               route is chosen, and then the route is the whole card with its own
               way back — so there is only ever one thing being answered. */}
-          {verificationMode === null ? (
+          {verificationMode === null && existingTenant && existingRoute === null ? (
             <>
-              <Text style={[type.description, { color: colors.muted }]}>
-                Establish who this person is before the tenancy is created. Whichever route you take is
-                recorded on the tenancy.
+              {/* An existing tenant may have been verified when they moved in,
+                  before Khatiyan (user, 2026-10-28). */}
+              <SelectRow
+                icon={BadgeCheck}
+                onPress={() => setExistingRoute("BEFORE")}
+                selected={false}
+                subtitle="You verified their ID when they moved in, and declare it here."
+                title="Already verified"
+              />
+              <SelectRow
+                icon={ScanFace}
+                onPress={() => setExistingRoute("NOW")}
+                selected={false}
+                subtitle="Check their ID yourself, or have them verify through an official check."
+                title="Verify now"
+              />
+            </>
+          ) : verificationMode === null && verifiedBefore ? (
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <HeaderButton icon={ArrowLeft} onPress={goBackStep} subtle />
+              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>
+                Already verified
               </Text>
+            </View>
+          ) : verificationMode === null ? (
+            <>
+              {existingTenant ? (
+                <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                  <HeaderButton icon={ArrowLeft} onPress={goBackStep} subtle />
+                  <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 17 }}>
+                    Verify now
+                  </Text>
+                </View>
+              ) : null}
               <SelectRow
                 icon={ClipboardList}
                 onPress={() => setVerificationMode("MANUAL")}
@@ -1479,6 +2051,20 @@ export default function OwnerOnboardTenantScreen() {
         />
       ) : null}
 
+      {/* In full, in its own box under the card: the declaration is all this
+          route asks, so the screen has room for it (user, 2026-10-28). */}
+      {step === "verify" && verificationMode === null && verifiedBefore ? (
+        <ClickwrapConsent
+          boxed
+          checked={verifiedBeforeConfirmed}
+          expanded
+          expandedHeight={380}
+          onToggle={() => setVerifiedBeforeConfirmed((value) => !value)}
+          statement={beforeStatement}
+        />
+      ) : null}
+
+
       {/* Outside the card on purpose: this is what the list above produced, not
           another section of it. Only once something is in it — an empty total
           under an empty list says nothing worth the space. */}
@@ -1488,6 +2074,303 @@ export default function OwnerOnboardTenantScreen() {
             onAttemptsChange={setVerificationAttempts}
             order={verificationOrder}
           />
+
+        </>
+      ) : null}
+
+      {step === "handover" ? (
+        <>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.2 }}>
+              Move in & move out
+            </Text>
+            <IconButton accessibilityLabel="How the move-in checklist works" icon={CircleHelp} onPress={() => setMoveInHelp(true)} />
+          </View>
+          {moveInHelp ? (
+            <HowItWorksSheet
+              eyebrow="Move-in checklist"
+              onClose={() => setMoveInHelp(false)}
+              steps={[
+                { title: "Optional", body: "Skip it and nothing is recorded. Fill it in and every item needs at least one photo, up to 3, and the keys handed over." },
+                { title: "A damage level for each item", body: "NA is no damage, D3 the worst. Any damage needs a note of what exactly is damaged." },
+                { title: "The tenant answers", body: "They see it in their app and have 48 hours to accept it or note a difference. Unanswered, it counts as accepted." },
+                { title: "Used at move-out", body: "It is the record the room is compared against when the tenancy ends." },
+              ]}
+              title="How the checklist works"
+            />
+          ) : null}
+
+          {/* What must be done before the deposit is settled, this stay's own list (user, 2026-10-29). */}
+          <CollapsibleSection
+            accentTail="checklist"
+            defaultOpen
+            divided
+            summary={`${moveOutItems.length} item${moveOutItems.length === 1 ? "" : "s"} before the deposit is settled`}
+            title="Move-out"
+            trailing={
+              <AnimatedPressable
+                accessibilityLabel="Add to the move-out checklist"
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => { setNewMoveOutItem(""); setAddingMoveOut(true); }}
+                style={{ alignItems: "center", borderColor: colors.primary, borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 4 }}
+              >
+                <Plus color={colors.primary} size={14} strokeWidth={2.4} />
+                <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13 }}>Add</Text>
+              </AnimatedPressable>
+            }
+          >
+            {moveOutItems.length === 0 ? (
+              <Text style={[type.caption, { color: colors.muted }]}>Nothing to check at move-out. Use Add for anything.</Text>
+            ) : null}
+            {moveOutItems.map((entry, index) => (
+              <View
+                key={entry}
+                style={{ alignItems: "center", borderTopColor: colors.border, borderTopWidth: index === 0 ? 0 : 1, flexDirection: "row", gap: spacing.sm, paddingTop: index === 0 ? 0 : spacing.sm }}
+              >
+                <Text style={[type.body, { color: colors.ink, flex: 1 }]}>{entry}</Text>
+                <AnimatedPressable
+                  accessibilityLabel={`Remove ${entry}`}
+                  accessibilityRole="button"
+                  hitSlop={10}
+                  onPress={() => setMoveOutItems((items) => items.filter((kept) => kept !== entry))}
+                >
+                  <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
+                </AnimatedPressable>
+              </View>
+            ))}
+          </CollapsibleSection>
+          {addingMoveOut ? (
+            <SheetShell onClose={() => setAddingMoveOut(false)} title="Add to the move-out checklist">
+              <View style={{ gap: spacing.md }}>
+                <Input maxLength={120} onChangeText={setNewMoveOutItem} placeholder="e.g. Wardrobe emptied" value={newMoveOutItem} />
+                <View style={{ flexDirection: "row" }}>
+                  <ActionButton
+                    disabled={!newMoveOutItem.trim()}
+                    icon={Plus}
+                    label="Add item"
+                    onPress={() => {
+                      const entry = newMoveOutItem.trim();
+                      if (!entry) return;
+                      if (moveOutItems.some((item) => item.toLowerCase() === entry.toLowerCase())) {
+                        setMessage("This is already on the move-out checklist.");
+                        return;
+                      }
+                      setMoveOutItems((items) => [...items, entry]);
+                      setAddingMoveOut(false);
+                    }}
+                  />
+                </View>
+              </View>
+            </SheetShell>
+          ) : null}
+
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>
+            Move-in<Text style={{ color: colors.accent }}> checklist</Text>
+          </Text>
+          {/* Keys first, above the list (user, 2026-10-29). */}
+          <Card>
+            {/* Less than 1, or emptied, is said under the field (user, 2026-10-29). */}
+            <Field error={Number(keysHandedOver) >= 1 ? undefined : "Provide at least 1 key."} label="Keys handed over" required>
+              <Input
+                invalid={Number(keysHandedOver) < 1}
+                keyboardType="number-pad"
+                maxLength={2}
+                onChangeText={(value) => setKeysHandedOver(value.replace(/[^0-9]/g, ""))}
+                placeholder="Provide at least 1 key"
+                value={keysHandedOver}
+              />
+            </Field>
+          </Card>
+
+          {/* Amenities (the room's own, fixed), the bathroom, then the room's things. Each
+              collapses to a summary, and all but Amenities add from the header (user, 2026-10-29). */}
+          {([
+            ...(selectedProperty?.bathroomType === "ATTACHED"
+              ? [{ section: "BATHROOM", tail: "bathroom", title: "Attached" }]
+              : [{ section: "COMMON", tail: "toilet", title: "Common" }]),
+            { section: "ROOM", tail: "items", title: "Room" },
+          ] as { section: MoveInSection | "COMMON"; tail: string; title: string }[]).map(({ section, tail, title }) => {
+            // A common toilet is shared, so it is never on one tenant's checklist.
+            if (section === "COMMON") {
+              return (
+                <CollapsibleSection accentTail={tail} defaultOpen divided key={section} summary="Not on the checklist" title={title}>
+                  <NoticeBar message="It is shared by everyone here, so it is not part of a tenant's move-in checklist." title="Not on the checklist" tone="info" />
+                </CollapsibleSection>
+              );
+            }
+            const entries = (moveInItems ?? [])
+              .map((item, index) => ({ index, item }))
+              .filter(({ item }) => item.section === section);
+            if (entries.length === 0 && section === "AMENITY") return null;
+            const damaged = entries.filter(({ item }) => item.damageLevel !== "NA").length;
+            const needPhotos = entries.filter(({ item }) => item.photoUrls.length === 0).length;
+            const summary = [
+              `${entries.length} item${entries.length === 1 ? "" : "s"}`,
+              damaged > 0 ? `${damaged} with damage` : null,
+              needPhotos > 0 ? `${needPhotos} need${needPhotos === 1 ? "s" : ""} a photo` : "all photographed",
+            ].filter(Boolean).join(", ");
+            return (
+              <CollapsibleSection
+                accentTail={tail}
+                defaultOpen
+                divided
+                key={section}
+                summary={summary}
+                title={title}
+                trailing={section === "AMENITY" ? null : (
+                  <AnimatedPressable
+                    accessibilityLabel={`Add an item to ${title} ${tail}`}
+                    accessibilityRole="button"
+                    hitSlop={8}
+                    onPress={() => { setNewItemName(""); setAddingTo(section); }}
+                    style={{ alignItems: "center", borderColor: colors.primary, borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 4 }}
+                  >
+                    <Plus color={colors.primary} size={14} strokeWidth={2.4} />
+                    <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13 }}>Add</Text>
+                  </AnimatedPressable>
+                )}
+              >
+                {entries.length === 0 ? (
+                  <Text style={[type.caption, { color: colors.muted }]}>Nothing here yet. Use Add for anything in it.</Text>
+                ) : null}
+                {entries.map(({ index, item }, position) => {
+                  const update = (change: Partial<MoveInItem>) =>
+                    setMoveInItems((items) => (items ?? []).map((entry, at) => (at === index ? { ...entry, ...change } : entry)));
+                  return (
+                    <View
+                      key={`${item.name}-${index}`}
+                      style={{
+                        borderTopColor: colors.border,
+                        borderTopWidth: position === 0 ? 0 : 1,
+                        gap: spacing.md,
+                        paddingTop: position === 0 ? 0 : spacing.md,
+                      }}
+                    >
+                      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                        <ItemIcon color={colors.inkSoft} name={item.name} size={20} />
+                        <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 16 }}>{item.name}</Text>
+                        {item.custom ? <Text style={[type.caption, { color: colors.kicker }]}>Added</Text> : null}
+                        {/* The room's own amenities stay. Everything else can go, after a confirm. */}
+                        {item.fixed ? null : (
+                          <AnimatedPressable
+                            accessibilityLabel={`Remove ${item.name}`}
+                            accessibilityRole="button"
+                            hitSlop={10}
+                            onPress={() => setRemovingItem(index)}
+                          >
+                            <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
+                          </AnimatedPressable>
+                        )}
+                      </View>
+                      <DamageLevelDropdown levels={levelWords} onChange={(level) => update({ damageLevel: level })} value={item.damageLevel} />
+                      {/* Any damage is described (user, 2026-10-29). */}
+                      {item.damageLevel === "NA" ? null : (
+                        <Field label="What is damaged" required>
+                          <Input
+                            maxLength={200}
+                            onChangeText={(value) => update({ note: value })}
+                            placeholder="e.g. Torn corner, stain on the left side"
+                            value={item.note}
+                          />
+                        </Field>
+                      )}
+                      <MultiImageField
+                        label={`Photos (${item.photoUrls.length} of 3)`}
+                        max={3}
+                        onChange={(urls) => update({ photoUrls: urls })}
+                        showList={false}
+                        target="MOVE_IN_PHOTO"
+                        urls={item.photoUrls}
+                      />
+                      {item.photoUrls.length > 0 ? (
+                        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                          {item.photoUrls.map((url, photo) => (
+                            <View key={url} style={{ height: 72, width: 72 }}>
+                              <AnimatedPressable
+                                accessibilityLabel={`Open photo ${photo + 1} of ${item.name}`}
+                                accessibilityRole="imagebutton"
+                                onPress={() => setMoveInLightbox({ images: item.photoUrls, index: photo })}
+                                style={{ borderRadius: radii.card, height: 72, overflow: "hidden", width: 72 }}
+                              >
+                                <Image resizeMode="cover" source={{ uri: url }} style={{ height: "100%", width: "100%" }} />
+                              </AnimatedPressable>
+                              <AnimatedPressable
+                                accessibilityLabel={`Remove photo ${photo + 1} of ${item.name}`}
+                                accessibilityRole="button"
+                                hitSlop={8}
+                                onPress={() => update({ photoUrls: item.photoUrls.filter((kept) => kept !== url) })}
+                                style={{ alignItems: "center", backgroundColor: colors.surface, borderRadius: 11, height: 22, justifyContent: "center", position: "absolute", right: -6, top: -6, width: 22 }}
+                              >
+                                <X color={colors.ink} size={13} strokeWidth={2.6} />
+                              </AnimatedPressable>
+                            </View>
+                          ))}
+                        </View>
+                      ) : (
+                        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                          <Info color={colors.kicker} size={13} strokeWidth={2.2} />
+                          <Text style={[type.caption, { color: colors.kicker }]}>At least one photo is needed.</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </CollapsibleSection>
+            );
+          })}
+
+          {/* Adding an item, in a bottom sheet over the step (user, 2026-10-29). */}
+          {addingTo ? (
+            <SheetShell onClose={() => setAddingTo(null)} title={addingTo === "BATHROOM" ? "Add to the bathroom" : "Add to the room"}>
+              <View style={{ gap: spacing.md }}>
+                {/* No autofocus: the sheet opens without the keyboard (user, 2026-10-29). */}
+                <Input
+                  maxLength={80}
+                  onChangeText={setNewItemName}
+                  placeholder={addingTo === "BATHROOM" ? "e.g. Towel rail" : "e.g. Study lamp"}
+                  value={newItemName}
+                />
+                <View style={{ flexDirection: "row" }}>
+                  <ActionButton
+                    disabled={!newItemName.trim()}
+                    icon={Plus}
+                    label="Add item"
+                    onPress={() => {
+                      const name = newItemName.trim();
+                      if (!name || !addingTo) return;
+                      if ((moveInItems ?? []).some((item) => item.name.toLowerCase() === name.toLowerCase())) {
+                        setMessage("This item is already on the checklist.");
+                        return;
+                      }
+                      const section = addingTo;
+                      setMoveInItems((items) => [...(items ?? []), { custom: true, damageLevel: "NA", fixed: false, name, note: "", photoUrls: [], section }]);
+                      setNewItemName("");
+                      setAddingTo(null);
+                    }}
+                  />
+                </View>
+              </View>
+            </SheetShell>
+          ) : null}
+
+          {removingItem !== null && moveInItems?.[removingItem] ? (
+            <ConfirmDialog
+              confirmLabel="Remove"
+              destructive
+              message={`${moveInItems[removingItem].name} will not be on this checklist.`}
+              onCancel={() => setRemovingItem(null)}
+              onConfirm={() => {
+                const at = removingItem;
+                setRemovingItem(null);
+                setMoveInItems((items) => (items ?? []).filter((_, index) => index !== at));
+              }}
+              title="Remove this item?"
+            />
+          ) : null}
+          {moveInLightbox ? (
+            <Lightbox images={moveInLightbox.images} initialIndex={moveInLightbox.index} onClose={() => setMoveInLightbox(null)} />
+          ) : null}
 
         </>
       ) : null}
@@ -1531,10 +2414,12 @@ export default function OwnerOnboardTenantScreen() {
 
           <ReviewGroup
             rows={[
-              { label: "Type", value: isDaily ? "Daily" : "Monthly" },
+              { label: "Type", value: isDaily ? "Daily" : existingTenant ? "Monthly, existing tenant" : "Monthly" },
               { label: "Property", value: selectedProperty?.name ?? "-" },
-              { label: "Room", value: selectedRoom ? `Room ${selectedRoom.roomNumber}` : "-" },
-              { label: "Start date", value: formatDateLong(startDate) },
+              { label: "Room", value: selectedRoom ? `Room ${selectedRoom.roomNumber}` : booking ? `Room ${booking.roomNumber}` : "-" },
+              ...(booking ? [{ label: "Booking", value: booking.referenceCode, mono: true }] : []),
+              ...(existingTenant && movedInOn ? [{ label: "Moved in on", value: formatDateLong(movedInOn) }] : []),
+              { label: existingTenant ? "First Khatiyan bill" : "Start date", value: formatDateLong(startDate) },
               ...(isDaily
                 ? [
                     { label: "Checkout date", value: formatDateLong(plannedEndDate) },
@@ -1560,7 +2445,10 @@ export default function OwnerOnboardTenantScreen() {
                   ]
                 : [
                     { label: "Rent / month", mono: true, strong: true, value: rupees(Math.round(Number(rent) * 100)) },
-                    { label: "Deposit", value: rupees(Math.round(Number(deposit || "0") * 100)), mono: true },
+                    { label: existingTenant ? "Deposit already held" : "Deposit", value: rupees(Math.round(Number(deposit || "0") * 100)), mono: true },
+                    ...(existingTenant && dues.trim()
+                      ? [{ label: "Dues at the switch", value: rupees(Math.round(Number(dues) * 100)), mono: true }]
+                      : []),
                   ]
             }
             materialIcon="currency-inr"
@@ -1571,7 +2459,14 @@ export default function OwnerOnboardTenantScreen() {
               does not start on the day it is created, and that sentence set as
               muted 12px under a group of rows was the quietest thing on a page
               it changes the meaning of. */}
-          {!isDaily ? (
+          {!isDaily && existingTenant ? (
+            <NoticeBar
+              icon={FileCheck}
+              message="Next, keep their paper agreement and the stay starts now, or send a Khatiyan agreement for them to sign."
+              title="Their agreement"
+              tone="info"
+            />
+          ) : !isDaily ? (
             <NoticeBar
               icon={Clock3}
               message="The tenancy and its billing start only when the tenant accepts the agreement in their app."
@@ -1586,10 +2481,14 @@ export default function OwnerOnboardTenantScreen() {
           <ReviewGroup
             action={{ label: "Change", onPress: () => setStep("verify") }}
             footer={
-              verificationMode === "KYC" ? undefined : "You confirmed you saw this document yourself."
+              verifiedBefore
+                ? "You declared their identity was verified when they moved in."
+                : verificationMode === "KYC" ? undefined : "You confirmed you saw this document yourself."
             }
             rows={
-              verificationMode === "KYC"
+              verifiedBefore
+                ? [{ label: "Route", value: "Already verified" }]
+                : verificationMode === "KYC"
                 ? [
                     { label: "Route", value: "Tenant verifies" },
                     // A receipt line: the count rides with the thing counted,
@@ -1606,7 +2505,7 @@ export default function OwnerOnboardTenantScreen() {
                     { label: "Most it can cost", mono: true, strong: true, value: formatMoneyPaise(verificationMaxPaise) },
                   ]
                 : [
-                    { label: "Route", value: "Checked by you" },
+                    { label: "Route", value: "Manual verification" },
                     {
                       label: "Document",
                       value: `${ID_DOCUMENT_OPTIONS.find((option) => option.value === idDocumentType)?.label ?? "ID"} ending ${idLastFour || "----"}`,
@@ -1622,6 +2521,27 @@ export default function OwnerOnboardTenantScreen() {
             }
             title="Verification"
           />
+
+          {isDaily ? null : (
+            <ReviewGroup
+              action={{ label: "Change", onPress: () => setStep("handover") }}
+              rows={moveInPayload
+                ? [
+                    { label: "Items", value: `${moveInPayload.items.length}, ${moveInPayload.items.filter((item) => item.damageLevel !== "NA").length} with damage` },
+                    { label: "Photos", value: String(moveInPayload.items.reduce((total, item) => total + item.photoUrls.length, 0)) },
+                    ...(moveInPayload.keysHandedOver != null ? [{ label: "Keys handed over", value: String(moveInPayload.keysHandedOver) }] : []),
+                  ]
+                : [{ label: "Checklist", value: "Skipped" }]}
+              title="Move-in checklist"
+            />
+          )}
+          {isDaily ? null : (
+            <ReviewGroup
+              action={{ label: "Change", onPress: () => setStep("handover") }}
+              rows={[{ label: "Items", value: moveOutItems.length ? moveOutItems.join(", ") : "None" }]}
+              title="Move-out checklist"
+            />
+          )}
 
           {/* What the money does, said where the money is. The same notice
               shape as the one below it, in blue: this explains a mechanism,
@@ -1642,29 +2562,102 @@ export default function OwnerOnboardTenantScreen() {
       {/* A wall, not a warning. The deed names the property owner as Landlord, so
           until their profile can carry one there is nothing on this step worth
           filling in — and the endpoint would refuse it anyway. */}
-      {step === "agreement" && gateBlocked && readinessQuery.data ? (
+      {step === "agreement" && agreementGateBlocked && readinessQuery.data ? (
         <OnboardingGateBoard
           onOpenProfile={() => router.push("/account-settings")}
           readiness={readinessQuery.data}
         />
       ) : null}
 
-      {step === "agreement" && !gateBlocked ? (
+      {step === "agreement" && !agreementGateBlocked ? (
         <>
           <View style={{ gap: spacing.sm }}>
             {/* The screen's subject, set as one. This step is where the legal
                 document is settled, and an 11px upper-case eyebrow gave it the
                 same weight as the word "Room" two screens earlier. */}
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.2 }}>
-              Tenancy agreement
-            </Text>
-            <Text style={[type.description, { color: colors.muted }]}>
-              These are the exact terms this tenant will accept. The term and the clauses below apply to this
-              tenancy only — they do not change the property's standard agreement.
-            </Text>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+              <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.2 }}>
+                Tenancy agreement
+              </Text>
+              {/* The points sit behind the question mark, in How it works (user, 2026-10-28). */}
+              <IconButton accessibilityLabel="How the agreement works" icon={CircleHelp} onPress={() => setAgreementHelp(true)} />
+            </View>
           </View>
+          {agreementHelp ? (
+            <HowItWorksSheet
+              eyebrow="Tenancy agreement"
+              onClose={() => setAgreementHelp(false)}
+              steps={paperChosen
+                ? [
+                    { title: "Their paper agreement stays", body: "Their paper agreement stays their agreement. Its photos are kept on file for you and for them." },
+                    { title: "What is left of the term", body: "Set what is left of its term. It counts from their first Khatiyan bill." },
+                    { title: "Nothing to sign", body: "The stay starts now and billing on the first Khatiyan bill." },
+                  ]
+                : [
+                    { title: "The exact terms", body: "These are the exact terms this tenant will accept." },
+                    { title: "This tenancy only", body: "The term and clauses below apply to this tenancy only. The property's standard agreement does not change." },
+                    { title: "Accepted in their app", body: "Sent to the tenant's account for acceptance. The tenancy and its billing start only once they accept." },
+                  ]}
+              title="How the agreement works"
+            />
+          ) : null}
 
-          <CollapsibleSection summary={termSummary} title="Agreement" accentTail="duration">
+          {/* How an existing tenant's agreement carries over (P1.1, 2026-10-28). */}
+          {existingTenant ? (
+            <Card>
+              <SelectRow
+                chevron={false}
+                title="Upload existing agreement"
+                subtitle="Add photos or a PDF of it. Nothing to sign, the stay starts now"
+                selected={agreementKind === "PAPER"}
+                onPress={() => setAgreementKind("PAPER")}
+              />
+              <SelectRow
+                chevron={false}
+                title="Create new agreement"
+                subtitle="They sign it in their app. The stay starts when they do"
+                selected={agreementKind === "IN_APP"}
+                onPress={() => setAgreementKind("IN_APP")}
+              />
+            </Card>
+          ) : null}
+
+          {/* Photos or a PDF, in a box headed like the term below it (user, 2026-10-28). */}
+          {paperChosen ? (
+            <CollapsibleSection accentTail="document" collapsible={false} title="Agreement">
+              <MultiImageField
+                documentTarget="AGREEMENT_DOCUMENT"
+                label="Photos or PDF"
+                max={10}
+                onChange={setPaperPhotos}
+                target="AGREEMENT_PHOTO"
+                urls={paperPhotos}
+              />
+            </CollapsibleSection>
+          ) : null}
+
+          {existingTenant && agreementKind === "IN_APP" && gateBlocked && readinessQuery.data ? (
+            <OnboardingGateBoard
+              onOpenProfile={() => router.push("/account-settings")}
+              readiness={readinessQuery.data}
+            />
+          ) : null}
+
+          {showTerm ? (
+          <CollapsibleSection collapsible={false} contentGap={spacing.md} title={paperChosen ? "Remaining" : "Agreement"} accentTail={paperChosen ? "term" : "duration"}>
+            {fromBooking ? (
+              <>
+                <LockedValue value={fixedTerm ? `Fixed term, ${termMonths} months` : "Indefinite"} />
+                {/* With an info mark, as a note about the lock above (user, 2026-10-28). */}
+                <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+                  <Info color={colors.muted} size={14} strokeWidth={2.2} style={{ marginTop: 2 }} />
+                  <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
+                    The term was agreed in the booking. It cannot be changed here.
+                  </Text>
+                </View>
+              </>
+            ) : (
+            <>
             {/* The same segmented control the agreement settings screen uses.
                 Two ChoiceButtons here made the identical decision look like a
                 different kind of control depending on which screen you reached
@@ -1688,10 +2681,26 @@ export default function OwnerOnboardTenantScreen() {
 
             {fixedTerm ? (
               <>
-                <AgreementMonthDropdown onChange={setTermMonths} value={termMonths ?? 11} />
-                <Text style={[type.description, { color: colors.muted }]}>
-                  Min 1, max 11 months. A fixed term ends the tenancy on its last day.
-                </Text>
+                <AgreementMonthDropdown label="Months" onChange={setTermMonths} value={termMonths ?? 11} />
+                {/* On the notice board's ground, as the agreement step's points were (user, 2026-10-29). */}
+                <View
+                  style={{
+                    alignItems: "flex-start",
+                    backgroundColor: colors.primarySoft,
+                    borderCurve: "continuous",
+                    borderRadius: radii.card,
+                    flexDirection: "row",
+                    gap: spacing.sm,
+                    padding: spacing.md,
+                  }}
+                >
+                  <Info color={colors.primary} size={15} strokeWidth={2.2} style={{ marginTop: 2 }} />
+                  <Text style={[type.caption, { color: colors.inkSoft, flex: 1, fontSize: 12.5, lineHeight: 18 }]}>
+                    {paperChosen
+                      ? "Choose between 1 and 11 months as what is left of their agreement. A fixed term ends the tenancy on its last day."
+                      : "Choose between 1 and 11 months as the agreement duration. A fixed term ends the tenancy on its last day."}
+                  </Text>
+                </View>
               </>
             ) : (
               <Text style={[type.description, { color: colors.muted }]}>
@@ -1699,9 +2708,12 @@ export default function OwnerOnboardTenantScreen() {
                 charges for.
               </Text>
             )}
+            </>
+            )}
           </CollapsibleSection>
+          ) : null}
 
-          {template && !clausesReadOnly ? (
+          {template && !clausesReadOnly && showDeed ? (
             <CollapsibleSection summary={clauseCountLabel} title="Agreement" accentTail="clauses">
               <AgreementTemplateEditor
                 clauses={mainClauses}
@@ -1712,7 +2724,7 @@ export default function OwnerOnboardTenantScreen() {
             </CollapsibleSection>
           ) : null}
 
-          {agreementUnavailable ? (
+          {agreementUnavailable && showDeed ? (
             <View style={{ gap: spacing.md }}>
               <NoticeBar
                 message="The agreement could not be loaded, so its clauses cannot be shown or changed. Check your connection and try again."
@@ -1794,8 +2806,14 @@ export default function OwnerOnboardTenantScreen() {
               materialIcon="home"
               rows={[
                 { label: "Property", value: selectedProperty?.name ?? "-" },
-                { label: "Room", value: selectedRoom ? `Room ${selectedRoom.roomNumber}` : "-" },
-                { label: "Start date", value: formatDateLong(new Date(result.tenancy.startDate)) },
+                { label: "Room", value: selectedRoom ? `Room ${selectedRoom.roomNumber}` : booking ? `Room ${booking.roomNumber}` : "-" },
+                ...(result.tenancy.movedInOn
+                  ? [{ label: "Moved in on", value: formatDateLong(dateFromStr(result.tenancy.movedInOn)) }]
+                  : []),
+                {
+                  label: result.tenancy.transitioned ? "First Khatiyan bill" : "Start date",
+                  value: formatDateLong(new Date(result.tenancy.startDate)),
+                },
                 ...(result.tenancy.billingType === "DAILY"
                   ? [
                       {
@@ -1859,7 +2877,15 @@ export default function OwnerOnboardTenantScreen() {
         />
       ) : null}
 
-      {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
+      {opErrors.serverError ? (
+        <AlertModal
+          message={opErrors.serverError}
+          onClose={() => {
+            opErrors.dismissServerError();
+            if (bookingGone) router.back();
+          }}
+        />
+      ) : null}
     </ScreenScrollView>
 
       {step === "tenant" && tenantStepCanContinue ? (
@@ -1874,24 +2900,53 @@ export default function OwnerOnboardTenantScreen() {
 
       {step === "details" ? (
         <PinnedFooter>
-          <ActionButton disabled={!roomId} label="Continue" onPress={goToReview} />
+          <ActionButton disabled={!roomId || (fromBooking && !booking)} label="Continue" onPress={goToReview} />
         </PinnedFooter>
       ) : null}
 
-      {step === "verify" && verificationMode !== null ? (
+      {step === "verify" && (verificationMode !== null || verifiedBefore) ? (
         <PinnedFooter>
           <ActionButton
             disabled={
-              verificationMode === "MANUAL"
+              verifiedBefore && verificationMode === null
+                ? !verifiedBeforeConfirmed || !beforeStatement.trim()
+                : verificationMode === "MANUAL"
                 ? !idCheckConfirmed || !idStatement.trim()
                 : orderedVerificationServices.length === 0
             }
-            label="Continue to review"
+            label={isDaily ? "Continue to review" : "Continue"}
             onPress={() => {
               if (!priorStepsValid()) return;
-              setStep("review");
+              setStep(isDaily ? "review" : "handover");
             }}
           />
+        </PinnedFooter>
+      ) : null}
+
+      {step === "handover" ? (
+        <PinnedFooter>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ActionButton
+              label="Skip move-in"
+              onPress={() => {
+                setMoveInSkipped(true);
+                setMessage(null);
+                setStep("review");
+              }}
+              variant="neutral"
+            />
+            {/* Blocked until every item has a photo (user, 2026-10-29). */}
+            <ActionButton
+              disabled={!moveInReady}
+              label="Continue"
+              onPress={() => {
+                if (!moveInReady) return;
+                setMoveInSkipped(false);
+                setMessage(null);
+                setStep("review");
+              }}
+            />
+          </View>
         </PinnedFooter>
       ) : null}
 
@@ -1921,7 +2976,7 @@ export default function OwnerOnboardTenantScreen() {
           on a long agreement it was several clauses below the fold — PinnedFooter
           also handles the system bar inset, which a button inside the scroll
           view never did. */}
-      {step === "agreement" && !gateBlocked ? (
+      {step === "agreement" && !agreementGateBlocked ? (
         <PinnedFooter onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}>
           {/* ActionButton, the same one every other pinned footer uses. The
               local PrimaryButton drops to opacity 0.65 when disabled, which
@@ -1929,10 +2984,11 @@ export default function OwnerOnboardTenantScreen() {
               shared button says disabled with colour and keeps a border, and
               its shadow and radius match the rest of the app. */}
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            {paperChosen ? null : (
             <ActionButton
               compact
               disabled={onboardWithAgreementState.isLoading || !previewQuery.currentData
-                || previewQuery.isFetching || previewQuery.isError}
+                || previewQuery.isFetching || previewQuery.isError || (existingTenant && !agreementKind)}
               label="Preview agreement"
               variant="secondary"
               onPress={() => {
@@ -1941,32 +2997,20 @@ export default function OwnerOnboardTenantScreen() {
                 router.push("/owner-agreement-preview");
               }}
             />
+            )}
             <ActionButton
               compact
-              disabled={onboardWithAgreementState.isLoading || !template || !previewQuery.data
-                || previewQuery.isFetching || previewQuery.isError || settingsQuery.isFetching || settingsQuery.isError
-                || readinessQuery.isFetching || !readinessQuery.data?.landlordReady}
-              label={onboardWithAgreementState.isLoading ? "Creating…" : "Create tenancy"}
-              onPress={() => void handleConfirmWithAgreement()}
+              disabled={paperChosen
+                ? onboardExistingState.isLoading || paperPhotos.length === 0
+                : onboardWithAgreementState.isLoading || convertState.isLoading || onboardExistingState.isLoading
+                  || (existingTenant && !agreementKind) || !template || !previewQuery.data
+                  || previewQuery.isFetching || previewQuery.isError || settingsQuery.isFetching || settingsQuery.isError
+                  || readinessQuery.isFetching || !readinessQuery.data?.landlordReady}
+              label={onboardWithAgreementState.isLoading || convertState.isLoading || onboardExistingState.isLoading ? "Creating…" : "Create tenancy"}
+              onPress={() => void (existingTenant
+                ? handleOnboardExisting()
+                : fromBooking ? handleConvertBooking() : handleConfirmWithAgreement())}
             />
-          </View>
-
-          {/* Under the button, because it describes what pressing it does. The
-              tenancy does not begin here — it waits, and somebody expecting a
-              live stay would go looking for one. */}
-          <View
-            style={{
-              alignItems: "flex-start",
-              flexDirection: "row",
-              gap: spacing.sm,
-              marginTop: spacing.sm,
-            }}
-          >
-            <Info color={colors.muted} size={14} strokeWidth={2.2} style={{ marginTop: 2 }} />
-            <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
-              Sent to the tenant&apos;s account for acceptance. The tenancy and its billing start
-              only once they accept.
-            </Text>
           </View>
         </PinnedFooter>
       ) : null}
@@ -2143,6 +3187,7 @@ function LookupResultCard({
   message,
   name,
   nameError,
+  nameLockedTo,
   onAddress,
   onChangeName,
   onPincode,
@@ -2159,6 +3204,8 @@ function LookupResultCard({
   message: string;
   name: string;
   nameError?: string;
+  /** The booking's name, which a booking onboarding never changes (2026-10-28). */
+  nameLockedTo?: string | null;
   onAddress: (value: string) => void;
   onChangeName: (value: string) => void;
   onPincode: (value: string) => void;
@@ -2175,8 +3222,9 @@ function LookupResultCard({
   // An account we already hold owns its own name. Letting the owner retype it
   // here would fork the person's identity across two records and leave the
   // agreement disagreeing with the account it belongs to.
-  const nameLocked = exists && Boolean(existingName);
-  const displayName = nameLocked ? existingName! : name;
+  const lockedName = nameLockedTo || (exists ? existingName : null);
+  const nameLocked = Boolean(lockedName);
+  const displayName = lockedName ?? name;
 
 
   // Three outcomes, three headings. The notice says what KIND of person this
@@ -2242,9 +3290,9 @@ function LookupResultCard({
       />
 
       {canOnboard ? (
-        <Field error={nameError} label="Tenant name">
+        <Field error={nameError} label="Tenant name" required>
           {nameLocked ? (
-            <LockedValue value={existingName!} />
+            <LockedValue value={lockedName!} />
           ) : (
             <Input
               autoCapitalize="words"
@@ -2271,7 +3319,7 @@ function LookupResultCard({
             tone="info"
           />
 
-          <Field error={addressError} label="Full permanent address">
+          <Field error={addressError} label="Permanent address" required>
             <Input
               editable={!held(prefill?.permanentAddress)}
               invalid={Boolean(addressError)}
@@ -2282,7 +3330,7 @@ function LookupResultCard({
             />
           </Field>
 
-          <Field error={pincodeError} label="PIN code">
+          <Field error={pincodeError} label="PIN code" required>
             <Input
               editable={!held(prefill?.permanentAddressPincode)}
               invalid={Boolean(pincodeError)}
@@ -2478,11 +3526,7 @@ function RoomPicker({
                   ? `${freeNow} now · ${upcoming} upcoming`
                   : freeNow > 0 ? `${freeNow} free` : upcoming > 0 ? `${upcoming} upcoming` : "Full"}
               </Text>
-              {open ? (
-                <ChevronDown color={colors.kicker} size={18} strokeWidth={2.2} />
-              ) : (
-                <ChevronRight color={colors.kicker} size={18} strokeWidth={2.2} />
-              )}
+              <ChevronDisc color={colors.kicker} direction={open ? "down" : "right"} />
             </AnimatedPressable>
 
             {open
@@ -2515,18 +3559,34 @@ function RoomPicker({
 function CollapsibleSection({
   accentTail,
   children,
+  collapsible = true,
+  contentGap = 0,
   defaultOpen,
+  divided,
   summary,
   title,
+  trailing,
 }: {
+  /** A line between the title and the content when open: the checklist's sections (2026-10-29). */
+  divided?: boolean;
   accentTail?: string;
   children: React.ReactNode;
+  /** A control beside the title, before the chevron: the checklist's Add (2026-10-29). */
+  trailing?: React.ReactNode;
+  /**
+   * False: the same card and title, always open, nothing to tap, the content
+   * close under the title (user, 2026-10-28: Agreement document).
+   */
+  collapsible?: boolean;
+  /** Space between a fixed card's title and its content (user, 2026-10-29: more on the term cards). */
+  contentGap?: number;
   defaultOpen?: boolean;
   summary?: string;
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const [open, setOpen] = useState(Boolean(defaultOpen));
+  const [toggled, setOpen] = useState(Boolean(defaultOpen));
+  const open = collapsible ? toggled : true;
 
   return (
     <View
@@ -2540,23 +3600,22 @@ function CollapsibleSection({
       }}
     >
       <AnimatedPressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
+        accessibilityRole={collapsible ? "button" : "header"}
+        accessibilityState={collapsible ? { expanded: open } : undefined}
+        disabled={!collapsible}
         onPress={() => setOpen((current) => !current)}
-        style={{ gap: spacing.xs, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
+        style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: collapsible ? spacing.md : spacing.xxs, paddingTop: spacing.md }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, flex: 1 }}>
+        {/* The title and its summary on the left; the controls centred on the
+            whole of it, title and summary together (user, 2026-10-29). */}
+        <View style={{ flex: 1, gap: spacing.xs }}>
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>
             {title}{accentTail ? <Text style={{ color: colors.accent }}> {accentTail}</Text> : null}
           </Text>
-          {open ? (
-            <ChevronUp color={colors.muted} size={18} strokeWidth={2.2} />
-          ) : (
-            <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
-          )}
+          {!open && summary ? <Text style={[type.description, { color: colors.muted }]}>{summary}</Text> : null}
         </View>
-
-        {!open && summary ? <Text style={[type.description, { color: colors.muted }]}>{summary}</Text> : null}
+        {trailing}
+        {collapsible ? <ChevronDisc direction={open ? "up" : "down"} size={32} /> : null}
       </AnimatedPressable>
 
       {open ? (
@@ -2565,7 +3624,8 @@ function CollapsibleSection({
             gap: spacing.md,
             paddingBottom: spacing.lg,
             paddingHorizontal: spacing.lg,
-            paddingTop: spacing.xs,
+            paddingTop: divided ? spacing.md : collapsible ? spacing.xs : contentGap,
+            ...(divided ? { borderTopColor: colors.border, borderTopWidth: 1 } : null),
           }}
         >
           {children}
@@ -2624,11 +3684,14 @@ function Field({
   children,
   error,
   label,
+  required,
 }: {
   children: React.ReactNode;
   /** Shown beneath the input, where the correction has to be made. */
   error?: string;
   label: string;
+  /** The red asterisk FormInput puts on a mandatory field. */
+  required?: boolean;
 }) {
   const { colors, type } = useTheme();
   return (
@@ -2642,6 +3705,7 @@ function Field({
           the Gender and Date of birth labels under it. */}
       <Text style={[type.label, { color: error ? colors.danger : colors.muted }]}>
         {label}
+        <RequiredMark required={required} />
       </Text>
       {children}
       {error ? (
@@ -2726,10 +3790,13 @@ function SelectRow({
   title,
   subtitle,
   selected,
+  chevron = true,
   disabled,
   icon: Icon,
   onPress,
 }: {
+  /** False for a row chosen in place that goes nowhere (user, 2026-10-29: the agreement choice). */
+  chevron?: boolean;
   title: string;
   subtitle: string;
   selected: boolean;
@@ -2791,7 +3858,7 @@ function SelectRow({
       {/* No tick. The rule underneath already says which one is chosen, and a
           mark that appears only on the selected row made the other one look
           disabled. The chevron stays because both rows still go somewhere. */}
-      <ChevronRight color={colors.kicker} size={18} />
+      {chevron ? <ChevronDisc color={colors.kicker} direction="right" /> : null}
     </AnimatedPressable>
   );
 }
@@ -2876,10 +3943,29 @@ function ReviewGroup({
         </View>
       ))}
 
+      {/* A confirmation the owner made, so it reads as one: a pale green band
+          with a filled tick, not a grey line under the rows (user, 2026-10-28). */}
       {footer ? (
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 18, marginTop: 2 }]}>
-          {footer}
-        </Text>
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.successSoft,
+            borderCurve: "continuous",
+            borderRadius: radii.card,
+            flexDirection: "row",
+            gap: spacing.sm,
+            marginTop: spacing.xs,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+          }}
+        >
+          <View style={{ alignItems: "center", backgroundColor: colors.successText, borderRadius: 999, height: 22, justifyContent: "center", width: 22 }}>
+            <Check color="#FFFFFF" size={13} strokeWidth={3} />
+          </View>
+          <Text style={[type.caption, { color: colors.successText, flex: 1, fontFamily: fonts.sansSemiBold, lineHeight: 18 }]}>
+            {footer}
+          </Text>
+        </View>
       ) : null}
     </View>
   );

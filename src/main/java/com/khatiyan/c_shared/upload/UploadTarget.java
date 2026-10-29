@@ -13,27 +13,34 @@ package com.khatiyan.c_shared.upload;
  */
 public enum UploadTarget {
 
-    CONCERN_PHOTO("khatiyan/concerns", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
-    PAYMENT_PROOF("khatiyan/payments", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
-    PROFILE_PHOTO("khatiyan/profiles", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 5),
-    PROPERTY_IMAGE("khatiyan/properties", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
+    CONCERN_PHOTO("khatiyan/concerns", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
+    PAYMENT_PROOF("khatiyan/payments", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
+    PROFILE_PHOTO("khatiyan/profiles", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
+    PROPERTY_IMAGE("khatiyan/properties", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
     /** A photo of a room type, not of a particular room. */
-    ROOM_TYPE_IMAGE("khatiyan/room-types", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
+    ROOM_TYPE_IMAGE("khatiyan/room-types", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
     /** A catalogue image for a food item configured at a property. */
-    FOOD_ITEM_IMAGE("khatiyan/food-items", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 5),
-    LOCAL_PLACE_PHOTO("khatiyan/local-places", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
-    NOTICE_IMAGE("khatiyan/notices", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
+    FOOD_ITEM_IMAGE("khatiyan/food-items", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
+    LOCAL_PLACE_PHOTO("khatiyan/local-places", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
+    NOTICE_IMAGE("khatiyan/notices", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
     /** Notices accept PDFs and the like, which must not be treated as images. */
-    NOTICE_DOCUMENT("khatiyan/notices", ResourceType.RAW, Limits.DOCUMENT_FORMATS, Limits.MB * 10),
+    NOTICE_DOCUMENT("khatiyan/notices", ResourceType.RAW, Limits.DOCUMENT_FORMATS, Limits.MB * 5),
 
-    CHAT_IMAGE("khatiyan/chat", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.MB * 8),
+    /** A page of an existing tenant's paper agreement, kept on file at onboarding (2026-10-28). */
+    AGREEMENT_PHOTO("khatiyan/agreements", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
+    /** The same paper agreement as a PDF, beside or instead of its photos (user, 2026-10-28). RAW, as notices. */
+    AGREEMENT_DOCUMENT("khatiyan/agreements", ResourceType.RAW, Limits.PDF_FORMATS, Limits.MB * 5),
+    /** A photo of the room on its move-in checklist (2026-10-29). */
+    MOVE_IN_PHOTO("khatiyan/move-ins", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
+
+    CHAT_IMAGE("khatiyan/chat", ResourceType.IMAGE, Limits.PHOTO_FORMATS, Limits.PHOTO_MAX),
     /**
      * Documents sent in a conversation — an agreement, a bill, a receipt.
      *
      * <p>RAW for the same reason notices are: Cloudinary would try to thumbnail
      * and transform a PDF as though it were a picture.
      */
-    CHAT_FILE("khatiyan/chat", ResourceType.RAW, Limits.DOCUMENT_FORMATS, Limits.MB * 10);
+    CHAT_FILE("khatiyan/chat", ResourceType.RAW, Limits.DOCUMENT_FORMATS, Limits.MB * 5);
 
     private final String folder;
     private final ResourceType resourceType;
@@ -87,7 +94,13 @@ public enum UploadTarget {
         /** Raster formats a phone camera or gallery actually produces. */
         static final String PHOTO_FORMATS = "jpg,jpeg,png,webp,heic,heif";
         static final String DOCUMENT_FORMATS = "pdf,doc,docx,xls,xlsx,txt";
+        static final String PDF_FORMATS = "pdf";
         static final long MB = 1024L * 1024L;
+        /**
+         * Every photo, 500 KB (user, 2026-10-28): the app shrinks a camera photo
+         * to fit before upload. Files are 5 MB.
+         */
+        static final long PHOTO_MAX = 500L * 1024L;
 
         private Limits() {
         }

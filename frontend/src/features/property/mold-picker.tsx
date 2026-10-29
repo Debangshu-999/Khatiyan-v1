@@ -47,11 +47,14 @@ function moldMeta(mold: RoomMold) {
  */
 export function MoldPicker({
   error,
+  hideLabel = false,
   molds,
   onChange,
   value,
 }: {
   error?: string;
+  /** A section band already names this field on Edit room. */
+  hideLabel?: boolean;
   molds: RoomMold[];
   /** Null clears the choice — the cross on the field. */
   onChange: (moldId: string | null) => void;
@@ -79,10 +82,12 @@ export function MoldPicker({
 
   return (
     <View style={{ gap: 6 }}>
-      <Text style={[type.label, { color: error ? colors.danger : colors.muted }]}>
-        Room type
-        <RequiredMark required />
-      </Text>
+      {hideLabel ? null : (
+        <Text style={[type.label, { color: error ? colors.danger : colors.muted }]}>
+          Room type
+          <RequiredMark required />
+        </Text>
+      )}
 
       {/* The clear button is a SIBLING of the field, not a child of it. Nested
           inside, its press bubbled to the field underneath — so clearing the

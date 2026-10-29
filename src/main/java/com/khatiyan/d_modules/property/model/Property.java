@@ -46,6 +46,13 @@ public class Property extends BaseEntity {
 
     // Seeded onto every new property and backfilled onto existing ones so the
     // move-out checklist is never empty. Owners can override it under exit policies.
+    /**
+     * What a bathroom usually has (user, 2026-10-29), put on the damage list
+     * unpriced: as attached-bathroom items to price or delete, or as a common
+     * toilet's list, which is never priced.
+     */
+    public static final List<String> BATHROOM_BASICS = List.of("Taps", "Shower", "Wash basin", "Mirror", "Bucket", "Mug");
+
     public static final List<String> DEFAULT_EXIT_CHECKLIST = List.of(
             "Keys returned",
             "Dues cleared",
@@ -223,6 +230,20 @@ public class Property extends BaseEntity {
     @Column(name = "premature_exit_policy", length = 2000)
     private String prematureExitPolicy;
 
+    // What each damage level means here, the same for every item (V6246, 2026-10-29).
+    @Column(name = "damage_level_d1", nullable = false, length = 120)
+    private String damageLevelD1 = DEFAULT_DAMAGE_LEVEL_D1;
+
+    @Column(name = "damage_level_d2", nullable = false, length = 120)
+    private String damageLevelD2 = DEFAULT_DAMAGE_LEVEL_D2;
+
+    @Column(name = "damage_level_d3", nullable = false, length = 120)
+    private String damageLevelD3 = DEFAULT_DAMAGE_LEVEL_D3;
+
+    public static final String DEFAULT_DAMAGE_LEVEL_D1 = "Light wear. Cleaning or a small fix";
+    public static final String DEFAULT_DAMAGE_LEVEL_D2 = "Damaged. Needs repair";
+    public static final String DEFAULT_DAMAGE_LEVEL_D3 = "Broken or missing. Must be replaced";
+
     @ElementCollection
     @CollectionTable(
             name = "property_exit_checklist_items",
@@ -291,6 +312,25 @@ public class Property extends BaseEntity {
         updateExitPolicy(noticePeriod);
         replaceFacilities(facilities, customFacilities);
         this.exitChecklist.addAll(DEFAULT_EXIT_CHECKLIST);
+        addBathroomBasics();
+    }
+
+    /**
+     * Puts the bathroom basics on the damage list, unpriced, where they are not
+     * already (2026-10-29). Called when the property has, or switches to,
+     * attached bathrooms: one the owner deleted is not brought back otherwise.
+     */
+    public void addBathroomBasics() {
+        DamageCategory category = bathroomType == BathroomType.COMMON ? DamageCategory.COMMON_TOILET : DamageCategory.BATHROOM;
+        java.util.Set<String> present = new java.util.HashSet<>();
+        this.damageCharges.stream()
+                .filter(charge -> charge.getCategory() == category)
+                .forEach(charge -> present.add(charge.getName().toLowerCase(java.util.Locale.ROOT)));
+        for (String name : BATHROOM_BASICS) {
+            if (present.add(name.toLowerCase(java.util.Locale.ROOT)) && this.damageCharges.size() < MAX_DAMAGE_CHARGES) {
+                this.damageCharges.add(PropertyDamageCharge.unpriced(name, category));
+            }
+        }
     }
 
     public static Property create(UUID ownerId, String name, String address, String area, String city,
@@ -610,6 +650,30 @@ public class Property extends BaseEntity {
      * method replaces every policy it is given, and a screen holding only this
      * one field would have cleared the rest.
      */
+    /**
+     * What D1, D2 and D3 mean at this property. A null keeps the current
+     * wording; a blank one is refused, every level has to say what it is.
+     */
+    public void updateDamageLevelDescriptions(String d1, String d2, String d3) {
+        this.damageLevelD1 = levelDescription(d1, this.damageLevelD1);
+        this.damageLevelD2 = levelDescription(d2, this.damageLevelD2);
+        this.damageLevelD3 = levelDescription(d3, this.damageLevelD3);
+    }
+
+    private static String levelDescription(String given, String current) {
+        if (given == null) {
+            return current;
+        }
+        String cleaned = given.strip();
+        if (cleaned.isEmpty()) {
+            throw new ValidationException("Describe what each damage level means");
+        }
+        if (cleaned.length() > 120) {
+            throw new ValidationException("Keep each damage level's description under 120 characters");
+        }
+        return cleaned;
+    }
+
     public void updatePrematureExitPolicy(String prematureExitPolicy) {
         this.prematureExitPolicy = clean(prematureExitPolicy);
     }

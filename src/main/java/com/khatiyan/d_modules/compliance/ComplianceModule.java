@@ -11,6 +11,7 @@ import com.khatiyan.d_modules.compliance.api.dto.AgreementPreviewQuery;
 import com.khatiyan.d_modules.compliance.api.dto.AgreementSigningChallengeResponse;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementResponse;
+import com.khatiyan.d_modules.compliance.api.dto.OnboardExistingTenantRequest;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardingReadinessResponse;
 import com.khatiyan.d_modules.compliance.api.dto.PropertyAgreementSettingsResponse;
 import com.khatiyan.d_modules.compliance.api.dto.TenancyAgreementResponse;
@@ -80,6 +81,21 @@ public class ComplianceModule {
                 result.tenantAccountCreated(),
                 result.tenancy(),
                 TenancyAgreementResponse.from(result.agreement()));
+    }
+
+    /**
+     * A person already living here, onto Khatiyan from their next bill
+     * (2026-10-28). On a paper agreement there is no deed, so no agreement
+     * comes back and the stay has already started.
+     */
+    public OnboardTenancyWithAgreementResponse onboardExistingTenant(
+            UUID actorUserId, OnboardExistingTenantRequest request, String clientIp, UUID sessionJti) {
+        TenancyAgreementService.OnboardResult result =
+                tenancyAgreementService.onboardExistingTenant(actorUserId, request, clientIp, sessionJti);
+        return new OnboardTenancyWithAgreementResponse(
+                result.tenantAccountCreated(),
+                result.tenancy(),
+                result.agreement() == null ? null : TenancyAgreementResponse.from(result.agreement()));
     }
 
     public TenancyAgreementResponse getTenancyAgreement(UUID actorUserId, UUID tenancyId) {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { ShieldCheck, type LucideProps } from "lucide-react-native";
+import { Info, ShieldCheck, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
 import { AlertModal } from "@/components/alert-modal";
@@ -44,7 +44,7 @@ export function ProvideAttemptsSheet({
   onClose: () => void;
   tenancyId: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const checksQuery = useGetPendingStayChecksQuery(tenancyId);
   const [provide, provideState] = useProvideVerificationAttemptsMutation();
@@ -97,9 +97,17 @@ export function ProvideAttemptsSheet({
   return (
     <SheetShell onClose={onClose} title="Provided verification">
       <View style={{ gap: spacing.md }}>
-        <Text style={[type.modalDescription, { color: colors.muted }]}>
-          Attempts can be added to a check given to this tenant once they have none left.
-        </Text>
+        {/* Laid out as the booking sheets are (user, 2026-10-28): a large mark
+            beside what this is for, then the checks, and an empty state on a band. */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, paddingVertical: spacing.xs }}>
+          <ShieldCheck color={colors.primary} size={36} strokeWidth={1.8} />
+          <View style={{ flex: 1, gap: 4, minWidth: 0 }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>More attempts for a check</Text>
+            <Text style={[type.description, { color: colors.muted }]}>
+              Attempts can be added to a check given to this tenant once they have none left.
+            </Text>
+          </View>
+        </View>
 
         {checksQuery.isLoading ? (
           <ActivityIndicator color={colors.primary} />
@@ -122,7 +130,10 @@ export function ProvideAttemptsSheet({
             })}
           </View>
         ) : (
-          <Text style={[type.modalDescription, { color: colors.muted }]}>No checks were given to this tenant.</Text>
+          <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: radii.card, flexDirection: "row", gap: spacing.sm, padding: spacing.sm }}>
+            <Info color={colors.inkSoft} size={22} strokeWidth={1.9} />
+            <Text style={[type.description, { color: colors.ink, flex: 1 }]}>No checks were given to this tenant.</Text>
+          </View>
         )}
 
         <VerificationOrderSummary onAttemptsChange={setAttempts} order={order} />

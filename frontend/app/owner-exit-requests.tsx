@@ -1,5 +1,4 @@
 import { ModalTitle } from "@/components/modal-title";
-import { CenterModal } from "@/components/center-modal";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { type ComponentType, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -14,6 +13,8 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
+import { InfoGrid, InfoPopover } from "@/components/info-grid";
+import { ListEnd } from "@/components/list-end";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
@@ -195,27 +196,20 @@ export default function OwnerExitRequestsScreen() {
 
       {selectedProperty ? (
         <>
-          {/* Summary and history are ONE card, split by a rule — the same shape
-              the concern workspace uses for its monitor and history. Both are
-              ways of looking BACK at the queue; the queue that still needs work
-              is the separate thing below. As two floating blocks they read as
-              unrelated, and the counts lost their connection to the list they
-              count. */}
+          {/* The counts stand on their own and the history has its own card,
+              not one box around both (user, 2026-10-28). */}
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <SummaryTile icon={LockOpen} label="Active" value={String(activeRequests.length)} hint="Still open" tone={activeRequests.length > 0 ? "primary" : "default"} />
+            <SummaryTile icon={FileClock} label="Total" value={String(requests.length)} hint={`${expiredRequests.length} expired`} />
+          </View>
+
           <Card>
             <View style={{ gap: spacing.md }}>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <SummaryTile icon={LockOpen} label="Active" value={String(activeRequests.length)} hint="Still open" tone={activeRequests.length > 0 ? "primary" : "default"} />
-                <SummaryTile icon={FileClock} label="Total" value={String(requests.length)} hint={`${expiredRequests.length} expired`} />
-              </View>
-
-              <View style={{ backgroundColor: colors.border, height: 1, marginVertical: spacing.xs }} />
-
               {/* Text and artwork share a row: the illustration is the
                   block's mark, and stacked above the heading it pushed the
                   button off a phone screen entirely. */}
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
                 <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
-                  <Text style={[type.eyebrow, { color: colors.kicker }]}>History</Text>
                   <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>Exit request history</Text>
                   <Text style={[type.description, { color: colors.muted }]}>
                     Requests that have expired and can no longer be acted on.
@@ -382,8 +376,11 @@ function PastExitRequestsModal({
   roomLabels: Record<string, string>;
 }) {
   const { colors, fonts, type } = useTheme();
-  const [page, setPage] = useState(0);
-  const paged = paginateArray(requests, page, PAST_PAGE_SIZE);
+  // Infinite scroll (user, 2026-10-28): the list is loaded whole, so it shows
+  // a page more each time the reader nears the end, and says when it is over.
+  const [shown, setShown] = useState(PAST_PAGE_SIZE);
+  const visible = requests.slice(0, shown);
+  const more = shown < requests.length;
 
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
@@ -413,8 +410,17 @@ function PastExitRequestsModal({
             <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Requests appear here once they expire and can no longer be acted on." />
           ) : (
             <>
-              <ScrollView contentContainerStyle={{ gap: spacing.sm }} showsVerticalScrollIndicator={false}>
-                {paged.pageItems.map((request) => (
+              <ScrollView
+                contentContainerStyle={{ gap: spacing.sm }}
+                onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+                  if (more && contentOffset.y + layoutMeasurement.height >= contentSize.height - 240) {
+                    setShown((current) => current + PAST_PAGE_SIZE);
+                  }
+                }}
+                scrollEventThrottle={64}
+                showsVerticalScrollIndicator={false}
+              >
+                {visible.map((request) => (
                   <ExitRequestCard
                     chain={chainByHeadId.get(request.id)}
                     key={request.id}
@@ -422,18 +428,8 @@ function PastExitRequestsModal({
                     roomLabel={roomLabels[request.roomId]}
                   />
                 ))}
+                {more ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />}
               </ScrollView>
-              {paged.totalElements > 0 ? (
-                <PaginationBar
-                  hasNext={paged.hasNext}
-                  hasPrevious={paged.hasPrevious}
-                  onNext={() => setPage((current) => current + 1)}
-                  onPrevious={() => setPage((current) => Math.max(0, current - 1))}
-                  page={paged.page}
-                  totalElements={paged.totalElements}
-                  totalPages={paged.totalPages}
-                />
-              ) : null}
             </>
           )}
         </View>
@@ -524,50 +520,34 @@ function ExitRequestCard({
               padding: spacing.md,
             }}
           >
-            <InfoLine
-              icon={ExitTenancyIcon}
-              label="Exit type"
-              value={request.type === "PREMATURE" ? "Premature exit" : "Normal notice"}
+            {/* A table of two columns ruled by lines, the free-text fields
+                side by side under it, as on room-change cards (user, 2026-10-28). */}
+            <InfoGrid
+              cells={[
+                { icon: ExitTenancyIcon, label: "Exit type", value: request.type === "PREMATURE" ? "Premature exit" : "Normal notice" },
+                ...(roomLabel ? [{ icon: DoorOpen, label: "Room", value: roomLabel }] : []),
+                { icon: CalendarDays, label: "Checkout date", value: formatDate(request.requestedCheckoutDate) },
+                ...(request.approvedCheckoutDate
+                  ? [{ icon: CalendarDays, label: "Approved checkout", value: formatDate(request.approvedCheckoutDate) }]
+                  : []),
+                ...(request.decidedByName && request.decidedAt
+                  ? [
+                      { icon: UserRound, label: request.status === "REJECTED" ? "Rejected by" : "Approved by", value: request.decidedByName },
+                      { icon: Clock, label: request.status === "REJECTED" ? "Rejected at" : "Approved at", value: formatDateTime(request.decidedAt) },
+                    ]
+                  : []),
+                ...(request.finalBillingAmountPaise != null && request.finalBillingAmountPaise > 0
+                  ? [{ icon: IndianRupee, label: "Bill impact", value: formatMoney(request.finalBillingAmountPaise) }]
+                  : []),
+              ]}
+              notes={[
+                ...(request.tenantReason ? [{ label: "Reason", onPress: () => setInfo({ label: "Reason", value: request.tenantReason ?? "" }) }] : []),
+                ...(request.adminNotes ? [{ label: "Notes", onPress: () => setInfo({ label: "Notes", value: request.adminNotes ?? "" }) }] : []),
+                ...(request.withdrawalReason
+                  ? [{ label: "Why they want to stay", onPress: () => setInfo({ label: "Why they want to stay", value: request.withdrawalReason ?? "" }) }]
+                  : []),
+              ]}
             />
-            {roomLabel ? <InfoLine icon={DoorOpen} label="Room" value={roomLabel} /> : null}
-            <InfoLine
-              icon={CalendarDays}
-              label="Checkout date"
-              value={formatDate(request.requestedCheckoutDate)}
-            />
-            {request.approvedCheckoutDate ? (
-              <InfoLine icon={CalendarDays} label="Approved checkout" value={formatDate(request.approvedCheckoutDate)} />
-            ) : null}
-            {request.decidedByName && request.decidedAt ? (
-              <>
-                <InfoLine
-                  icon={UserRound}
-                  label={request.status === "REJECTED" ? "Rejected by" : "Approved by"}
-                  value={request.decidedByName}
-                />
-                <InfoLine
-                  icon={Clock}
-                  label={request.status === "REJECTED" ? "Rejected at" : "Approved at"}
-                  value={formatDateTime(request.decidedAt)}
-                />
-              </>
-            ) : null}
-            {request.finalBillingAmountPaise != null && request.finalBillingAmountPaise > 0 ? (
-              <InfoLine icon={IndianRupee} label="Bill impact" value={formatMoney(request.finalBillingAmountPaise)} />
-            ) : null}
-            {request.tenantReason ? (
-              <InfoRow icon={FileText} label="Reason" onPress={() => setInfo({ label: "Reason", value: request.tenantReason ?? "" })} />
-            ) : null}
-            {request.adminNotes ? (
-              <InfoRow icon={FileText} label="Notes" onPress={() => setInfo({ label: "Notes", value: request.adminNotes ?? "" })} />
-            ) : null}
-            {request.withdrawalReason ? (
-              <InfoRow
-                icon={FileText}
-                label="Why they want to stay"
-                onPress={() => setInfo({ label: "Why they want to stay", value: request.withdrawalReason ?? "" })}
-              />
-            ) : null}
           </View>
 
           {withdrawalPending ? (
@@ -878,64 +858,6 @@ function InfoLine({ icon: Icon, label, value }: { icon: typeof CalendarDays; lab
   );
 }
 
-function InfoRow({ icon: Icon, label, onPress }: { icon: typeof CalendarDays; label: string; onPress: () => void }) {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-      <Icon color={colors.kicker} size={14} strokeWidth={2.1} />
-      <Text style={[type.caption, { color: colors.muted, flex: 1 }]}>
-        {label}
-      </Text>
-      <AnimatedPressable
-        accessibilityLabel={`View ${label.toLowerCase()}`}
-        accessibilityRole="button"
-        onPress={onPress}
-        hitSlop={8}
-        style={{
-          alignItems: "center",
-          height: 26,
-          justifyContent: "center",
-          width: 26,
-        }}
-      >
-        <CircleHelp color={colors.ink} size={15} strokeWidth={2.3} />
-      </AnimatedPressable>
-    </View>
-  );
-}
-
-function InfoPopover({ onClose, title, value }: { onClose: () => void; title: string; value: string }) {
-  const { colors, fonts, type } = useTheme();
-  return (
-    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* Closes by its own close button or the device back button, not a tap
-          on the scrim (user, 2026-09-29). */}
-      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
-        <View style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: 18,
-            borderWidth: 1,
-            gap: spacing.sm,
-            maxWidth: 360,
-            padding: spacing.lg,
-            width: "100%",
-          }}>
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
-              {title}
-            </ModalTitle>
-            <IconButton accessibilityLabel="Close" icon={X} onPress={onClose} />
-          </View>
-          <Text style={[type.body, { color: colors.muted, lineHeight: 21 }]}>
-            {value}
-          </Text>
-        </View>
-      </View>
-    </CenterModal>
-  );
-}
-
 function SummaryTile({
   hint,
   icon: Icon,
@@ -1192,6 +1114,5 @@ function StatusBadge({ status }: { status: string }) {
     </View>
   );
 }
-import { CircleHelp } from "lucide-react-native";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";

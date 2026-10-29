@@ -56,10 +56,17 @@ export function SkeletonBoundary({ children }: { children: ReactNode }) {
  */
 export function GhostText({
   children,
+  fit = true,
   ghostWidth,
   style,
   ...rest
 }: TextProps & {
+  /**
+   * False keeps a one-line text at its own size, cut with an ellipsis instead
+   * of shrinking: for text that runs on by nature, like a chat message preview
+   * (user, 2026-10-28).
+   */
+  fit?: boolean;
   /** How wide the bar is. Vary it between lines so a card does not look ruled. */
   ghostWidth?: DimensionValue;
 }) {
@@ -67,7 +74,7 @@ export function GhostText({
 
   if (!isSkeleton) {
     // A one-line card text shrinks to fit before it is cut (user, 2026-10-28).
-    if (rest.numberOfLines === 1) {
+    if (rest.numberOfLines === 1 && fit) {
       return (
         <FitText style={style} {...rest}>
           {children}

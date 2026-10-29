@@ -61,6 +61,7 @@ function harness({ os = "android", insets = defaultInsets, segments = ["owner-ac
     "react-native-safe-area-context": { useSafeAreaInsets: () => currentInsets },
     "expo-router": { useSegments: () => segments },
     "@/components/app-background": { AppBackground: "AppBackground" },
+    "@/components/keyboard-intent": { focusedInput: () => null },
     "@/components/header-scroll-layout": layout,
     "@/components/screen-header": { ScreenHeader, ScreenHeaderScrollContext: { Provider: "HeaderContext" } },
     "@/store/api": { API_TAGS: [], api: { util: { invalidateTags() {} } } },
@@ -143,6 +144,41 @@ test("scrolling and the fit-to-content reset retain the same safe frame and shar
   assert.equal(page.context.props.value.scrollY.value, 0);
   assertSafeFrame(page, defaultInsets);
 });
+
+for (const os of ["android", "ios", "web"]) {
+  test(`${os}: collapsed categories stay scrollable when their last row is behind a pinned footer`, () => {
+    const h = harness({ os });
+    const props = { bottomPaddingCovered: true, contentContainerStyle: { paddingBottom: 128 } };
+    let page = h.render(props);
+    page.scroll.props.onLayout({ nativeEvent: { layout: { height: 600 } } });
+    page.scroll.props.onContentSizeChange(390, 1400);
+    let marker = descendants(page.scroll).find((node) => node.key === "screen/natural-bottom");
+    marker.props.onLayout({ nativeEvent: { layout: { y: 1272 } } });
+    page = h.render(props); h.flush();
+    assert.equal(page.scroll.props.scrollEnabled, true);
+
+    // Collapse both categories and return to the top: 560 fits the viewport,
+    // but 560 + the covered footer clearance does not. It must not lock.
+    marker = descendants(page.scroll).find((node) => node.key === "screen/natural-bottom");
+    marker.props.onLayout({ nativeEvent: { layout: { y: 560 } } });
+    page.scroll.props.onContentSizeChange(390, 688);
+    page = h.render(props); h.flush();
+    assert.equal(page.scroll.props.scrollEnabled, true);
+    for (const offset of [80, 0, 60, 0]) {
+      page.scroll.props.onScroll({ nativeEvent: { contentOffset: { y: offset } } });
+      page = h.render(props); h.flush();
+      assert.equal(page.scroll.props.scrollEnabled, true);
+    }
+    assert.equal(h.scrolledTo.length, 0, "returning to the top cannot lock or reset the scroll");
+
+    // Truly short content still sits still when it clears the footer whole.
+    marker = descendants(page.scroll).find((node) => node.key === "screen/natural-bottom");
+    marker.props.onLayout({ nativeEvent: { layout: { y: 300 } } });
+    page.scroll.props.onContentSizeChange(390, 428);
+    page = h.render(props); h.flush();
+    assert.equal(page.scroll.props.scrollEnabled, false);
+  });
+}
 
 test("per-screen edge choices and fullscreen/auth layouts retain their existing padding", () => {
   const insets = { top: 44, bottom: 34, left: 12, right: 16 };

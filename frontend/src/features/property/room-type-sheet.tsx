@@ -11,6 +11,8 @@ import { FieldError } from "@/components/field-error";
 import { SheetShell } from "@/components/sheet-shell";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, FormInput, NoticeBar, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
+import { TipBoard } from "@/components/tip-board";
+import { SectionHeading } from "@/components/section-heading";
 import { AmenityPicker } from "@/features/property/amenity-picker";
 import { AddPhotoTarget, PhotoRow, UploadProgress } from "@/features/property/photo-list";
 import type { RoomTypeEntry } from "@/features/property/room-type-board";
@@ -41,7 +43,7 @@ const MIN_DORMITORY_BEDS = 5;
 /** Matches RoomMold.MAX_IMAGES, so the sheet refuses before the server does. */
 const MAX_TYPE_IMAGES = 10;
 
-type Field = "beds" | "custom" | "rent";
+type Field = "amenities" | "beds" | "custom" | "photos" | "rent";
 
 /**
  * The form behind one room type.
@@ -134,6 +136,7 @@ export function RoomTypeSheet({
         (completed, total) => setUploadProgress({ completed, total }),
       );
       setImages((current) => [...current, ...uploaded]);
+      form.clearField("photos");
     } catch {
       setUploadError("Could not upload those photos. Please check your connection and try again.");
     } finally {
@@ -170,6 +173,14 @@ export function RoomTypeSheet({
         found.beds = `You already have a ${bedCount}-bed ${variantLabel.toLowerCase()} dormitory. Edit that one, or pick another size.`;
       }
     }
+    // At least one amenity besides the fixed AC or fan and toilet (user, 2026-10-29).
+    if (amenities.filter((amenity) => amenity !== "ATTACHED_TOILET" && amenity !== "COMMON_TOILET").length + customAmenities.length === 0) {
+      found.amenities = "Pick at least one amenity.";
+    }
+    // At least one photo of every room type (user, 2026-10-29).
+    if (images.length === 0) {
+      found.photos = "Add at least one photo of the room.";
+    }
     if (!form.validate(found)) {
       return;
     }
@@ -186,8 +197,14 @@ export function RoomTypeSheet({
   }
 
   return (
-    <SheetShell onClose={onClose} title={title}>
-      <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.sm }} keyboardShouldPersistTaps="handled">
+    <SheetShell fullBleed onClose={onClose} title={title}>
+      {/* Out to the sheet's edges, the padding put back inside, so the subheading
+          bands reach the edge instead of being clipped short of it (user, 2026-10-29). */}
+      <ScrollView
+        contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.sm, paddingHorizontal: spacing.lg }}
+        keyboardShouldPersistTaps="handled"
+        style={{ marginHorizontal: -spacing.lg }}
+      >
         {entry && entry.roomCount > 0 ? (
           <NoticeBar
             message="Changing it here sets the default for new rooms — it does not reprice the existing ones."
@@ -196,6 +213,8 @@ export function RoomTypeSheet({
           />
         ) : null}
 
+        {/* Three parts, each under the app's subheading band (user, 2026-10-29). */}
+        <SectionHeading title="Rent & Occupancy" />
         {/* Beds and rent together: the two facts that make a type what it is,
             set apart from the optional amenities and photos below. */}
         <ChoiceCard style={{ gap: spacing.md }}>
@@ -245,21 +264,20 @@ export function RoomTypeSheet({
           amenities={amenities}
           conditioning={conditioning}
           customAmenities={customAmenities}
-          onChangeAmenities={setAmenities}
-          onChangeCustom={setCustomAmenities}
+          error={form.errors.amenities}
+          headingBand
+          onChangeAmenities={(next) => { setAmenities(next); form.clearField("amenities"); }}
+          onChangeCustom={(next) => { setCustomAmenities(next); form.clearField("amenities"); }}
         />
 
         <View style={{ gap: spacing.sm }}>
-          <View style={{ gap: 2 }}>
-            <Text style={[type.label, { color: colors.inkSoft }]}>Room photos (optional)</Text>
-            {/* Last in the sheet, and the only part that argues for itself. The
-                rest of the form is facts the owner already knows; this one asks
-                for work they can skip, so it has to say what the work buys. */}
-            <Text style={[type.modalDescription, { color: colors.muted }]}>
-              Rooms with photos have higher chances of conversion into a real tenancy. Users prefer to see the
-              rooms beforehand. Consider adding room photos.
-            </Text>
-          </View>
+          <SectionHeading
+            title="Room photos"
+            trailing={<Text style={{ color: colors.danger, fontSize: 18 }}>*</Text>}
+            trailingInline
+          />
+          {/* Required now, at least one (user, 2026-10-29). Why more is worth it is a tip, not a rule. */}
+          <TipBoard>Rooms with photos are more likely to turn into a tenancy. People like to see a room before they book it.</TipBoard>
 
           {images.length < MAX_TYPE_IMAGES ? (
             <AddPhotoTarget
@@ -271,6 +289,7 @@ export function RoomTypeSheet({
           ) : null}
 
           <UploadProgress progress={uploadProgress} />
+          <FieldError message={form.errors.photos} />
 
           {images.map((image, index) => (
             <PhotoRow

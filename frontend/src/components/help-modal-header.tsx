@@ -13,8 +13,18 @@ export function HelpModalHeader({ title = "How it works" }: { title?: string }) 
   </View>;
 }
 
-export function HelpModalClose({ onClose }: { onClose: () => void }) {
+/**
+ * The ×. Above a bottom sheet it floats on the scrim; `corner` puts it inside a
+ * centred card's top right corner instead, on a sunken disc so it shows on the
+ * white (user, 2026-10-28: centred How it works modals, app-wide).
+ */
+export function HelpModalClose({ corner = false, onClose }: { corner?: boolean; onClose: () => void }) {
   const { colors } = useTheme();
+  if (corner) {
+    return <AnimatedPressable accessibilityLabel="Close explanation" accessibilityRole="button" hitSlop={8} onPress={onClose} style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 18, height: 36, justifyContent: "center", position: "absolute", right: 12, top: 12, width: 36, zIndex: 1 }}>
+      <X color={colors.ink} size={20} />
+    </AnimatedPressable>;
+  }
   return <AnimatedPressable accessibilityLabel="Close explanation" accessibilityRole="button" onPress={onClose} style={{ alignSelf: "center", marginBottom: 14, backgroundColor: colors.surface, borderRadius: 23, width: 46, height: 46, alignItems: "center", justifyContent: "center" }}>
     <X color={colors.ink} size={23} />
   </AnimatedPressable>;

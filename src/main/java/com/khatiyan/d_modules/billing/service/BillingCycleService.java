@@ -187,6 +187,7 @@ public class BillingCycleService {
 
         tenancyModule.markBillingStarted(tenancyId);
         publishBillingCycleGenerated(savedCycle);
+        startCarriedOverStay(actorUserId, tenancy);
 
         log.info(
                 "Billing cycle created billingCycleId={} tenancyId={} actorUserId={} cycleNumber={}",
@@ -197,6 +198,29 @@ public class BillingCycleService {
 
         return toResponse(savedCycle);
     }
+
+    /**
+     * What a stay carried over from before Khatiyan brings with it, set up as
+     * its billing starts (existing-tenant onboarding, 2026-10-28): the deposit
+     * already held opens in the ledger, and what was owed at the switch is
+     * raised as an opening one-off bill. Nothing on any other stay.
+     */
+    private void startCarriedOverStay(UUID actorUserId, TenancyResponse tenancy) {
+        if (!tenancy.transitioned()) {
+            return;
+        }
+        depositManagerService.openCarriedOver(tenancy, actorUserId);
+        Long dues = tenancy.openingDuesPaise();
+        if (dues != null && dues > 0) {
+            String note = tenancy.openingDuesNote();
+            createOneOffBill(actorUserId, tenancy.id(), new CreateOneOffBillRequest(
+                    note == null || note.isBlank() ? OPENING_DUES_REASON : note.strip(),
+                    dues));
+        }
+    }
+
+    /** The opening one-off bill's line when the owner gave no reason for the dues. */
+    static final String OPENING_DUES_REASON = "Dues before Khatiyan";
 
     /**
      * Lists tenant billing cycles for self-view.
@@ -627,6 +651,11 @@ public class BillingCycleService {
     private List<TenancyResponse> monthlyStays(UUID propertyId) {
         return tenancyModule.findActiveByPropertyId(propertyId).stream()
                 .filter(t -> t.billingType() == TenancyBillingType.MONTHLY)
+                // A stay waiting on its agreement holds the bed but bills nothing
+                // until it is accepted, and may never be (2026-10-28: its rent was
+                // projected as billed for the month). A signed one SCHEDULED for
+                // later is counted: it bills once it starts.
+                .filter(t -> t.status() != TenancyStatus.PENDING_ACCEPTANCE)
                 .toList();
     }
 
@@ -2203,7 +2232,10 @@ public class BillingCycleService {
                     tenancy.rentAmountPaise(),
                     1));
 
+            // A stay carried over from before Khatiyan already paid its deposit
+            // (2026-10-28): it is opened in the ledger as held, never billed.
             if (Integer.valueOf(1).equals(cycle.getCycleNumber())
+                    && !tenancy.transitioned()
                     && tenancy.depositAmountPaise() != null
                     && tenancy.depositAmountPaise() > 0) {
                 lineItemRepository.save(BillingCycleLineItem.systemDepositCharge(

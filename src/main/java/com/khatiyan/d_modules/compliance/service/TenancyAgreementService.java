@@ -39,6 +39,10 @@ import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.compliance.api.dto.AgreementDeedResponse;
 import com.khatiyan.d_modules.compliance.api.dto.AgreementPreviewQuery;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest;
+import com.khatiyan.d_modules.tenancy.api.dto.TransitionInput;
+import com.khatiyan.d_modules.compliance.api.dto.OnboardExistingTenantRequest;
+import jakarta.validation.Validator;
+import jakarta.validation.ConstraintViolation;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardingReadinessResponse;
 import com.khatiyan.d_modules.compliance.model.AgreementClause;
 import com.khatiyan.d_modules.compliance.model.AgreementPreamble;
@@ -112,6 +116,9 @@ public class TenancyAgreementService {
      */
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
+    /** Runs ordinary onboarding's own checks on an existing tenant's request. */
+    private final Validator validator;
+
     public TenancyAgreementService(
             TenancyAgreementRepository agreementRepository,
             AgreementService agreementService,
@@ -124,7 +131,8 @@ public class TenancyAgreementService {
             AuthModule authModule,
             VerificationModule verificationModule,
             AgreementAcceptanceWindow acceptanceWindow,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            Validator validator) {
         this.agreementRepository = agreementRepository;
         this.agreementService = agreementService;
         this.assembler = assembler;
@@ -136,6 +144,7 @@ public class TenancyAgreementService {
         this.authModule = authModule;
         this.verificationModule = verificationModule;
         this.acceptanceWindow = acceptanceWindow;
+        this.validator = validator;
         this.hashMapper = objectMapper.copy().setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
 
@@ -521,48 +530,18 @@ public class TenancyAgreementService {
         return spaced.substring(0, 1).toUpperCase(Locale.ROOT) + spaced.substring(1);
     }
 
-    /** Result of agreement-path onboarding: the pending tenancy + its agreement. */
-    public record OnboardResult(boolean tenantAccountCreated, TenancyResponse tenancy, TenancyAgreement agreement) {
-    }
-
     /**
-     * Agreement-path onboarding: creates the pending tenancy through the tenancy
-     * facade and its agreement in one transaction. The agreement's rent/deposit
-     * are taken from the created tenancy (single source of truth).
+     * The owner's ID declaration, and the checks ordered for the tenant to run,
+     * written with the stay they are about. Shared by every onboarding path.
      */
-    @Transactional
-    public OnboardResult onboardWithAgreement(
+    private void recordIdCheckAndOrders(
             UUID actorUserId,
             OnboardTenancyWithAgreementRequest request,
+            TenancyResponse tenancy,
+            PropertyResponse property,
             String clientIp,
             UUID sessionJti) {
-
         LegalStatement idStatement = LegalStatement.TENANT_ID_DECLARATION;
-        // Only the declaring route has a statement to check. An owner ordering
-        // a verification declares nothing — the tenant has not done it yet —
-        // so demanding the sentence here would mean recording one nobody made.
-        if (request.idCheck() != null && !idStatement.text().equals(request.idCheckStatementText())) {
-            throw new ValidationException(
-                    "This version of the app is showing an outdated declaration. Update the app and try again.");
-        }
-
-        PropertyAgreementSettings settings = agreementService.getOrSeedPropertySettings(actorUserId, request.propertyId());
-        PropertyResponse property = propertyModule.getActiveProperty(request.propertyId());
-
-        ensureLandlordCanBeNamed(property, actorUserId);
-
-        TenancyOnboardingResponse onboarding = tenancyModule.onboardPendingMonthly(
-                actorUserId,
-                request.tenantPhone(),
-                request.tenantName(),
-                request.propertyId(),
-                request.roomId(),
-                request.rentAmountPaise(),
-                request.depositAmountPaise(),
-                request.startDate(),
-                request.idCheck());
-        TenancyResponse tenancy = onboarding.tenancy();
-
         // Recorded here rather than inside the tenancy module, which would have
         // needed a dependency back on compliance and closed a cycle. Onboarding
         // is already orchestrated from this side, so the declaration and the
@@ -599,6 +578,230 @@ public class TenancyAgreementService {
                                     OnboardTenancyWithAgreementRequest.VerificationOrderInput::attempts)),
                     actorUserId);
         }
+    }
+
+    /**
+     * The room's condition at move-in, when one was filled in, and the stay's
+     * own move-out checklist (2026-10-29), with the stay.
+     */
+    private void recordMoveInChecklist(UUID actorUserId, OnboardTenancyWithAgreementRequest request, TenancyResponse tenancy) {
+        if (request.moveInChecklist() != null) {
+            tenancyModule.recordMoveInChecklist(tenancy.id(), actorUserId, request.moveInChecklist());
+        }
+        if (request.moveOutChecklist() != null) {
+            tenancyModule.setMoveOutChecklist(tenancy.id(), request.moveOutChecklist());
+        }
+    }
+
+    /** Result of agreement-path onboarding: the pending tenancy + its agreement. */
+    public record OnboardResult(boolean tenantAccountCreated, TenancyResponse tenancy, TenancyAgreement agreement) {
+    }
+
+    /**
+     * Agreement-path onboarding: creates the pending tenancy through the tenancy
+     * facade and its agreement in one transaction. The agreement's rent/deposit
+     * are taken from the created tenancy (single source of truth).
+     */
+    @Transactional
+    public OnboardResult onboardWithAgreement(
+            UUID actorUserId,
+            OnboardTenancyWithAgreementRequest request,
+            String clientIp,
+            UUID sessionJti) {
+        return onboardWithAgreement(actorUserId, request, null, clientIp, sessionJti);
+    }
+
+    /**
+     * Brings a person already living here onto Khatiyan from their next bill
+     * (existing-tenant onboarding, P1.1, 2026-10-28).
+     *
+     * <p>{@code IN_APP} is ordinary onboarding starting on the first Khatiyan
+     * bill: a deed they sign, the stay pending until they do. {@code PAPER}
+     * keeps their paper agreement, its photos on file, so there is nothing to
+     * sign and the stay starts now. Either way the stay carries its move-in
+     * date, the deposit already held and the dues at the switch, which billing
+     * sets up as it starts.
+     */
+    @Transactional
+    public OnboardResult onboardExistingTenant(
+            UUID actorUserId,
+            OnboardExistingTenantRequest request,
+            String clientIp,
+            UUID sessionJti) {
+        OnboardTenancyWithAgreementRequest onboarding = request.asOnboarding();
+        List<String> photos = request.paperAgreementPhotoUrls() == null ? List.of() : request.paperAgreementPhotoUrls();
+        if (request.onPaper() && photos.isEmpty()) {
+            throw new ValidationException("Add the paper agreement, as photos or a PDF");
+        }
+        if (!request.onPaper() && !photos.isEmpty()) {
+            throw new ValidationException("The paper agreement's files go with keeping the paper agreement");
+        }
+        // A third identity route: the owner declares it was verified before
+        // Khatiyan. It stands instead of the other two, never beside them.
+        boolean verifiedBefore = request.declaredVerifiedBefore();
+        if (verifiedBefore) {
+            boolean ordered = request.verification() != null && !request.verification().isEmpty();
+            if (request.idCheck() != null || ordered) {
+                throw new ValidationException(
+                        "Choose one way to establish this tenant's identity: verified before, an ID check, or a verification");
+            }
+            if (!LegalStatement.EXISTING_TENANT_VERIFIED_DECLARATION.text().equals(request.verifiedBeforeStatementText())) {
+                throw new ValidationException(
+                        "This version of the app is showing an outdated declaration. Update the app and try again.");
+            }
+        }
+        // The checks ordinary onboarding runs on its body. On paper no deed names
+        // the tenant by their address, so it may be left for them to fill in.
+        for (ConstraintViolation<OnboardTenancyWithAgreementRequest> problem : validator.validate(onboarding)) {
+            String path = problem.getPropertyPath().toString();
+            boolean tenantLeftOut = request.onPaper() && request.tenant() == null && "tenant".equals(path);
+            boolean declaredBefore = verifiedBefore && "identityRouteChosen".equals(path);
+            if (!tenantLeftOut && !declaredBefore) {
+                throw new ValidationException(problem.getMessage());
+            }
+        }
+        TransitionInput transition = new TransitionInput(
+                request.movedInOn(),
+                request.openingDuesPaise(),
+                request.openingDuesNote(),
+                request.onPaper() ? photos : null,
+                verifiedBefore);
+        OnboardResult result = request.onPaper()
+                ? onboardOnPaper(actorUserId, onboarding, transition, clientIp, sessionJti)
+                : onboardWithAgreement(actorUserId, onboarding, transition, clientIp, sessionJti);
+        if (verifiedBefore) {
+            Map<String, String> details = new LinkedHashMap<>();
+            details.put("tenantPhone", request.tenantPhone());
+            details.put("movedInOn", request.movedInOn().toString());
+            attestationService.record(Attestation.builder()
+                .kind(AttestationKind.EXISTING_TENANT_VERIFIED_DECLARATION)
+                .subjectId(result.tenancy().id())
+                .actorUserId(actorUserId)
+                .sessionJti(sessionJti)
+                .occurredAt(Instant.now())
+                .clientIp(clientIp)
+                .device(toFingerprint(request.device()))
+                .statement(LegalStatement.EXISTING_TENANT_VERIFIED_DECLARATION)
+                .details(details)
+                .build());
+        }
+        return result;
+    }
+
+    /**
+     * The paper agreement carries over: no deed is written, the stay starts
+     * now and its term is stamped from what the owner states is left of it.
+     */
+    private OnboardResult onboardOnPaper(
+            UUID actorUserId,
+            OnboardTenancyWithAgreementRequest request,
+            TransitionInput transition,
+            String clientIp,
+            UUID sessionJti) {
+        ensureCurrentIdStatement(request);
+        PropertyResponse property = propertyModule.getActiveProperty(request.propertyId());
+
+        TenancyOnboardingResponse onboarding = tenancyModule.onboardExistingOnPaper(
+                actorUserId,
+                request.tenantPhone(),
+                request.tenantName(),
+                request.propertyId(),
+                request.roomId(),
+                request.rentAmountPaise(),
+                request.depositAmountPaise(),
+                request.startDate(),
+                request.idCheck(),
+                transition);
+        TenancyResponse tenancy = onboarding.tenancy();
+        recordIdCheckAndOrders(actorUserId, request, tenancy, property, clientIp, sessionJti);
+        recordMoveInChecklist(actorUserId, request, tenancy);
+
+        Integer validityMonths = request.term() != null ? request.term().months() : null;
+        String earlyExitRule = request.term() != null && request.term().earlyExitRule() != null
+                && !request.term().earlyExitRule().isBlank() ? request.term().earlyExitRule().strip() : null;
+        tenancyModule.stampAgreementTerms(tenancy.id(), validityMonths, earlyExitRule);
+
+        if (request.idCheck() != null) {
+            authModule.findIdentity(tenancy.userId())
+                    .ifPresent(account -> ensureCheckKeepsAccount(account, request.idCheck()));
+        }
+        IdCheckedParticulars checked = request.idCheck() != null
+                ? new IdCheckedParticulars(request.idCheck().gender(), request.idCheck().dateOfBirth())
+                : IdCheckedParticulars.NONE;
+        OnboardTenancyWithAgreementRequest.TenantDetailsInput details = request.tenant();
+        authModule.fillMissingTenantIdentity(
+                tenancy.userId(),
+                details == null ? null : details.permanentAddress(),
+                details == null ? null : details.permanentAddressPincode(),
+                checked.dateOfBirth() != null ? checked.dateOfBirth() : details == null ? null : details.dateOfBirth(),
+                checked.gender() != null ? checked.gender() : details == null ? null : details.gender());
+
+        log.info(
+                "Existing tenant onboarded on a paper agreement tenancyId={} propertyId={} actorUserId={} photos={}",
+                tenancy.id(),
+                request.propertyId(),
+                actorUserId,
+                transition.paperAgreementPhotoUrls().size());
+
+        return new OnboardResult(onboarding.tenantAccountCreated(), getTenancy(tenancy.id()), null);
+    }
+
+    /** Only the declaring route has a statement to check. */
+    private static void ensureCurrentIdStatement(OnboardTenancyWithAgreementRequest request) {
+        if (request.idCheck() != null
+                && !LegalStatement.TENANT_ID_DECLARATION.text().equals(request.idCheckStatementText())) {
+            throw new ValidationException(
+                    "This version of the app is showing an outdated declaration. Update the app and try again.");
+        }
+    }
+
+    private OnboardResult onboardWithAgreement(
+            UUID actorUserId,
+            OnboardTenancyWithAgreementRequest request,
+            TransitionInput transition,
+            String clientIp,
+            UUID sessionJti) {
+
+        LegalStatement idStatement = LegalStatement.TENANT_ID_DECLARATION;
+        // Only the declaring route has a statement to check. An owner ordering
+        // a verification declares nothing — the tenant has not done it yet —
+        // so demanding the sentence here would mean recording one nobody made.
+        if (request.idCheck() != null && !idStatement.text().equals(request.idCheckStatementText())) {
+            throw new ValidationException(
+                    "This version of the app is showing an outdated declaration. Update the app and try again.");
+        }
+
+        PropertyAgreementSettings settings = agreementService.getOrSeedPropertySettings(actorUserId, request.propertyId());
+        PropertyResponse property = propertyModule.getActiveProperty(request.propertyId());
+
+        ensureLandlordCanBeNamed(property, actorUserId);
+
+        TenancyOnboardingResponse onboarding = transition == null
+                ? tenancyModule.onboardPendingMonthly(
+                        actorUserId,
+                        request.tenantPhone(),
+                        request.tenantName(),
+                        request.propertyId(),
+                        request.roomId(),
+                        request.rentAmountPaise(),
+                        request.depositAmountPaise(),
+                        request.startDate(),
+                        request.idCheck())
+                : tenancyModule.onboardPendingExisting(
+                        actorUserId,
+                        request.tenantPhone(),
+                        request.tenantName(),
+                        request.propertyId(),
+                        request.roomId(),
+                        request.rentAmountPaise(),
+                        request.depositAmountPaise(),
+                        request.startDate(),
+                        request.idCheck(),
+                        transition);
+        TenancyResponse tenancy = onboarding.tenancy();
+
+        recordIdCheckAndOrders(actorUserId, request, tenancy, property, clientIp, sessionJti);
+        recordMoveInChecklist(actorUserId, request, tenancy);
 
         // Choosing clauses is a TENANCY_RULES power, but creating the tenancy is
         // TENANCY_CREATE — a manager can hold one without the other. Falling back
@@ -652,6 +855,10 @@ public class TenancyAgreementService {
                 earlyExitRule,
                 false,
                 false);
+        // The deed prints this stay's own move-out checklist (2026-10-29).
+        if (request.moveOutChecklist() != null) {
+            facts = facts.withExitChecklist(getTenancy(tenancy.id()).moveOutChecklist());
+        }
 
         List<AgreementClause> clauses = assembler.assemble(template, facts);
         AgreementPreamble preamble = preambleTemplate.render(
@@ -727,6 +934,9 @@ public class TenancyAgreementService {
                 tenancy.earlyExitRule(),
                 tenancy.billingType() == TenancyBillingType.DAILY,
                 false);
+        if (tenancy.moveOutChecklist() != null) {
+            facts = facts.withExitChecklist(tenancy.moveOutChecklist());
+        }
 
         // The preamble is rebuilt too, not carried over. Either party may have
         // completed their profile since onboarding, and a deed that still named

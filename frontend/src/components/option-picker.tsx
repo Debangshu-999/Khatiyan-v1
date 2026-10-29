@@ -1,4 +1,5 @@
 import { ModalTitle } from "@/components/modal-title";
+import { ChevronDisc } from "@/components/chevron-disc";
 import { CenterModal } from "@/components/center-modal";
 import { useState, type ReactNode } from "react";
 import { Modal, Text, View } from "react-native";
@@ -314,7 +315,7 @@ function PickerField({
           {value}
         </Text>
 
-        <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
+        <ChevronDisc />
       </AnimatedPressable>
 
       <FieldError message={error} />

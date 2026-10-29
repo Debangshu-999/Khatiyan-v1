@@ -142,11 +142,25 @@ export function lineItemKindLabel(item: BillingCycleLineItem): string {
   if (item.type === "EXTRA_CHARGE" && item.systemGenerated) {
     return "System charge";
   }
+  if (item.type === "BOOKING_TOKEN") {
+    return "Booking token";
+  }
   return item.type
     .toLowerCase()
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+/**
+ * The booking token taken off this bill (2026-10-28): the first bill of a stay
+ * onboarded from a booking. Money the property already holds, not a discount,
+ * so every bill view names it on its own. Zero on any other bill.
+ */
+export function bookingTokenPaise(cycle: Pick<BillingCycle, "lineItems">): number {
+  return (cycle.lineItems ?? [])
+    .filter((item) => item.type === "BOOKING_TOKEN" && item.status === "ADDED")
+    .reduce((sum, item) => sum + item.amountPaise, 0);
 }
 
 export type BillingDashboardSummary = {

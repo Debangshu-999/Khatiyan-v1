@@ -115,3 +115,17 @@ export function BookingTokenStatusIcon({ color = "currentColor", size = 16, stro
     </Svg>
   );
 }
+
+/**
+ * A bed seen from the side, solid (user, 2026-10-28: "the bed icon should be
+ * filled"): the headboard, a pillow, the mattress and the foot post, in one
+ * colour. For a status, as the booked bed being free.
+ */
+export function FilledBedIcon({ color = "currentColor", size = 24 }: LucideProps) {
+  return <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Rect x={1.5} y={4} width={3.2} height={16} rx={1.2} fill={color} />
+    <Rect x={6.2} y={8.4} width={6.2} height={3.6} rx={1.6} fill={color} />
+    <Rect x={1.5} y={12.6} width={21} height={4.6} rx={1.4} fill={color} />
+    <Rect x={19.4} y={12.6} width={3.1} height={7.4} rx={1.2} fill={color} />
+  </Svg>;
+}

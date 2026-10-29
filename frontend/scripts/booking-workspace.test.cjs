@@ -863,6 +863,7 @@ test("raised close-circle shadow is darker and symmetric, without Android's dire
     "react-native-gesture-handler": {},
     "react-native-safe-area-context": {},
     "@/components/leave-on-stale": {},
+    "@/components/keyboard-intent": { onKeyboardLeaving: () => () => {} },
   }).CloseShadow;
   const shadow = shadowFor(34);
   assert.equal(shadow.boxShadow.length, 1);
@@ -888,6 +889,7 @@ test("shared top-right sheet close uses a smaller faded-black cross without shri
     "react-native-gesture-handler": { Gesture: { Pan: () => gesture }, GestureDetector: "GestureDetector", GestureHandlerRootView: "GestureHandlerRootView", ScrollView: "GestureScrollView" },
     "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 24, bottom: 20 }) },
     "@/components/leave-on-stale": { useLeavableSurface() {} },
+    "@/components/keyboard-intent": { onKeyboardLeaving: () => () => {} },
   });
   for (const title of ["Cancel booking?", ""]) {
     const tree = h.render(shell.SheetShell, { title, onClose() {}, children: "Body" });

@@ -13,7 +13,8 @@ import {
   type LucideProps,
 } from "lucide-react-native";
 
-import { billTitle, type BillingCycle } from "@/store/services/billing-api";
+import { billTitle, bookingTokenPaise, type BillingCycle } from "@/store/services/billing-api";
+import { BookingTokenNote } from "@/features/billing/booking-token-note";
 import { GhostText } from "@/components/skeleton-boundary";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -142,7 +143,8 @@ export function discountBreakdown(cycle: BillingCycle): { grossPaise: number; pe
   if (!cycle.discountAmountPaise || cycle.discountAmountPaise <= 0) {
     return null;
   }
-  const grossPaise = cycle.totalAmountPaise + cycle.discountAmountPaise;
+  // The token is added back too: the struck price is the bill before anything came off it.
+  const grossPaise = cycle.totalAmountPaise + cycle.discountAmountPaise + bookingTokenPaise(cycle);
   if (grossPaise <= 0) {
     return null;
   }
@@ -157,6 +159,7 @@ export function discountBreakdown(cycle: BillingCycle): { grossPaise: number; pe
 export function BillTotal({ cycle, size = 24 }: { cycle: BillingCycle; size?: number }) {
   const { colors, fonts, type } = useTheme();
   const discount = discountBreakdown(cycle);
+  const token = bookingTokenPaise(cycle);
 
   return (
     <View style={{ gap: 2 }}>
@@ -187,6 +190,8 @@ export function BillTotal({ cycle, size = 24 }: { cycle: BillingCycle; size?: nu
           </>
         ) : null}
       </View>
+      {/* The booking token already received, taken off the first bill (2026-10-28). */}
+      {token > 0 ? <BookingTokenNote paise={token} /> : null}
     </View>
   );
 }

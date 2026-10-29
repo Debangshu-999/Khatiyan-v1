@@ -7,7 +7,7 @@ import type { ComponentType } from "react";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { SelectionTabs } from "@/components/selection-tabs";
-import { NoticeBar, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
+import { NoticeBar, formatMoneyPaise, humanizeToken, ActionButton } from "@/features/owner/owner-ui";
 import {
   ROOM_CONDITIONINGS,
   ROOM_TYPES,
@@ -52,6 +52,11 @@ export const ROOM_TYPE_INTRO = [
   "Every room is cut from one of these, so its rent and fittings are set once here.",
   "AC and non-AC are separate types — they do not rent for the same money.",
 ];
+
+/** The bin in the button's own white, not its default red, on the red Remove button. */
+function RemoveIcon(props: LucideProps) {
+  return <Trash2 {...props} inheritColor />;
+}
 
 /** Names the exact type being removed — a dorm slot can hold several sizes. */
 export function removalTitle(entry: RoomTypeEntry) {
@@ -361,10 +366,9 @@ function TypeCard({
         </Text>
       </View>
 
+      {/* The amenities only: beds are the tab's, rooms the Rooms tab's (user, 2026-10-29). */}
       <Text style={[type.caption, { color: colors.muted }]}>
-        {entry.bedCount} {entry.bedCount === 1 ? "bed" : "beds"} · {amenityCount}{" "}
-        {amenityCount === 1 ? "amenity" : "amenities"}
-        {entry.roomCount > 0 ? ` · ${entry.roomCount} ${entry.roomCount === 1 ? "room" : "rooms"}` : ""}
+        {amenityCount} {amenityCount === 1 ? "amenity" : "amenities"} selected
       </Text>
 
       {/* Stated either way. A silent card gives a type with no photos the same
@@ -374,19 +378,22 @@ function TypeCard({
         style={[
           type.caption,
           { color: entry.images.length > 0 ? colors.muted : colors.accent },
+          // In italics as "+1 photo", the way photo counts read elsewhere (user, 2026-10-29).
+          entry.images.length > 0 ? { fontStyle: "italic" as const } : null,
         ]}
       >
         {entry.images.length > 0
-          ? `${entry.images.length} ${entry.images.length === 1 ? "photo" : "photos"}`
+          ? `+${entry.images.length} ${entry.images.length === 1 ? "photo" : "photos"}`
           : "No photos yet"}
       </Text>
 
       {/* Named, not bare glyphs. Two unlabelled discs in the corner made the
           destructive one a coin toss at a glance; the words are the difference
           between reading the card and remembering the icons. */}
-      <View style={{ flexDirection: "row", gap: spacing.lg }}>
-        <CardAction color={colors.primary} icon={Pencil} label="Edit" onPress={() => onEdit(entry)} />
-        <CardAction color={colors.danger} icon={Trash2} label="Remove" onPress={() => onRemove(entry)} />
+      {/* Full buttons, as on the app's other cards; Remove red with white text (user, 2026-10-29). */}
+      <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
+        <ActionButton icon={Pencil} label="Edit" onPress={() => onEdit(entry)} variant="secondary" />
+        <ActionButton icon={RemoveIcon} label="Remove" onPress={() => onRemove(entry)} variant="dangerFilled" />
       </View>
     </Card>
   );

@@ -108,6 +108,7 @@ export function ActiveTenancyCard({
   removing = false,
   roomLabel,
   tenancy,
+  timingChipOnly = false,
 }: {
   ending?: boolean;
   canEndTenancy?: boolean;
@@ -124,9 +125,16 @@ export function ActiveTenancyCard({
   removing?: boolean;
   roomLabel: string | null;
   tenancy: TenancySummary;
+  /**
+   * One chip saying when the stay ends, in place of the status carousel. For a
+   * list that is already about endings, Upcoming exits (user, 2026-10-28).
+   */
+  timingChipOnly?: boolean;
 }) {
   const { colors, type } = useTheme();
   const tenantName = tenancy.tenantName?.trim() || "Unnamed tenant";
+  // A booking's stay is not the property's to remove while pending (user, 2026-10-29).
+  const removable = canEndTenancy && Boolean(onRemove) && !tenancy.fromBooking;
   const rentAmount = tenancy.billingType === "DAILY"
     ? tenancy.dailyRatePaise ?? tenancy.rentAmountPaise ?? 0
     : tenancy.rentAmountPaise ?? tenancy.dailyRatePaise ?? 0;
@@ -149,6 +157,17 @@ export function ActiveTenancyCard({
     ...(endingSoon ? [{ key: "ending-soon", kind: "timing" as const, label: "Ends soon", tone: "warning" as const }] : []),
     { key: `tenancy-${tenancy.status}`, kind: "tenancy" as const, status: tenancy.status },
   ];
+  const endsChip: TenancyCardStatusChip | null = daysUntilEnd == null
+    ? null
+    : daysUntilEnd < 0
+      ? { key: "past-due", kind: "timing", label: "Past due", tone: "danger" }
+      : {
+          key: "ends-in",
+          kind: "timing",
+          label: daysUntilEnd === 0 ? "Ends today" : `Ends in ${daysUntilEnd} ${daysUntilEnd === 1 ? "day" : "days"}`,
+          tone: "warning",
+        };
+  const shownChips = timingChipOnly && endsChip ? [endsChip] : statusChips;
 
   return (
     <Card style={{ borderRadius: radii.card }}>
@@ -165,7 +184,7 @@ export function ActiveTenancyCard({
           <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]}>
             {tenancy.referenceCode}
           </FitText>
-          <TenancyStatusCarousel chips={statusChips} />
+          <TenancyStatusCarousel chips={shownChips} />
         </View>
 
         <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -194,25 +213,28 @@ export function ActiveTenancyCard({
         </View>
       </View>
 
-      {awaitingAgreement && ((canEndTenancy && onRemove) || onProvideAttempts || agreementExpiresAt) ? (
+      {awaitingAgreement && (removable || onProvideAttempts || agreementExpiresAt) ? (
         <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
-          {(canEndTenancy && onRemove) || onProvideAttempts ? (
+          {removable || onProvideAttempts ? (
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               {onProvideAttempts ? (
-                <ActionButton label="Verification" onPress={onProvideAttempts} variant="secondary" />
+                <ActionButton label="Verification" onPress={onProvideAttempts} variant="soft" />
               ) : null}
-              {canEndTenancy && onRemove ? (
+              {/* Red fill, white text, for both ways a stay is ended here (user, 2026-10-28). */}
+              {removable && onRemove ? (
                 <ActionButton
                   disabled={removing}
                   label={removing ? "Removing…" : "Remove"}
                   onPress={onRemove}
-                  variant="danger"
+                  variant="dangerFilled"
                 />
               ) : null}
             </View>
           ) : null}
           {agreementExpiresAt ? (
-            <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
+            // Centred in the space under the buttons (user, 2026-10-28): the row's gap plus this
+            // equals the card's own bottom padding, spacing.lg.
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 5, marginTop: spacing.lg - spacing.xs }}>
               <Clock3 color={colors.warningText} size={13} strokeWidth={2.3} />
               <Text style={[type.caption, { color: colors.warningText }]}>{expiresInLabel(agreementExpiresAt)}</Text>
             </View>
@@ -226,7 +248,7 @@ export function ActiveTenancyCard({
               icon={LogOut}
               label={ending ? "Ending…" : "End tenancy"}
               onPress={onEndTenancy}
-              variant="danger"
+              variant="dangerFilled"
             />
           </View>
           {!canEnd ? (

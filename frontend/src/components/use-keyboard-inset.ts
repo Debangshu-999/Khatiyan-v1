@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Keyboard, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Dimensions, Keyboard, Platform } from "react-native";
+import { onKeyboardLeaving } from "@/components/keyboard-intent";
 
 /**
  * The keyboard's height on Android, measured rather than inferred.
@@ -25,7 +25,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
  * used instead: {@code behavior={Platform.OS === "ios" ? "padding" : undefined}}.
  */
 export function useKeyboardInset() {
-  const insets = useSafeAreaInsets();
   const [keyboardInset, setKeyboardInset] = useState(0);
 
   useEffect(() => {
@@ -34,18 +33,21 @@ export function useKeyboardInset() {
     }
 
     const onShow = Keyboard.addListener("keyboardDidShow", (event) =>
-      // Minus the safe-area inset: on a gesture-navigation device the reported
-      // keyboard height already includes that strip, and counting it twice
-      // lifts the dialog a nav-bar's height too far.
-      setKeyboardInset(Math.max(0, event.endCoordinates.height - insets.bottom)),
+      // From the keyboard's top edge to the bottom of the screen, as SheetShell
+      // measures it (2026-10-29). The keyboard's height less the safe-area
+      // inset was right on gesture navigation only.
+      setKeyboardInset(Math.max(0, Dimensions.get("screen").height - event.endCoordinates.screenY)),
     );
     const onHide = Keyboard.addListener("keyboardDidHide", () => setKeyboardInset(0));
+    // Sooner than keyboardDidHide: the input losing focus is when the keyboard starts to close.
+    const offLeaving = onKeyboardLeaving(() => setKeyboardInset(0));
 
     return () => {
       onShow.remove();
       onHide.remove();
+      offLeaving();
     };
-  }, [insets.bottom]);
+  }, []);
 
   return keyboardInset;
 }

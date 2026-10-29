@@ -52,6 +52,17 @@ export function CupboardIcon(props: AmenityIconProps) {
   );
 }
 
+/** An open bathroom mug with a distinct loop handle on its right. */
+export function MugIcon(props: AmenityIconProps) {
+  return (
+    <Glyph {...props}>
+      <Ellipse cx={10} cy={5.5} rx={6} ry={2.2} />
+      <Path d="M4 5.5V18a6 2.2 0 0 0 12 0V5.5" />
+      <Path d="M16 8h2a4 4 0 0 1 0 8h-2" />
+    </Glyph>
+  );
+}
+
 /** A screen on a stand. */
 export function TelevisionIcon(props: AmenityIconProps) {
   return (
@@ -128,6 +139,7 @@ export function BeddingIcon(props: AmenityIconProps) {
 
 export const ROOM_AMENITY_ICONS: Record<RoomAmenity, (props: AmenityIconProps) => React.ReactElement> = {
   ATTACHED_TOILET: ToiletIcon,
+  COMMON_TOILET: ToiletIcon,
   BEDDING: BeddingIcon,
   CUPBOARD: CupboardIcon,
   GEYSER: GeyserIcon,

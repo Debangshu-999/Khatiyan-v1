@@ -1,4 +1,5 @@
 import { ModalTitle } from "@/components/modal-title";
+import { onKeyboardLeaving } from "@/components/keyboard-intent";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, View, type DimensionValue, type GestureResponderEvent, type PanResponderGestureState, type ViewStyle } from "react-native";
@@ -25,12 +26,19 @@ export function SheetShell({
   children,
   closeButtonVariant = "raised",
   dismissOnDrag = true,
+  fullBleed = false,
   showClose = true,
   onBack,
   onClose,
   onEndReached,
   title,
 }: {
+  /**
+   * The body scrolls out to the sheet's edges, its padding put back inside, so
+   * a full-width band (a subheading's) reaches the edge instead of being
+   * clipped at the padding (user, 2026-10-29: the room type sheet).
+   */
+  fullBleed?: boolean;
   /**
    * The hand-run entrance and the fading backdrop, shared by every sheet.
    *
@@ -105,24 +113,41 @@ export function SheetShell({
    * the same problem the same way; this is the sheet's copy of it.
    */
   const [keyboardInset, setKeyboardInset] = useState(0);
+  // The lift itself, eased rather than set: the sheet slides onto the keyboard
+  // and back down instead of jumping once the keyboard has finished moving
+  // (user, 2026-10-29).
+  const keyboardLift = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (Platform.OS !== "android") {
       return;
     }
 
-    const onShow = Keyboard.addListener("keyboardDidShow", (event) =>
-      // Minus the safe-area inset: on a gesture-navigation device the keyboard's
-      // reported height already includes that strip, and counting it twice lifts
-      // the sheet a nav-bar's height too far.
-      setKeyboardInset(Math.max(0, event.endCoordinates.height - insets.bottom)),
-    );
-    const onHide = Keyboard.addListener("keyboardDidHide", () => setKeyboardInset(0));
+    const slide = (toValue: number) =>
+      Animated.timing(keyboardLift, { duration: 160, easing: Easing.out(Easing.quad), toValue, useNativeDriver: false }).start();
+    const onShow = Keyboard.addListener("keyboardDidShow", (event) => {
+      // From the keyboard's own top edge to the bottom of the screen: this
+      // sheet's window covers the whole screen, nav bar included, so that is
+      // exactly how far it has to rise. Subtracting the safe-area inset from the
+      // keyboard's height was right on gesture navigation only, and left the
+      // sheet's bottom on the keyboard with three-button navigation (2026-10-29).
+      const lift = Math.max(0, Dimensions.get("screen").height - event.endCoordinates.screenY);
+      setKeyboardInset(lift);
+      slide(lift);
+    });
+    const drop = () => {
+      setKeyboardInset(0);
+      slide(0);
+    };
+    const onHide = Keyboard.addListener("keyboardDidHide", drop);
+    // Sooner than keyboardDidHide: the input losing focus is when the keyboard starts to close.
+    const offLeaving = onKeyboardLeaving(drop);
 
     return () => {
       onShow.remove();
       onHide.remove();
+      offLeaving();
     };
-  }, [insets.bottom]);
+  }, [keyboardLift]);
   // Far enough to be off-screen from any starting point, and the distance a
   // dismissing drag travels.
   const travel = Dimensions.get("window").height;
@@ -424,7 +449,7 @@ export function SheetShell({
             borderWidth: 1,
             // Lifted clear of the keyboard rather than padded behind it, so the
             // sheet's rounded bottom edge stays visible sitting on top of it.
-            marginBottom: keyboardInset,
+            marginBottom: Platform.OS === "android" ? keyboardLift : 0,
             maxHeight: maxSheetHeight,
             // The safe-area inset is the nav bar's. With the keyboard up the
             // keyboard covers it, so applying both leaves a dead strip.
@@ -476,9 +501,10 @@ export function SheetShell({
               // exactly the movement the sheet needs to see to know it is being
               // pushed away.
               bounces={false}
-              contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}
+              contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs, ...(fullBleed ? { paddingHorizontal: spacing.lg } : null) }}
               keyboardShouldPersistTaps="handled"
               overScrollMode="never"
+              style={fullBleed ? { marginHorizontal: -spacing.lg } : undefined}
               onLayout={(event) => {
                 historyViewportHeight.current = event.nativeEvent.layout.height;
                 if (historyContentHeight.current > 0 && historyContentHeight.current <= historyViewportHeight.current + 240) onEndReached?.();

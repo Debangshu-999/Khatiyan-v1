@@ -34,6 +34,7 @@ import { PropertyContactsSection } from "@/features/property/property-contacts-s
 import {
   BookingsIcon,
   EnquiriesIcon,
+  ItemCatalogueIcon,
   ManageListingIcon,
   NearbyLocationsIcon,
   PropertyBoardIcon,
@@ -74,7 +75,8 @@ type PropertyRoute =
   | "/owner-board"
   | "/owner-food"
   | "/owner-nearby-places"
-  | "/owner-property-visits";
+  | "/owner-property-visits"
+  | "/owner-exit-policies";
 
 export default function OwnerPropertyScreen() {
   const router = useGuardedRouter();
@@ -129,10 +131,13 @@ export default function OwnerPropertyScreen() {
                 This card IS the property; every other card on the screen is a
                 part of it, and the glyph is what says which is which. */}
             <View style={{ gap: spacing.xs }}>
-              <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginLeft: 34 + spacing.md }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>{selectedProperty.referenceCode}</Text>
+              <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, justifyContent: "center" }}>
                 <View style={{ backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
-                  <Text style={[type.caption, { color: colors.inkSoft }]}>{humanizeToken(selectedProperty.type)}</Text>
+                  <Text style={[type.eyebrow, { color: colors.inkSoft }]}>{selectedProperty.referenceCode}</Text>
+                </View>
+                <Text style={[type.caption, { color: colors.muted }]}>·</Text>
+                <View style={{ backgroundColor: colors.warningSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Text style={[type.caption, { color: colors.accent }]}>{humanizeToken(selectedProperty.type)}</Text>
                 </View>
               </View>
               <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
@@ -152,7 +157,7 @@ export default function OwnerPropertyScreen() {
               </View>
             </View>
             <View style={{ flexDirection: "row" }}>
-              <ActionButton disabled={!canManageSettings} icon={Pencil} label="Edit property" onPress={() => router.push("/owner-edit-property")} variant="secondary" />
+              <ActionButton borderColor={canManageSettings ? colors.ink : colors.borderStrong} disabled={!canManageSettings} icon={Pencil} label="Edit property" onPress={() => router.push("/owner-edit-property")} variant="neutral" />
             </View>
           </Card>
 
@@ -292,6 +297,17 @@ export default function OwnerPropertyScreen() {
               title="Visiting Hours"
               description="Set the time slots, day by day, when tenants can book a visit to the property."
               onPress={() => open(router, "/owner-property-visits")}
+            />
+            {/* What a room can have and what damage to it costs: room types pick from it,
+                move-in checklists show it, settlement charges by it (user, 2026-10-29). */}
+            <ActionCard
+              borderRadius={12}
+              icon={ItemCatalogueIcon}
+              iconSize={58}
+              showArrow={false}
+              title="Item catalogue & Damages"
+              description="Everything a room can have, by room and bathroom, and what each damage level costs."
+              onPress={() => open(router, "/owner-exit-policies")}
             />
           </Section>
 

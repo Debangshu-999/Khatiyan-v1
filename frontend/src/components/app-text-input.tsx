@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
+import { announceInputBlur } from "@/components/keyboard-intent";
 import {
   AccessibilityInfo,
   Animated,
@@ -229,6 +230,8 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
         }}
         onBlur={(event) => {
           setFocused(false);
+          // Lifted sheets and dialogs drop now, not when Android reports the keyboard gone.
+          announceInputBlur();
           onBlur?.(event);
         }}
         onFocus={(event) => {

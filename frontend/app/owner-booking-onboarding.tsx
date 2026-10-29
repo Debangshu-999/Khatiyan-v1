@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { AlertTriangle, BedDouble, CircleAlert } from "lucide-react-native";
+import { AlertTriangle, CircleAlert, type LucideProps } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
@@ -33,6 +33,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
+import { FilledBedIcon } from "@/components/booking-vector-icons";
 
 type Tab = "TODAY" | "MISSED";
 
@@ -63,7 +64,6 @@ function addDays(date: string, days: number) {
  */
 export default function OwnerBookingOnboardingScreen() {
   const router = useGuardedRouter();
-  const toast = useToast();
   const propertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId) ?? "";
   const [tab, setTab] = useState<Tab>("TODAY");
   const [page, setPage] = useState(0);
@@ -116,8 +116,8 @@ export default function OwnerBookingOnboardingScreen() {
             key={item.id}
             onDidNotArrive={() => didNotArrive(item)}
             onMove={() => setMoving(item)}
-            // Not built yet (user, 2026-10-27): the onboarding from a booking comes next.
-            onOnboard={() => toast.info("Onboarding from a booking is coming soon.")}
+            // The monthly wizard with the booking's terms locked (user, 2026-10-28).
+            onOnboard={() => router.push({ params: { bookingId: item.id, propertyId }, pathname: "/owner-onboard-tenant" })}
             onView={() => router.push({ params: { propertyId, requestId: item.id }, pathname: "/owner-booking-detail" })}
           />
         ))}
@@ -160,7 +160,8 @@ function OnboardingCard({
         </View>
         <Text selectable style={[type.description, { color: colors.muted }]}>{item.referenceCode}</Text>
       </View>
-      <BookingInfoBand icon={free ? BedDouble : CircleAlert} tone={free ? "neutral" : "warning"}>
+      {/* A free bed on pale green, a solid bed seen from the side. An occupied one, a filled alert (user, 2026-10-28). */}
+      <BookingInfoBand icon={free ? FilledBedIcon : FilledAlertIcon} tone={free ? "success" : "warning"}>
         <Text style={[type.body, { color: free ? colors.successText : colors.warningText, fontFamily: fonts.sansSemiBold }]}>
           {free ? "Bed is free" : "Bed is still occupied"}
         </Text>
@@ -313,4 +314,9 @@ function MoveRoomSheet({ item, onClose, propertyId }: { item: BookingRequestList
       {refusal ? <AlertModal message={refusal} onClose={() => setRefusal(null)} /> : null}
     </SheetShell>
   );
+}
+
+/** The app's filled alert: a solid disc with a white mark, as the band's ink (user, 2026-10-28). */
+function FilledAlertIcon({ color, size = 21 }: LucideProps) {
+  return <CircleAlert color="#FFFFFF" fill={color} size={Number(size) + 3} strokeWidth={2.2} />;
 }

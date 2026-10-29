@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.khatiyan.d_modules.tenancy.api.dto.BlockedBookingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
+import com.khatiyan.d_modules.tenancy.api.dto.TransitionInput;
 import com.khatiyan.d_modules.tenancy.api.dto.IdCheckedParticulars;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
@@ -174,7 +175,7 @@ public class TenancyService {
         return createInternal(
                 actorUserId, tenantPhone, tenantName, propertyId, roomId,
                 billingType, rentAmountPaise, depositAmountPaise, startDate, plannedEndDate, false,
-                idCheck);
+                idCheck, null);
     }
 
     /**
@@ -194,7 +195,8 @@ public class TenancyService {
             Long depositAmountPaise,
             LocalDate startDate, LocalDate plannedEndDate,
             boolean holdForAcceptance,
-            IdCheckDeclarationInput idCheck) {
+            IdCheckDeclarationInput idCheck,
+            TransitionInput transition) {
 
         tenancyAccessPolicy.ensureCanCreateTenancy(actorUserId, propertyId);
         TenancyBillingType resolvedBillingType = billingType != null ? billingType : TenancyBillingType.MONTHLY;
@@ -232,6 +234,15 @@ public class TenancyService {
             throw new ValidationException("User already has an active tenancy");
         }
 
+        if (transition != null) {
+            ensureTransitionDates(transition, startDate);
+            // They are already living here, so their bed has to be free now. A
+            // bed only freed later belongs to a new booking, not to them.
+            if (!propertyModule.hasAvailableVacancy(propertyId, roomId)) {
+                throw new ValidationException(
+                        "No bed is free in this room. Pick the room they live in now, with a bed free for them.");
+            }
+        }
         FutureVacancies.Claim claim = futureVacancyClaim(propertyId, roomId, startDate);
 
         Tenancy tenancy = createMonthlyTenancy(
@@ -264,6 +275,17 @@ public class TenancyService {
             tenancy.confirmIdCheck(
                     actorUserId, Instant.now(), idCheck.documentType(), idCheck.lastFour(),
                     idCheck.gender(), idCheck.dateOfBirth());
+        }
+        // Before the save too: billing reads it when it starts, which on a paper
+        // agreement is a few lines below.
+        if (transition != null) {
+            tenancy.markTransitioned(
+                    transition.movedInOn(),
+                    transition.openingDuesPaise(),
+                    transition.openingDuesNote() == null || transition.openingDuesNote().isBlank()
+                            ? null : transition.openingDuesNote().strip(),
+                    transition.paperAgreementPhotoUrls(),
+                    transition.verifiedBefore());
         }
 
         tenancy = tenancyRepository.save(tenancy);
@@ -452,14 +474,87 @@ public class TenancyService {
             Long depositAmountPaise,
             LocalDate startDate,
             IdCheckDeclarationInput idCheck) {
+        return onboardPending(actorUserId, tenantPhone, tenantName, propertyId, roomId,
+                rentAmountPaise, depositAmountPaise, startDate, idCheck, null);
+    }
+
+    /**
+     * {@link #onboardPending} for a person already living here (2026-10-28):
+     * the stay is carried over, with its own move-in date, dues and deposit.
+     * Signing a deed in the app still waits for the tenant.
+     */
+    @Transactional
+    public TenancyOnboardingResponse onboardPending(
+            UUID actorUserId,
+            String tenantPhone,
+            String tenantName,
+            UUID propertyId,
+            UUID roomId,
+            Long rentAmountPaise,
+            Long depositAmountPaise,
+            LocalDate startDate,
+            IdCheckDeclarationInput idCheck,
+            TransitionInput transition) {
         boolean existedBefore = authModule.findByPhone(tenantPhone).isPresent();
 
         Tenancy tenancy = createInternal(
                 actorUserId, tenantPhone, tenantName, propertyId, roomId,
                 TenancyBillingType.MONTHLY, rentAmountPaise, depositAmountPaise, startDate, null, true,
-                idCheck);
+                idCheck, transition);
 
         return new TenancyOnboardingResponse(!existedBefore, TenancyResponse.from(tenancy));
+    }
+
+    /**
+     * A person already living here whose paper agreement carries over
+     * (2026-10-28). There is no deed to sign, so the stay starts now: the
+     * tenant is marked active and billing begins on its first Khatiyan bill.
+     * The photos of the paper agreement are the record of what was agreed.
+     */
+    @Transactional
+    public TenancyOnboardingResponse onboardExistingOnPaper(
+            UUID actorUserId,
+            String tenantPhone,
+            String tenantName,
+            UUID propertyId,
+            UUID roomId,
+            Long rentAmountPaise,
+            Long depositAmountPaise,
+            LocalDate startDate,
+            IdCheckDeclarationInput idCheck,
+            TransitionInput transition) {
+        if (transition == null || !transition.agreementOnPaper()) {
+            throw new ValidationException("Add the paper agreement, as photos or a PDF");
+        }
+        boolean existedBefore = authModule.findByPhone(tenantPhone).isPresent();
+
+        Tenancy tenancy = createInternal(
+                actorUserId, tenantPhone, tenantName, propertyId, roomId,
+                TenancyBillingType.MONTHLY, rentAmountPaise, depositAmountPaise, startDate, null, false,
+                idCheck, transition);
+
+        return new TenancyOnboardingResponse(!existedBefore, TenancyResponse.from(tenancy));
+    }
+
+    /**
+     * The first Khatiyan bill is their next rent day: today, or within the
+     * month ahead. They moved in before it, and not in the future.
+     */
+    private static void ensureTransitionDates(TransitionInput transition, LocalDate firstBillOn) {
+        LocalDate today = LocalDate.now(TENANCY_ZONE);
+        if (firstBillOn == null || firstBillOn.isBefore(today) || firstBillOn.isAfter(today.plusDays(31))) {
+            throw new ValidationException("The first Khatiyan bill must be on a day from today to a month ahead");
+        }
+        LocalDate movedIn = transition.movedInOn();
+        if (movedIn == null) {
+            throw new ValidationException("Enter the date they moved in");
+        }
+        if (movedIn.isAfter(today) || !movedIn.isBefore(firstBillOn)) {
+            throw new ValidationException("The move-in date must be in the past, before the first Khatiyan bill");
+        }
+        if (movedIn.isBefore(today.minusYears(30))) {
+            throw new ValidationException("Check the move-in date, it is more than 30 years ago");
+        }
     }
 
     /**
@@ -671,7 +766,30 @@ public class TenancyService {
     public void cancelPendingAsManager(UUID actorUserId, UUID tenancyId, String reason) {
         Tenancy tenancy = inventoryTenancy(tenancyId);
         tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
+        // A booking's stay is not the property's to withdraw (user, 2026-10-29).
+        // Otherwise a booking could be onboarded and removed at once, the token
+        // kept and the bed lost. The tenant may decline, and it still expires.
+        if (tenancy.isFromBooking()) {
+            throw new ValidationException(
+                    "This tenant was onboarded from a booking, so their stay cannot be removed. It ends if they decline the agreement or leave it unsigned.");
+        }
         cancelPendingInternal(tenancy, TenancyCancellationRoute.MANAGEMENT_WITHDREW, actorUserId, reason);
+    }
+
+    /** The stay's own move-out checklist, set at onboarding (2026-10-29). */
+    @Transactional
+    public void setMoveOutChecklist(UUID tenancyId, List<String> items) {
+        Tenancy tenancy = inventoryTenancy(tenancyId);
+        tenancy.setMoveOutChecklist(items);
+        tenancyRepository.save(tenancy);
+    }
+
+    /** Marks the stay a booking was converted into (V6245). */
+    @Transactional
+    public void markFromBooking(UUID tenancyId) {
+        Tenancy tenancy = inventoryTenancy(tenancyId);
+        tenancy.markFromBooking();
+        tenancyRepository.save(tenancy);
     }
 
     /**

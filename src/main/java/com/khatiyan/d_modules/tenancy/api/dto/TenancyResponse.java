@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.tenancy.api.dto;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -75,7 +76,26 @@ public record TenancyResponse(
      * The row's version (2026-09-28). A screen sends it back as {@code If-Match}
      * when it acts, and a stay changed since the screen loaded it is refused.
      */
-    long version
+    long version,
+    /**
+     * Existing-tenant onboarding (2026-10-28): carried over from before
+     * Khatiyan. {@code startDate} is then the first Khatiyan bill's day and
+     * {@code movedInOn} the day they really moved in.
+     */
+    boolean transitioned,
+    LocalDate movedInOn,
+    /** Owed at the switch, raised as an opening one-off bill when billing starts. */
+    Long openingDuesPaise,
+    String openingDuesNote,
+    /** Their paper agreement carries over, with its photos: no deed is signed in the app. */
+    boolean agreementOnPaper,
+    List<String> paperAgreementPhotoUrls,
+    /** The owner declared their identity was verified before Khatiyan. */
+    boolean verifiedBeforeKhatiyan,
+    /** Onboarded from a booking: its pending agreement cannot be removed by management. */
+    boolean fromBooking,
+    /** This stay's own move-out checklist (2026-10-29); null on a stay from before, which reads the property's. */
+    List<String> moveOutChecklist
 ) {
     /**
      * The shape before {@code version}, for callers that build a response by
@@ -94,7 +114,8 @@ public record TenancyResponse(
                 propertyId, roomId, createdByUserId, billingType, rentAmountPaise, depositAmountPaise,
                 dailyRatePaise, startDate, plannedEndDate, endDate, status, createdAt, billingStarted, tosAccepted,
                 fixedTerm, agreementValidityMonths, agreementEndDate, earlyExitRule, idCheckConfirmed, idCheckedAt,
-                guestStay, guestEmail, guestAddress, guestAge, guestGender, 0L);
+                guestStay, guestEmail, guestAddress, guestAge, guestGender, 0L,
+                false, null, null, null, false, null, false, false, null);
     }
 
     /**
@@ -150,7 +171,16 @@ public record TenancyResponse(
             t.getGuestAddress(),
             t.getGuestAge(),
             t.getGuestGender(),
-            t.getVersion()
+            t.getVersion(),
+            t.isTransitioned(),
+            t.getMovedInOn(),
+            t.getOpeningDuesPaise(),
+            t.getOpeningDuesNote(),
+            t.isAgreementOnPaper(),
+            t.getPaperAgreementPhotoUrls(),
+            t.isVerifiedBeforeKhatiyan(),
+            t.isFromBooking(),
+            t.getMoveOutChecklist() == null ? null : List.copyOf(t.getMoveOutChecklist())
         );
     }
 
@@ -188,7 +218,16 @@ public record TenancyResponse(
             t.getGuestAddress(),
             t.getGuestAge(),
             t.getGuestGender(),
-            t.getVersion()
+            t.getVersion(),
+            t.isTransitioned(),
+            t.getMovedInOn(),
+            t.getOpeningDuesPaise(),
+            t.getOpeningDuesNote(),
+            t.isAgreementOnPaper(),
+            t.getPaperAgreementPhotoUrls(),
+            t.isVerifiedBeforeKhatiyan(),
+            t.isFromBooking(),
+            t.getMoveOutChecklist() == null ? null : List.copyOf(t.getMoveOutChecklist())
         );
     }
 }

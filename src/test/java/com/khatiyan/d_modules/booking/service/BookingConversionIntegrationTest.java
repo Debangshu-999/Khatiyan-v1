@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -39,7 +40,10 @@ import com.khatiyan.d_modules.booking.model.BookingParty;
 import com.khatiyan.d_modules.booking.model.BookingStatus;
 import com.khatiyan.d_modules.booking.model.BookingTokenStatus;
 import com.khatiyan.d_modules.compliance.api.dto.OnboardTenancyWithAgreementRequest.TenantDetailsInput;
+import com.khatiyan.d_modules.compliance.model.AgreementClause;
+import com.khatiyan.d_modules.compliance.model.AgreementTemplate;
 import com.khatiyan.d_modules.compliance.model.LegalStatement;
+import com.khatiyan.d_modules.compliance.model.MainClauseType;
 import com.khatiyan.d_modules.tenancy.TenancyModule;
 import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyResponse;
@@ -233,6 +237,23 @@ class BookingConversionIntegrationTest {
                 .containsEntry("close_reason", "CONVERTED").containsEntry("converted_tenancy_id", stay.id());
     }
 
+    // "Why should clauses be read only, agreement is not decided during booking" (user, 2026-10-28):
+    // the booking fixes the money and the term, the clauses are chosen on arrival as on any onboarding.
+    @Test
+    void theClausesChosenOnArrivalAreTheOnesTheAgreementCarries() {
+        BookingRequestResponse booked = confirmed(tenant, sunrise, sunriseOwner, sunriseRoom, null);
+        clock.set(morningOf(moveIn));
+        ConvertBookingRequest withoutInspection = withTemplate(onArrival(),
+                new AgreementTemplate(Set.of(MainClauseType.INSPECTION), List.of(), List.of(), null, ""));
+
+        BookingConversionResponse converted = conversion.convert(sunriseOwner, sunrise, booked.id(),
+                withoutInspection, "10.0.0.7", UUID.randomUUID());
+
+        assertThat(converted.stay().agreement().clauses()).extracting(AgreementClause::getMainType)
+                .doesNotContain(MainClauseType.INSPECTION)
+                .contains(MainClauseType.RENT);
+    }
+
     @Test
     void anyoneWhoMayOnboardConvertsNotOnlyTheBookingsHandler() {
         UUID anita = fx.manager(sunrise, "Anita");
@@ -278,17 +299,17 @@ class BookingConversionIntegrationTest {
 
         // Nobody established who the tenant is.
         assertThatThrownBy(() -> conversion.convert(sunriseOwner, sunrise, booked.id(), new ConvertBookingRequest(
-                null, null, null, null, good.tenant(), null), "10.0.0.7", UUID.randomUUID()))
+                null, null, null, null, good.tenant(), null, null), "10.0.0.7", UUID.randomUUID()))
                 .isInstanceOf(ValidationException.class).hasMessageContaining("identity");
         // No address for the agreement to name them by.
         assertThatThrownBy(() -> conversion.convert(sunriseOwner, sunrise, booked.id(), new ConvertBookingRequest(
-                good.idCheck(), good.idCheckStatementText(), null, null, null, null), "10.0.0.7", UUID.randomUUID()))
+                good.idCheck(), good.idCheckStatementText(), null, null, null, null, null), "10.0.0.7", UUID.randomUUID()))
                 .isInstanceOf(ValidationException.class);
         assertThatThrownBy(() -> conversion.convert(sunriseOwner, sunrise, booked.id(), null, "10.0.0.7",
                 UUID.randomUUID())).isInstanceOf(ValidationException.class);
         // A declaration the app no longer shows. Onboarding itself refuses this one, after the bed was passed on.
         assertThatThrownBy(() -> conversion.convert(sunriseOwner, sunrise, booked.id(), new ConvertBookingRequest(
-                good.idCheck(), "I looked at something.", null, null, good.tenant(), null), "10.0.0.7",
+                good.idCheck(), "I looked at something.", null, null, good.tenant(), null, null), "10.0.0.7",
                 UUID.randomUUID())).isInstanceOf(ValidationException.class).hasMessageContaining("declaration");
 
         // Nothing stuck: no stay, the booking unconverted, and the bed still held for it.
@@ -418,22 +439,18 @@ class BookingConversionIntegrationTest {
     }
 
     @Test
-    void thePropertyWithdrawingAnOnboardedStayLeavesTheTokenNonRefundable() {
+    void thePropertyCannotRemoveAStayOnboardedFromABooking() {
+        // Otherwise a booking could be onboarded and removed at once, the token kept (user, 2026-10-29).
         BookingRequestResponse booked = confirmed(tenant, sunrise, sunriseOwner, sunriseRoom, null);
         clock.set(morningOf(moveIn));
         UUID stay = convert(sunriseOwner, sunrise, booked.id()).stay().tenancy().id();
+        assertThat(tenancies.findById(stay).orElseThrow().fromBooking()).isTrue();
 
-        tenancies.cancelPendingTenancyByManager(sunriseOwner, stay, "The room flooded overnight.");
-        BookingRequestResponse after = bookings.forTenant(tenant, booked.id());
-        assertThat(after.status()).isEqualTo(BookingStatus.CANCELLED);
-        assertThat(after.endCause()).isEqualTo(BookingEndCause.MANAGEMENT_CANCELLED);
-        assertThat(after.cancelledBy()).isEqualTo(BookingParty.MANAGEMENT);
-        assertThat(after.cancelReason()).isEqualTo("The room flooded overnight.");
-        // The token is not part of the agreement falling through: non refundable since onboarding (2026-10-28).
-        assertThat(after.token().status()).isEqualTo(BookingTokenStatus.KEPT);
-        // And the visit gets its request back.
-        assertThat(slotOf(booked.id())).isNull();
-        assertThat(occupiedIn(sunriseRoom)).isZero();
+        assertThatThrownBy(() -> tenancies.cancelPendingTenancyByManager(sunriseOwner, stay, "Changed my mind."))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("onboarded from a booking");
+        assertThat(tenancies.findById(stay).orElseThrow().status()).isEqualTo(TenancyStatus.PENDING_ACCEPTANCE);
+        assertThat(bookings.forTenant(tenant, booked.id()).status()).isNotEqualTo(BookingStatus.CANCELLED);
     }
 
     // ---- What the tenant is told (user, 2026-10-18) -----------------------------
@@ -466,21 +483,6 @@ class BookingConversionIntegrationTest {
         // A second delivery of the same change says nothing new.
         tenantNotices.changed(booked.id());
         assertThat(mailKinds(tenant)).hasSize(3);
-    }
-
-    @Test
-    void theTenantIsToldWhenThePropertyWithdrawsAnOnboardedStayAndThatTheTokenIsNonRefundable() {
-        verifiedEmail(tenant);
-        BookingRequestResponse booked = confirmed(tenant, sunrise, sunriseOwner, sunriseRoom, null);
-        clock.set(morningOf(moveIn));
-        UUID stay = convert(sunriseOwner, sunrise, booked.id()).stay().tenancy().id();
-        tenancies.cancelPendingTenancyByManager(sunriseOwner, stay, "The room flooded overnight.");
-
-        assertThat(told(booked.id(), "TENANT_CANCELLED")).isTrue();
-        assertThat(notificationFor(booked.id(), "was cancelled")).isTrue();
-        assertThat(mailText(tenant, "BOOKING_CANCELLED"))
-                .contains(" cancelled your booking.").contains("The room flooded overnight.")
-                .contains("Your token of ₹2,000 is non refundable, as you were onboarded before the agreement ended.");
     }
 
     @Test
@@ -780,7 +782,12 @@ class BookingConversionIntegrationTest {
                         LocalDate.of(2000, 1, 1)),
                 LegalStatement.TENANT_ID_DECLARATION.text(), null, null,
                 new TenantDetailsInput("14 Park Street, Kolkata", "700016", LocalDate.of(2000, 1, 1), Gender.FEMALE),
-                null);
+                null, null);
+    }
+
+    private static ConvertBookingRequest withTemplate(ConvertBookingRequest input, AgreementTemplate template) {
+        return new ConvertBookingRequest(input.idCheck(), input.idCheckStatementText(), input.verification(),
+                input.device(), input.tenant(), input.earlyExitRule(), template);
     }
 
     private BookingConversionResponse convert(UUID actor, UUID atProperty, UUID request) {

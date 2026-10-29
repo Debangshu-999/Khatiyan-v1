@@ -53,6 +53,7 @@ import {
   useListMyCurrentConcernsQuery,
 } from "@/store/services/concern-api";
 import {
+  useGetMoveInChecklistQuery,
   useGetMyActiveTenancyQuery,
   useListMyExitRequestsQuery,
   useListMyRoomChangeRequestsQuery,
@@ -111,6 +112,7 @@ export default function TenancyScreen() {
     refetchOnMountOrArgChange: true,
   });
   const activeTenancy = activeTenancyQuery.data;
+  const moveInQuery = useGetMoveInChecklistQuery(activeTenancy?.tenancy.id ?? "", { skip: !activeTenancy });
   const concernsQuery = useListMyCurrentConcernsQuery(undefined, {
     refetchOnMountOrArgChange: true,
     skip: !activeTenancy,
@@ -308,6 +310,19 @@ export default function TenancyScreen() {
             activeTenancy={activeTenancy}
             onViewAgreement={() => router.push("/tenancy-agreement-view")}
           />
+
+          {/* The room as recorded when they moved in, theirs to answer within 48 hours (2026-10-29). */}
+          {moveInQuery.data ? (
+            <ActionCard
+              badge={moveInQuery.data.canRespond ? 1 : undefined}
+              description={moveInQuery.data.canRespond
+                ? "Check the room's condition as recorded and answer within 48 hours."
+                : "The room's condition when you moved in."}
+              meta={moveInQuery.data.canRespond ? "Waiting for your answer" : undefined}
+              onPress={() => router.push({ pathname: "/move-in-checklist", params: { role: "tenant", tenancyId: activeTenancy.tenancy.id } })}
+              title="Move-in checklist"
+            />
+          ) : null}
 
           {/* A door to the bills, no bill card above it (user, 2026-09-27).
               Paying happens on My Bills, where every bill of the month is. */}

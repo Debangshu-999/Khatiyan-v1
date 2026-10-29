@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import com.khatiyan.d_modules.tenancy.api.dto.BlockedBookingResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.IdCheckDeclarationInput;
+import com.khatiyan.d_modules.tenancy.api.dto.TransitionInput;
 import com.khatiyan.d_modules.tenancy.api.dto.IdCheckedParticulars;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyExitRequestResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.TenancyOnboardingResponse;
@@ -40,6 +41,7 @@ public class TenancyModule {
     private final TenancyExitRequestService tenancyExitRequestService;
     private final TenancyRoomChangeRequestService tenancyRoomChangeRequestService;
     private final BookingBedInventory bookingInventory;
+    private final com.khatiyan.d_modules.tenancy.service.MoveInChecklistService moveInChecklists;
 
     // TenancyExitRequestService / TenancyRoomChangeRequestService transitively
     // depend on BillingModule, which depends back on TenancyModule
@@ -50,6 +52,16 @@ public class TenancyModule {
             TenancyService tenancyService,
             @Lazy TenancyExitRequestService tenancyExitRequestService,
             @Lazy TenancyRoomChangeRequestService tenancyRoomChangeRequestService, BookingBedInventory bookingInventory) {
+        this(tenancyService, tenancyExitRequestService, tenancyRoomChangeRequestService, bookingInventory, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TenancyModule(
+            TenancyService tenancyService,
+            @Lazy TenancyExitRequestService tenancyExitRequestService,
+            @Lazy TenancyRoomChangeRequestService tenancyRoomChangeRequestService, BookingBedInventory bookingInventory,
+            com.khatiyan.d_modules.tenancy.service.MoveInChecklistService moveInChecklists) {
+        this.moveInChecklists = moveInChecklists;
         this.tenancyService = tenancyService;
         this.tenancyExitRequestService = tenancyExitRequestService;
         this.tenancyRoomChangeRequestService = tenancyRoomChangeRequestService;
@@ -219,6 +231,48 @@ public class TenancyModule {
                 rentAmountPaise, depositAmountPaise, startDate, idCheck);
     }
 
+    /**
+     * {@link #onboardPendingMonthly} for a person already living here
+     * (2026-10-28): carried over with their move-in date, dues and deposit.
+     * The deed signed in the app still waits for them.
+     */
+    public TenancyOnboardingResponse onboardPendingExisting(
+            UUID actorUserId,
+            String tenantPhone,
+            String tenantName,
+            UUID propertyId,
+            UUID roomId,
+            Long rentAmountPaise,
+            Long depositHeldPaise,
+            LocalDate firstBillOn,
+            IdCheckDeclarationInput idCheck,
+            TransitionInput transition) {
+        return tenancyService.onboardPending(
+                actorUserId, tenantPhone, tenantName, propertyId, roomId,
+                rentAmountPaise, depositHeldPaise, firstBillOn, idCheck, transition);
+    }
+
+    /**
+     * A person already living here whose paper agreement carries over
+     * (2026-10-28): no deed to sign, so the stay starts now and billing begins
+     * on its first Khatiyan bill.
+     */
+    public TenancyOnboardingResponse onboardExistingOnPaper(
+            UUID actorUserId,
+            String tenantPhone,
+            String tenantName,
+            UUID propertyId,
+            UUID roomId,
+            Long rentAmountPaise,
+            Long depositHeldPaise,
+            LocalDate firstBillOn,
+            IdCheckDeclarationInput idCheck,
+            TransitionInput transition) {
+        return tenancyService.onboardExistingOnPaper(
+                actorUserId, tenantPhone, tenantName, propertyId, roomId,
+                rentAmountPaise, depositHeldPaise, firstBillOn, idCheck, transition);
+    }
+
     /** Activates a pending tenancy after the tenant accepted the agreement. */
     public TenancyResponse acceptTermsAndActivate(UUID tenancyId, UUID tenantUserId) {
         return TenancyResponse.from(tenancyService.acceptTermsAndActivate(tenancyId, tenantUserId));
@@ -252,5 +306,21 @@ public class TenancyModule {
     /** Owner/manager withdraws a tenancy the tenant never accepted. */
     public void cancelPendingTenancyByManager(UUID actorUserId, UUID tenancyId, String reason) {
         tenancyService.cancelPendingAsManager(actorUserId, tenancyId, reason);
+    }
+
+    /** Records the move-in checklist with a stay at onboarding (2026-10-29). */
+    public void recordMoveInChecklist(UUID tenancyId, UUID recordedBy,
+            com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput input) {
+        moveInChecklists.record(tenancyId, recordedBy, input);
+    }
+
+    /** The stay's own move-out checklist, set at onboarding (2026-10-29). */
+    public void setMoveOutChecklist(UUID tenancyId, java.util.List<String> items) {
+        tenancyService.setMoveOutChecklist(tenancyId, items);
+    }
+
+    /** The stay a booking was converted into: management cannot remove it while pending (2026-10-29). */
+    public void markFromBooking(UUID tenancyId) {
+        tenancyService.markFromBooking(tenancyId);
     }
 }

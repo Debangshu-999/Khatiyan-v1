@@ -1168,8 +1168,14 @@ const END_REASONS: Record<EnquiryEndReason, { label: string; tone: Tone }> = {
  * (owner's rule, 2026-10-03). Each is an attempt in the action log. Opening the
  * chat without writing in it is not one, so it is still a first response.
  */
+/**
+ * Whether they have been reached already, so the next step is a follow up.
+ * The server's own first-reached time, not the written replies (2026-10-28):
+ * an enquiry answered by a visit booked on it, or one seeded that way, has
+ * no reply row, and its card kept offering Respond after the visit.
+ */
 function hasReachedOut(enquiry: EnquiryDetail) {
-  return enquiry.responses.length > 0;
+  return enquiry.responses.length > 0 || Boolean(enquiry.respondedAt);
 }
 
 function newestFirst(list: EnquiryDetail[], when: (enquiry: EnquiryDetail) => string) {

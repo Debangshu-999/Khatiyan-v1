@@ -117,6 +117,9 @@ export default function OwnerEditRoomScreen() {
     if (rentPaise == null) {
       problems.rent = "Enter the rent.";
     }
+    if (seeded.amenities.filter((amenity) => amenity !== "ATTACHED_TOILET" && amenity !== "COMMON_TOILET").length + seeded.customAmenities.length === 0) {
+      problems.amenities = "Pick at least one amenity.";
+    }
     setErrors(problems);
     if (Object.keys(problems).length > 0 || rentPaise == null) {
       return;
@@ -209,6 +212,7 @@ export default function OwnerEditRoomScreen() {
               draft={seeded}
               errors={errors}
               expanded
+              headingBands
               index={0}
               molds={live}
               onChange={(patch) => {

@@ -4,7 +4,7 @@ import { Info } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { InfoModal } from "@/components/info-modal";
-import { DOCUMENT_UPLOAD, PHOTO_UPLOAD } from "@/features/uploads/upload-limits";
+import { DOCUMENT_UPLOAD, PDF_UPLOAD, PHOTO_UPLOAD } from "@/features/uploads/upload-limits";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -18,8 +18,8 @@ export function UploadRulesInfo({
   documents = false,
   max,
 }: {
-  /** Also list the document rules — notices take both. */
-  documents?: boolean;
+  /** Also list the document rules — notices take both. "pdf" for a PDF-only field. */
+  documents?: boolean | "pdf";
   /** How many files this section accepts, when it is capped. */
   max?: number;
 }) {
@@ -41,17 +41,17 @@ export function UploadRulesInfo({
 
       {open ? (
         <InfoModal onClose={() => setOpen(false)} title="What you can upload">
-          {max != null ? <Rule label="How many" value={`Up to ${max} images`} /> : null}
+          {max != null ? <Rule label="How many" value={`Up to ${max} ${documents ? "files" : "images"}`} /> : null}
           <Rule label="Photo formats" value={PHOTO_UPLOAD.label} />
-          <Rule label="Photo size" value={`Up to ${PHOTO_UPLOAD.maxLabel} each`} />
+          <Rule label="Photo size" value={`Up to ${PHOTO_UPLOAD.maxLabel} each, larger photos are shrunk to fit`} />
           {documents ? (
             <>
-              <Rule label="Document formats" value={DOCUMENT_UPLOAD.label} />
-              <Rule label="Document size" value={`Up to ${DOCUMENT_UPLOAD.maxLabel} each`} />
+              <Rule label="Document formats" value={(documents === "pdf" ? PDF_UPLOAD : DOCUMENT_UPLOAD).label} />
+              <Rule label="Document size" value={`Up to ${(documents === "pdf" ? PDF_UPLOAD : DOCUMENT_UPLOAD).maxLabel} each`} />
             </>
           ) : null}
           <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
-            Anything outside these is refused at upload, so nothing half-saves.
+            Anything outside these is refused at upload.
           </Text>
         </InfoModal>
       ) : null}

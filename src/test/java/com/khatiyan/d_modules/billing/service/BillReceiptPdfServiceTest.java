@@ -114,4 +114,24 @@ class BillReceiptPdfServiceTest {
 
         assertThat(receipt).doesNotContain("<td>Deposit</td>");
     }
+
+    /**
+     * A booked tenant's first bill: the token the property already held comes
+     * off it (2026-10-28). The receipt names it, so the total under the rows is
+     * explained, and a bill without one prints no such row.
+     */
+    @Test
+    void aBookingTokenTakenOffTheFirstBillIsPrintedAsReceived() {
+        String receipt = service.buildXhtml(firstBill(List.of(
+                line(BillingCycleLineItemType.RENT, "Rent", 11_000_00, BillingLineSettlementAction.SYSTEM_CHARGE),
+                line(BillingCycleLineItemType.DEPOSIT, "Deposit", 10_000_00, BillingLineSettlementAction.SYSTEM_CHARGE),
+                line(BillingCycleLineItemType.BOOKING_TOKEN, "Booking token received", 2_000_00,
+                        BillingLineSettlementAction.DISCOUNTED)),
+                19_000_00), LETTERHEAD);
+
+        assertThat(receipt).contains("<td>Booking token received</td><td class=\"amt\">- ₹2,000.00</td>");
+        assertThat(receipt.indexOf("<td>Discount</td>"))
+                .isLessThan(receipt.indexOf("<td>Booking token received</td>"));
+        assertThat(service.buildXhtml(firstBillWithDeposit(), LETTERHEAD)).doesNotContain("Booking token");
+    }
 }

@@ -4,6 +4,7 @@ import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { SectionHeading } from "@/components/section-heading";
 import { FormInput, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { AmenityPicker } from "@/features/property/amenity-picker";
 import { FLOOR_PLACEHOLDER, MAX_FLOOR_DIGITS, sanitizeFloorInput } from "@/features/property/floor";
@@ -26,7 +27,7 @@ export type RoomDraft = {
   roomNumber: string;
 };
 
-export type RoomDraftError = Partial<Record<"mold" | "number" | "floor" | "rent", string>>;
+export type RoomDraftError = Partial<Record<"mold" | "number" | "floor" | "rent" | "amenities", string>>;
 
 export function emptyDraft(seed?: Partial<RoomDraft>): RoomDraft {
   return {
@@ -64,6 +65,7 @@ export function RoomDraftRow({
   draft,
   errors,
   expanded,
+  headingBands = false,
   index,
   molds,
   onChange,
@@ -75,6 +77,8 @@ export function RoomDraftRow({
   draft: RoomDraft;
   errors?: RoomDraftError;
   expanded: boolean;
+  /** Edit room follows the room-type sheet's section bands, outside its field card. */
+  headingBands?: boolean;
   index: number;
   molds: RoomMold[];
   onChange: (patch: Partial<RoomDraft>) => void;
@@ -91,10 +95,11 @@ export function RoomDraftRow({
   const number = draftNumber(draft);
   const faulted = errors ? Object.values(errors).some(Boolean) : false;
 
-  const fields = (
+  const details = (
     <View style={{ gap: spacing.md }}>
       <MoldPicker
         error={errors?.mold}
+        hideLabel={headingBands}
         molds={molds}
         onChange={(next) => {
           const chosen = molds.find((option) => option.id === next);
@@ -141,7 +146,6 @@ export function RoomDraftRow({
           />
         </View>
       </View>
-
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1 }}>
           <FormInput
@@ -171,26 +175,45 @@ export function RoomDraftRow({
         </View>
       </View>
 
-      {mold ? (
-        <AmenityPicker
-          amenities={draft.amenities}
-          conditioning={mold.conditioning}
-          customAmenities={draft.customAmenities}
-          onChangeAmenities={(next) => onChange({ amenities: next })}
-          onChangeCustom={(next) => onChange({ customAmenities: next })}
-        />
-      ) : (
-        // Muted, not red. Nothing is wrong yet — the row has simply not been
-        // told which type it is, and an error colour on a form you have not
-        // filled in reads as a mistake you have already made.
-        <Text style={[type.description, { color: colors.muted }]}>
-          Choose a room type and its amenities appear here, ready to adjust.
-        </Text>
-      )}
+    </View>
+  );
+
+  const amenityFields = mold ? (
+    <AmenityPicker
+      amenities={draft.amenities}
+      conditioning={mold.conditioning}
+      customAmenities={draft.customAmenities}
+      error={errors?.amenities}
+      headingBand={headingBands}
+      onChangeAmenities={(next) => onChange({ amenities: next })}
+      onChangeCustom={(next) => onChange({ customAmenities: next })}
+    />
+  ) : (
+    // Muted, not red. Nothing is wrong yet — the row has simply not been
+    // told which type it is, and an error colour on a form you have not
+    // filled in reads as a mistake you have already made.
+    <Text style={[type.description, { color: colors.muted }]}>
+      Choose a room type and its amenities appear here, ready to adjust.
+    </Text>
+  );
+
+  const fields = (
+    <View style={{ gap: spacing.md }}>
+      {details}
+      {amenityFields}
     </View>
   );
 
   if (standalone) {
+    if (headingBands) {
+      return (
+        <View style={{ gap: spacing.md }}>
+          <SectionHeading title="Room type" trailing={<Text style={{ color: colors.danger, fontSize: 18 }}>*</Text>} trailingInline />
+          <Card>{details}</Card>
+          {amenityFields}
+        </View>
+      );
+    }
     // One room, one card. The fields used to sit bare on the page, which left
     // the screen as a column of inputs with nothing saying where the room
     // begins and the page ends.

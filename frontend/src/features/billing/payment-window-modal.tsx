@@ -33,7 +33,6 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
       {/* Closes by its × or the device back button, not a tap on the
           scrim (user, 2026-09-29). */}
       <View style={{ backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
-        <HelpModalClose onClose={onClose} />
         <View
           style={{
             alignSelf: "center",
@@ -49,6 +48,7 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
             width: "100%",
           }}
         >
+          <HelpModalClose corner onClose={onClose} />
           <HelpModalHeader />
 
           <View style={{ borderTopColor: colors.border, borderTopWidth: 1 }}>

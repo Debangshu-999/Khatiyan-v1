@@ -139,16 +139,16 @@ export function SingleImageField({
         <ActionButton
           disabled={busy}
           icon={ImagePlus}
-          label={url ? "Replace" : "Choose image"}
+          label="Gallery"
           onPress={() => void pickFromLibrary()}
-          variant="secondary"
+          variant="upload"
         />
         <ActionButton
           disabled={busy}
           icon={Camera}
           label="Camera"
           onPress={() => void capturePhoto()}
-          variant="secondary"
+          variant="upload"
         />
       </View>
 

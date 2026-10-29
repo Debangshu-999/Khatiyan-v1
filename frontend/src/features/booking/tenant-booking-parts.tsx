@@ -49,9 +49,9 @@ export function TenantBookingStatus({ status }: { status: BookingStatus }) {
  * band under a card's own heading mark passes a small one, so the two marks
  * share a centre line.
  */
-export function BookingInfoBand({ children, icon: Icon, iconGap = spacing.md, iconInset = spacing.md, tone = "neutral" }: { children: ReactNode; icon?: ComponentType<LucideProps>; iconGap?: number; iconInset?: number; /** danger: pale red, as a confirmed booking past its move-in shows (user, 2026-10-27). */ tone?: "neutral" | "warning" | "danger" }) {
+export function BookingInfoBand({ children, icon: Icon, iconGap = spacing.md, iconInset = spacing.md, tone = "neutral" }: { children: ReactNode; icon?: ComponentType<LucideProps>; iconGap?: number; iconInset?: number; /** danger: pale red, as a confirmed booking past its move-in shows (user, 2026-10-27). success: pale green, a booked bed that is free (2026-10-28). */ tone?: "neutral" | "warning" | "danger" | "success" }) {
   const { colors } = useTheme();
-  const [fill, ink] = tone === "warning" ? [colors.warningSoft, colors.warningText] : tone === "danger" ? [colors.dangerSoft, colors.danger] : [colors.neutralSoft, colors.muted];
+  const [fill, ink] = tone === "warning" ? [colors.warningSoft, colors.warningText] : tone === "danger" ? [colors.dangerSoft, colors.danger] : tone === "success" ? [colors.successSoft, colors.successText] : [colors.neutralSoft, colors.muted];
   return <View style={{ alignItems: "center", backgroundColor: fill, borderRadius: 10, flexDirection: "row", gap: iconGap, paddingLeft: iconInset, paddingRight: spacing.md, paddingVertical: spacing.sm, minHeight: 42 }}>
     {Icon ? <Icon color={ink} size={21} strokeWidth={1.9} /> : null}
     <View style={{ flex: 1, minWidth: 0, gap: 2 }}>{children}</View>

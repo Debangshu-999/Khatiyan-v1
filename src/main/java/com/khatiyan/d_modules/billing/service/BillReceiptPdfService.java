@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
+import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
 import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.billing.model.BillingLineSettlementAction;
@@ -126,6 +127,17 @@ public class BillReceiptPdfService {
         }
         charges.append(row("Late Fee", money(cycle.lateFeeAmountPaise()), false));
         charges.append(row("Discount", "- " + money(cycle.discountAmountPaise()), false));
+        // A booking token the property already held, taken off the first bill (2026-10-28).
+        // Money received, not a discount, so its own row: without it the total sat
+        // below the discount by the token's amount with nothing printed to say why.
+        long bookingToken = cycle.lineItems().stream()
+                .filter(item -> item.type() == BillingCycleLineItemType.BOOKING_TOKEN)
+                .filter(item -> item.status() == BillingCycleLineItemStatus.ADDED)
+                .mapToLong(BillingCycleLineItemResponse::amountPaise)
+                .sum();
+        if (bookingToken > 0) {
+            charges.append(row("Booking token received", "- " + money(bookingToken), false));
+        }
 
         StringBuilder contact = new StringBuilder();
         if (notBlank(letterhead.address())) {

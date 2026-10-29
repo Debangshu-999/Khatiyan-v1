@@ -17,7 +17,8 @@ import {
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { PaymentWindowModal } from "@/features/billing/payment-window-modal";
-import { billTitle, type BillingCycle } from "@/store/services/billing-api";
+import { BookingTokenNote } from "@/features/billing/booking-token-note";
+import { billTitle, bookingTokenPaise, type BillingCycle } from "@/store/services/billing-api";
 import type { PaymentIntent } from "@/store/services/payment-intent-api";
 import { useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
@@ -53,6 +54,7 @@ export function TenantBillCard({
   const paid = cycle.status === "PAID";
   const payLabel = payButtonLabel(cycle, openAttempt);
   const discount = tenantDiscountBreakdown(cycle);
+  const token = bookingTokenPaise(cycle);
   return (
     <LinearGradient
       colors={["#F7FAFF", "#EAF3FF"]}
@@ -157,6 +159,8 @@ export function TenantBillCard({
               </>
             ) : null}
           </View>
+          {/* The booking token already paid, taken off the first bill (2026-10-28). */}
+          {token > 0 ? <BookingTokenNote paise={token} /> : null}
         </View>
 
         <View
@@ -394,7 +398,8 @@ function tenantDiscountBreakdown(cycle: BillingCycle) {
   if (!cycle.discountAmountPaise || cycle.discountAmountPaise <= 0) {
     return null;
   }
-  const grossPaise = cycle.totalAmountPaise + cycle.discountAmountPaise;
+  // The token is added back too: the struck price is the bill before anything came off it.
+  const grossPaise = cycle.totalAmountPaise + cycle.discountAmountPaise + bookingTokenPaise(cycle);
   if (grossPaise <= 0) {
     return null;
   }

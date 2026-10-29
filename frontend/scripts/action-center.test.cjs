@@ -121,3 +121,14 @@ test("refresh is property-specific and invalidated by service mutations, never b
     assert.match(source, /useFocusEffect/);
   }
 });
+
+// "Tenancy has a pending exit today but no red dot shows on its card ... fix this for all cards"
+// (user, 2026-10-28): the Manage tab's dots and Dynamic order count the Action Center's own items.
+test("every card's dot counts the Action Center items handled in its module", () => {
+  const sort = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "src/features/owner/workspace-sort.ts"), "utf8");
+  assert.match(sort, /for \(const item of buildActionItems\(dashboard\)\) \{/);
+  assert.match(sort, /const INFORMATIONAL_ITEMS = new Set\(\["upcoming", "notice", "agreements-pending"\]\);/);
+  for (const [source, module] of [["booking", "property"], ["deposit", "billing"], ["enquiry", "property"], ["tenancy", "tenancy"], ["visit", "property"]]) {
+    assert.match(sort, new RegExp(`  ${source}: "${module}",`), source);
+  }
+});

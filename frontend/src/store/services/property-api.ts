@@ -41,7 +41,11 @@ export type BathroomType = "ATTACHED" | "COMMON";
  * <p>Deliberately has no AC constant. Conditioning is the mold's variant, and a
  * second copy of it in this list could contradict it.
  */
-export type RoomAmenity = "CUPBOARD" | "ATTACHED_TOILET" | "TV" | "GEYSER" | "BEDDING";
+/**
+ * ATTACHED_TOILET and COMMON_TOILET are set by the property's bathroom type,
+ * never ticked (2026-10-29). Like AC, shown answered and not answerable.
+ */
+export type RoomAmenity = "CUPBOARD" | "ATTACHED_TOILET" | "TV" | "GEYSER" | "BEDDING" | "COMMON_TOILET";
 
 export type PropertyFacility =
   | "WIFI"
@@ -336,10 +340,36 @@ export type ManagerLookup = {
 // Property exit policies: the damage-charge schedule and the move-out checklist.
 // Property-owned so every monthly tenancy (agreement or not) reads the same
 // rates and checklist at deposit settlement.
-export type PropertyDamageCharge = { name: string; chargePaise: number };
+/**
+ * An item and its price at each damage level (P1.9.a, 2026-10-29). `chargePaise`
+ * is D3's price: the one flat amount the deed and end tenancy still read.
+ */
+export type PropertyDamageCharge = {
+  name: string;
+  /** The highest priced level: the one amount the deed and end tenancy still read. */
+  chargePaise: number;
+  /** Null when the item is on the list but not priced yet (2026-10-29). */
+  d1Paise: number | null;
+  /** Null when the item has only D1. */
+  d2Paise: number | null;
+  /** Null when the item stops below D3. */
+  d3Paise: number | null;
+  /** The move-in checklist's sections (2026-10-29). */
+  category: DamageCategory;
+};
+
+/** AMENITY is no longer used: amenities are Room or Bathroom items. COMMON_TOILET is listed, never priced (2026-10-29). */
+export type DamageCategory = "ROOM" | "AMENITY" | "BATHROOM" | "COMMON_TOILET";
+
+/** NA is no damage and costs nothing. D3 is the worst. */
+export type DamageLevel = "NA" | "D1" | "D2" | "D3";
+
+export const DAMAGE_LEVELS: DamageLevel[] = ["NA", "D1", "D2", "D3"];
 
 export type PropertyExitPolicy = {
   damageCharges: PropertyDamageCharge[];
+  /** NA, D1, D2, D3 in order, each with what it means at this property. */
+  damageLevels: { level: DamageLevel; description: string }[];
   exitChecklist: string[];
   /** What the deposit may be used for at move-out. */
   permittedDeductions: DeductionCategory[];
@@ -368,6 +398,8 @@ export type UpdateExitPoliciesPayload = {
   damageCharges: PropertyDamageCharge[];
   exitChecklist: string[];
   permittedDeductions: DeductionCategory[];
+  /** What D1, D2 and D3 mean. Omitted keeps the current wording. */
+  damageLevels?: { d1: string; d2: string; d3: string };
 };
 
 

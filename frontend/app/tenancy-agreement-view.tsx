@@ -8,7 +8,9 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard, SkeletonList } from "@/components/skeleton";
 import { AgreementDocument } from "@/features/compliance/agreement-document";
+import { PaperAgreementPhotos } from "@/features/compliance/paper-agreement-photos";
 import { useGetMyAgreementQuery } from "@/store/services/compliance-api";
+import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -21,6 +23,10 @@ export default function TenancyAgreementViewScreen() {
   const { colors, type } = useTheme();
   const agreementQuery = useGetMyAgreementQuery();
   const agreement = agreementQuery.data;
+  // An existing tenant brought onto Khatiyan on their paper agreement has no
+  // deed here: its photos are the agreement (P1.1, 2026-10-28).
+  const tenancy = useGetMyActiveTenancyQuery().data?.tenancy ?? null;
+  const paperPhotos = tenancy?.agreementOnPaper ? tenancy.paperAgreementPhotoUrls ?? [] : [];
 
   return (
     <ScreenScrollView>
@@ -35,6 +41,15 @@ export default function TenancyAgreementViewScreen() {
           <SkeletonCard />
           <SkeletonList rows={3} />
         </>
+      ) : !agreement && paperPhotos.length > 0 ? (
+        <Card>
+          <View style={{ gap: spacing.md }}>
+            <Text style={[type.description, { color: colors.muted }]}>
+              Your paper agreement carries over on Khatiyan. These are its pages, kept on file. Tap one to read it.
+            </Text>
+            <PaperAgreementPhotos urls={paperPhotos} />
+          </View>
+        </Card>
       ) : !agreement ? (
         <EmptyState
           artwork={NO_AGREEMENT_ILLUSTRATION}

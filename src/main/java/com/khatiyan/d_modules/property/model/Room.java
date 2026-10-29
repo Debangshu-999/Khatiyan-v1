@@ -253,6 +253,11 @@ public class Room extends BaseEntity {
         this.customAmenities = new HashSet<>(mold.getCustomAmenities());
     }
 
+    /** The toilet follows the property's bathroom type, never the owner's tick (2026-10-29). */
+    public void matchToilet(BathroomType bathroom) {
+        this.amenities = RoomAmenities.withToilet(this.amenities, bathroom);
+    }
+
     /** Per-room overrides, after the mold's defaults have been copied in. */
     public void updateAmenities(Set<RoomAmenity> amenities, Set<String> customAmenities) {
         this.amenities = amenities == null ? new HashSet<>() : new HashSet<>(amenities);

@@ -114,8 +114,42 @@ public record OnboardTenancyWithAgreementRequest(
      * apart from "no fixed term", and those produce different agreements.
      */
     @Valid
-    AgreementTermInput term
+    AgreementTermInput term,
+
+    /** The room's condition at move-in (2026-10-29). Optional: absent, nothing is recorded. */
+    @Valid
+    com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput moveInChecklist,
+
+    /**
+     * What must be done before this stay's deposit is settled, its own list
+     * (user, 2026-10-29). Null keeps the property's.
+     */
+    @jakarta.validation.constraints.Size(max = 30, message = "A move-out checklist can have at most 30 items")
+    java.util.List<@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 120) String> moveOutChecklist
 ) {
+
+    /** Without a move-out checklist. */
+    public OnboardTenancyWithAgreementRequest(
+            String tenantPhone, String tenantName, UUID propertyId, UUID roomId,
+            Long rentAmountPaise, Long depositAmountPaise, LocalDate startDate,
+            IdCheckDeclarationInput idCheck, String idCheckStatementText,
+            List<VerificationOrderInput> verification, DeviceFingerprintInput device,
+            TenantDetailsInput tenant, AgreementTemplate template, AgreementTermInput term,
+            com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput moveInChecklist) {
+        this(tenantPhone, tenantName, propertyId, roomId, rentAmountPaise, depositAmountPaise, startDate,
+                idCheck, idCheckStatementText, verification, device, tenant, template, term, moveInChecklist, null);
+    }
+
+    /** Without a move-in checklist: every caller from before it existed. */
+    public OnboardTenancyWithAgreementRequest(
+            String tenantPhone, String tenantName, UUID propertyId, UUID roomId,
+            Long rentAmountPaise, Long depositAmountPaise, LocalDate startDate,
+            IdCheckDeclarationInput idCheck, String idCheckStatementText,
+            List<VerificationOrderInput> verification, DeviceFingerprintInput device,
+            TenantDetailsInput tenant, AgreementTemplate template, AgreementTermInput term) {
+        this(tenantPhone, tenantName, propertyId, roomId, rentAmountPaise, depositAmountPaise, startDate,
+                idCheck, idCheckStatementText, verification, device, tenant, template, term, null, null);
+    }
 
     /**
      * Exactly one route, never both and never neither.

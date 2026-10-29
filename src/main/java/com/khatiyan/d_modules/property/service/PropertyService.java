@@ -49,6 +49,10 @@ public class PropertyService {
     private final DiscoveryModule discoveryModule;
     private final ReferenceCodeGenerator referenceCodeGenerator;
 
+    /** Set by Spring; absent in unit tests that build this service by hand. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private RoomToiletSync toiletSync;
+
     public PropertyService(
             PropertyRepository propertyRepository,
             PropertyManagerRepository propertyManagerRepository,
@@ -266,8 +270,12 @@ public class PropertyService {
         List<PropertyDamageCharge> damageCharges = request.damageCharges() == null
                 ? List.of()
                 : request.damageCharges().stream()
-                        .map(input -> PropertyDamageCharge.of(input.name(), input.chargePaise()))
+                        .map(input -> PropertyDamageCharge.of(input.name(), input.d1(), input.d2(), input.d3(), input.category()))
                         .toList();
+        if (request.damageLevels() != null) {
+            property.updateDamageLevelDescriptions(
+                    request.damageLevels().d1(), request.damageLevels().d2(), request.damageLevels().d3());
+        }
 
         // The premature-exit policy is deliberately NOT touched here. It is
         // edited on the agreement screen, beside the term it belongs to, and
@@ -320,6 +328,7 @@ public class PropertyService {
         Property property = propertyRepository.findByIdAndActiveTrue(propertyId)
                 .orElseThrow(() -> new NotFoundException("Property", propertyId));
         VersionGuard.claim(property);
+        com.khatiyan.d_modules.property.model.BathroomType bathroomBefore = property.getBathroomType();
 
         property.updateDetails(
                 request.name(),
@@ -347,6 +356,15 @@ public class PropertyService {
                 request.standardDepositPaise(),
                 request.noticePeriod());
         property.updateVisitorsAllowed(request.visitorsAllowed());
+        // Every room's toilet follows the bathroom type (user, 2026-10-29).
+        if (property.getBathroomType() != bathroomBefore) {
+            if (toiletSync != null) {
+                toiletSync.sync(propertyId, property.getBathroomType());
+            }
+            // The bathroom's basics join the damage list for the new type: attached
+            // items to price, or the common toilet's list (2026-10-29).
+            property.addBathroomBasics();
+        }
 
         log.info(
                 "Property updated propertyId={} actorUserId={} name={} city={}",

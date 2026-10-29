@@ -148,6 +148,11 @@ public class RoomMold extends BaseEntity {
     /** Mirrors the column width, so a long list fails here rather than at the insert. */
     private static final int MAX_IMAGES = 10;
 
+    /** The toilet follows the property's bathroom type, never the owner's tick (2026-10-29). */
+    public void matchToilet(BathroomType bathroom) {
+        this.amenities = RoomAmenities.withToilet(this.amenities, bathroom);
+    }
+
     private void applyRentAndAmenities(
             long baseRentPaise,
             Set<RoomAmenity> amenities,

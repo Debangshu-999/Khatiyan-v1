@@ -2,6 +2,9 @@ import type { PropsWithChildren, ReactNode } from "react";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { ClipboardList } from "lucide-react-native";
+import { ActionCard } from "@/components/action-card";
+import { useGetMoveInChecklistQuery } from "@/store/services/tenancy-api";
 import { openDialer } from "@/lib/dial";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ChevronRight, Info, MessageCircle, Phone } from "lucide-react-native";
@@ -25,6 +28,7 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
+import { PaperAgreementPhotos } from "@/features/compliance/paper-agreement-photos";
 
 export default function OwnerActiveTenancyDetailScreen() {
   const router = useGuardedRouter();
@@ -79,6 +83,7 @@ export default function OwnerActiveTenancyDetailScreen() {
     { skip: !selectedPropertyId },
   );
   const tenancy = tenanciesQuery.data?.find((item) => item.id === tenancyId) ?? null;
+  const moveInQuery = useGetMoveInChecklistQuery(tenancyId ?? "", { skip: !tenancyId });
 
   // The Tenants roster, which carries a row per tenancy whether or not a
   // conversation exists behind it. Skipped for a guest — there is no account to
@@ -96,7 +101,10 @@ export default function OwnerActiveTenancyDetailScreen() {
   // date from a notice period that has not been served.
   const fixedTerm = Boolean(tenancy?.fixedTerm);
   const agreedEndDate = fixedTerm ? tenancy?.endDate ?? tenancy?.agreementEndDate ?? null : null;
-  const stayStartDate = tenancy?.startDate ?? (stringParam(params.startDate) || null);
+  // An existing tenant's stay counts from when they really moved in, before Khatiyan (P1.1, 2026-10-28).
+  const stayStartDate = tenancy?.movedInOn ?? tenancy?.startDate ?? (stringParam(params.startDate) || null);
+  const transitioned = Boolean(tenancy?.transitioned);
+  const paperPhotos = tenancy?.agreementOnPaper ? tenancy.paperAgreementPhotoUrls ?? [] : [];
 
   /**
    * The date this stay ends, whichever field actually holds it.
@@ -216,9 +224,24 @@ export default function OwnerActiveTenancyDetailScreen() {
         <SectionTitle title="Rent details" />
         <FlatCard>
           <FieldPair
-            left={<ReadonlyField label="Start date" value={formatDate(stringParam(params.startDate))} />}
+            left={<ReadonlyField label={transitioned ? "First Khatiyan bill" : "Start date"} value={formatDate(stringParam(params.startDate))} />}
             right={<ReadonlyField label="Room" value={roomLabel} />}
           />
+          {transitioned ? (
+            <>
+              <CardRule />
+              {tenancy?.verifiedBeforeKhatiyan ? (
+                <FieldPair
+                  left={<ReadonlyField label="Moved in on" value={formatDate(tenancy?.movedInOn ?? null)} />}
+                  right={<ReadonlyField label="Identity" value="Verified before Khatiyan" />}
+                />
+              ) : (
+                <FieldRow>
+                  <ReadonlyField label="Moved in on" value={formatDate(tenancy?.movedInOn ?? null)} />
+                </FieldRow>
+              )}
+            </>
+          ) : null}
           <CardRule />
           {/* Blank for an indefinite agreement, on purpose — see above. */}
           <FieldPair
@@ -257,6 +280,39 @@ export default function OwnerActiveTenancyDetailScreen() {
           </FieldRow>
         </FlatCard>
       </View>
+
+      {/* The room's condition at move-in, when one was recorded (2026-10-29). */}
+      {moveInQuery.data ? (
+        <View style={{ gap: spacing.sm }}>
+          <SectionTitle title="Move-in checklist" />
+          <ActionCard
+            badge={moveInQuery.data.status === "NOTED" ? 1 : undefined}
+            description={moveInQuery.data.status === "NOTED"
+              ? "The tenant noted a difference."
+              : moveInQuery.data.status === "PENDING"
+                ? "Waiting for the tenant to answer."
+                : "Accepted by the tenant."}
+            icon={ClipboardList}
+            onPress={() => router.push({ pathname: "/move-in-checklist", params: { role: "owner", tenancyId } })}
+            title={`${moveInQuery.data.items.length} items, ${moveInQuery.data.items.reduce((total, item) => total + item.photoUrls.length, 0)} photos`}
+          />
+        </View>
+      ) : null}
+
+      {/* Their paper agreement carries over, its pages on file (P1.1, 2026-10-28). */}
+      {paperPhotos.length > 0 ? (
+        <View style={{ gap: spacing.sm }}>
+          <SectionTitle title="Paper agreement" />
+          <FlatCard>
+            <View style={{ gap: spacing.md, padding: spacing.md }}>
+              <Text style={[type.description, { color: colors.muted }]}>
+                Kept from before Khatiyan. Nothing was signed in the app. Tap a page to read it.
+              </Text>
+              <PaperAgreementPhotos urls={paperPhotos} />
+            </View>
+          </FlatCard>
+        </View>
+      ) : null}
 
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Tenant details" />

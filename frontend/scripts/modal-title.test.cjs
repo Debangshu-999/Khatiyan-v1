@@ -113,5 +113,6 @@ test("all modal header variants use the shared responsive title, not fixed-size 
     scan(sf);
   }
   assert.deepEqual(missed, []);
-  assert.ok(titles >= 65, `Expected all custom headers plus the shared shells; found ${titles}`);
+  // 64 since the room-change and exit "Reason / Notes" popovers became one shared InfoPopover (2026-10-28).
+  assert.ok(titles >= 64, `Expected all custom headers plus the shared shells; found ${titles}`);
 });
