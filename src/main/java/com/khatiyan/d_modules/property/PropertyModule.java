@@ -28,6 +28,10 @@ import com.khatiyan.d_modules.property.service.ManagerAccessPolicy;
 import com.khatiyan.d_modules.property.service.PropertyService;
 import com.khatiyan.d_modules.property.service.RoomMoldService;
 import com.khatiyan.d_modules.property.service.RoomService;
+import com.khatiyan.d_modules.property.service.RoomConditionService;
+import com.khatiyan.d_modules.property.api.dto.RoomConditionWrite;
+import com.khatiyan.d_modules.property.api.dto.RoomItemConditionResponse;
+import com.khatiyan.d_modules.property.model.DamageLevel;
 
 /**
  * Public facade for the property module.
@@ -45,6 +49,7 @@ public class PropertyModule {
     private final ManagerAccessPolicy managerAccessPolicy;
     private final RoomMoldService roomMoldService;
     private final PropertyVisitSlotService propertyVisitSlotService;
+    private final RoomConditionService roomConditionService;
 
     public PropertyModule(
             RoomService roomService,
@@ -52,13 +57,37 @@ public class PropertyModule {
             PropertyManagerService propertyManagerService,
             ManagerAccessPolicy managerAccessPolicy,
             RoomMoldService roomMoldService,
-            PropertyVisitSlotService propertyVisitSlotService) {
+            PropertyVisitSlotService propertyVisitSlotService,
+            RoomConditionService roomConditionService) {
         this.propertyVisitSlotService = propertyVisitSlotService;
+        this.roomConditionService = roomConditionService;
         this.roomService = roomService;
         this.propertyService = propertyService;
         this.propertyManagerService = propertyManagerService;
         this.managerAccessPolicy = managerAccessPolicy;
         this.roomMoldService = roomMoldService;
+    }
+
+    /** Each item's running condition in a room (2026-10-29). Unguarded: callers check access. */
+    public List<RoomItemConditionResponse> roomConditions(UUID roomId) {
+        return roomConditionService.list(roomId);
+    }
+
+    /** A move-in checklist sets each item's condition exactly as confirmed. */
+    public void applyMoveInConditions(UUID roomId, UUID actorUserId, List<RoomConditionWrite> items) {
+        roomConditionService.applyMoveIn(roomId, actorUserId, items);
+    }
+
+    /** A damage raises an item to the worse level with the new photos. Returns the level before. */
+    public DamageLevel raiseCondition(UUID roomId, UUID actorUserId, String itemName, String section,
+            DamageLevel level, List<String> photoUrls) {
+        return roomConditionService.raise(roomId, actorUserId, itemName, section, level, photoUrls);
+    }
+
+    /** A repair or replacement sets an item's level and photos exactly. */
+    public void resetCondition(UUID roomId, UUID actorUserId, String itemName, String section,
+            DamageLevel level, List<String> photoUrls) {
+        roomConditionService.reset(roomId, actorUserId, itemName, section, level, photoUrls);
     }
 
     public PropertyResponse getActiveProperty(UUID propertyId) {

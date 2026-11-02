@@ -3,6 +3,7 @@ import { Switch, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { CircleHelp, Info, LockKeyhole, RotateCcw, UsersRound } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -80,12 +81,7 @@ export default function OwnerBookingSettingsScreen() {
     <ScreenScrollView surface={colors.background} safeAreaEdges={["top", "bottom"]} refreshable={false}>
       <ScreenHeader title="Booking" italicTail="settings." subtitle={property ? `How bookings work at ${property.name}.` : "Choose a property on Home to set up bookings."} />
       {loading ? <BookingSettingsSkeleton /> : failed ? (
-        <>
-          <NoticeBar tone="danger" title="Could not load booking settings" message={errorMessage(failed)} />
-          <View style={{ flexDirection: "row" }}>
-            <ActionButton icon={RotateCcw} label="Try again" onPress={() => { if (propertiesQuery.isError) void propertiesQuery.refetch(); else if (permissionsQuery.isError) void permissionsQuery.refetch(); else void settingsQuery.refetch(); }} />
-          </View>
-        </>
+        <LoadFailed error={failed} onReload={() => { if (propertiesQuery.isError) void propertiesQuery.refetch(); else if (permissionsQuery.isError) void permissionsQuery.refetch(); else void settingsQuery.refetch(); }} />
       ) : property && !owner ? (
         <EmptyState icon={LockKeyhole} title="Owner-only settings" description="Only the property owner can change how bookings work." />
       ) : (

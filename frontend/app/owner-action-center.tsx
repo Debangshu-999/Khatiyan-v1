@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
+import { LoadFailed } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useRouteGate } from "@/features/owner/route-gates";
 import { Text, View } from "react-native";
-import { AlertCircle, Check } from "lucide-react-native";
+import { Check } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
 import { FilterPillRow } from "@/components/filter-bubbles";
@@ -10,7 +11,6 @@ import { LedgerRow } from "@/components/ledger-row";
 import { OwnerActionCenterSkeleton } from "@/components/skeletons/owner";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { ActionButton } from "@/features/owner/owner-ui";
 import { useFocusEffect } from "expo-router";
 import { useAppSelector } from "@/store/hooks";
 import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
@@ -100,9 +100,7 @@ export default function OwnerActionCenterScreen() {
         </View>
       ) : null}
       {selectedPropertyId && dashboardQuery.isError ? (
-        <EmptyState icon={AlertCircle} title="Could not refresh actions" action={
-          <ActionButton label="Try again" onPress={() => void dashboardQuery.refetch()} />
-        } />
+        <LoadFailed error={dashboardQuery.error} onReload={() => void dashboardQuery.refetch()} />
       ) : null}
       {routeGateDialog}
     </ScreenScrollView>

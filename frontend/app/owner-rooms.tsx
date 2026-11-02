@@ -1,3 +1,8 @@
+import { dateOfIso, isoOfDate } from "@/components/calendar-month";
+import { CalendarPicker } from "@/components/calendar-picker";
+import { istToday } from "@/features/analytics/period";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -8,7 +13,6 @@ import { compareFloors, formatFloor } from "@/features/property/floor";
 import { RoomAmenityStrip } from "@/features/property/room-amenity-strip";
 import { InServiceIcon, RoomsSummaryIcon } from "@/features/property/room-summary-icons";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 // Lucide has no staircase; MaterialCommunityIcons does, and is already in use.
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import type { LucideProps } from "lucide-react-native";
@@ -45,7 +49,9 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
+import { SectionWithDropdown } from "@/components/filtered-queue";
+import { SheetShell } from "@/components/sheet-shell";
+import { PickerOptionRow } from "@/components/picker-option-row";
 import { useToast } from "@/components/toast";
 import { OwnerRoomInventorySkeleton, OwnerRoomMetricsSkeleton } from "@/components/skeletons/owner";
 import { ListEnd } from "@/components/list-end";
@@ -77,7 +83,6 @@ import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/serv
 import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { CountTabPills } from "@/components/filter-bubbles";
 import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { FitText } from "@/components/fit-text";
 
@@ -87,16 +92,8 @@ function BedsSummaryIcon({ color, size = 22 }: LucideProps) {
   return <MaterialCommunityIcons name="bed-double" color={color as string} size={Number(size)} />;
 }
 
-function FloorInServiceIcon(props: LucideProps) {
-  return <InServiceIcon {...props} color="#000000" />;
-}
-
 function OccupiedSummaryIcon({ color, size = 22 }: LucideProps) {
   return <MaterialIcons name="hotel" color={color as string} size={Number(size)} />;
-}
-
-function FloorOccupiedIcon(props: LucideProps) {
-  return <OccupiedSummaryIcon {...props} color="#000000" />;
 }
 
 export default function OwnerRoomsScreen() {
@@ -160,7 +157,7 @@ export default function OwnerRoomsScreen() {
   const [pendingDelete, setPendingDelete] = useState<OwnerRoom | null>(null);
   const [pendingReactivate, setPendingReactivate] = useState<OwnerRoom | null>(null);
   const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
-  const [roomFilter, setRoomFilter] = useState<RoomFilter>("active");
+  const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
   const [visibleRoomCount, setVisibleRoomCount] = useState(5);
 
   const totalBeds = rooms.reduce((sum, room) => sum + room.capacity, 0);
@@ -226,6 +223,11 @@ export default function OwnerRoomsScreen() {
     })();
   }
 
+  const loadFailed = loadFailure(propertiesQuery, roomsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} scrollEventThrottle={16} onScroll={({ nativeEvent }) => {
       const { contentOffset, contentSize, layoutMeasurement } = nativeEvent;
@@ -270,6 +272,7 @@ export default function OwnerRoomsScreen() {
               disabled={!canManageRooms}
               icon={Plus}
               label="Add room"
+              variant="secondary"
               onPress={() =>
                 router.push({ params: { propertyId: selectedProperty.id }, pathname: "/owner-add-rooms" })
               }
@@ -300,45 +303,43 @@ export default function OwnerRoomsScreen() {
             <>
               <FloorSelector active={activeFloor} floors={floors} onSelect={setSelectedFloor} />
               {activeFloor != null ? (
-                <Section
+                <SectionWithDropdown
                   title={activeFloor ? `Floor ${activeFloor}` : "Unassigned"}
-                  trailing={
-                    // The app's shared filter strip, in the slot the bespoke
-                    // chips held. Labels stay short — it shares the row with a
-                    // heading, so "Maint." is what fits.
-                    <CountTabPills
-                      compact
-                      onChange={setRoomFilter}
-                      options={[
-                        { count: floorActiveCount, label: "Active", value: "active" as const },
-                        { count: floorMaintenanceCount, label: "Maint.", value: "maintenance" as const },
-                        { count: floorDeactivatedCount, label: "Off", value: "deactivated" as const },
-                      ]}
-                      value={roomFilter}
-                    />
-                  }
+                  purpose="Filter"
+                  onChange={setRoomFilter}
+                  options={[
+                    { count: floorAllRooms.length, label: "All", value: "all" },
+                    { count: floorActiveCount, label: "Active", value: "active" },
+                    { count: floorMaintenanceCount, label: "Maintenance", value: "maintenance" },
+                    { count: floorDeactivatedCount, label: "Off", value: "deactivated" },
+                  ]}
+                  value={roomFilter}
                 >
                   <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                    <MetricTile icon={FloorInServiceIcon} iconPlacement="side" label="In service" value={String(floorActiveRooms.length)} hint={`${floorBeds} bed${floorBeds === 1 ? "" : "s"}`} />
-                    <MetricTile icon={FloorOccupiedIcon} iconPlacement="side" label="Occupied" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
+                    <MetricTile icon={InServiceIcon} iconPlacement="side" iconTone="primary" label="In service" value={String(floorActiveRooms.length)} hint={`${floorBeds} bed${floorBeds === 1 ? "" : "s"}`} />
+                    <MetricTile icon={OccupiedSummaryIcon} iconPlacement="side" iconTone="primary" label="Occupied" value={String(floorOccupiedBeds)} hint={`${floorBeds - floorOccupiedBeds} vacant`} />
                   </View>
                   {visibleFloorRooms.length === 0 ? (
                     <EmptyState
                       artwork={NO_BEDS_ILLUSTRATION}
                       compact
                       title={
-                        roomFilter === "active"
-                          ? "No rooms in service"
-                          : roomFilter === "maintenance"
-                            ? "Nothing under maintenance"
-                            : "No deactivated rooms"
+                        roomFilter === "all"
+                          ? "No rooms on this floor"
+                          : roomFilter === "active"
+                            ? "No rooms in service"
+                            : roomFilter === "maintenance"
+                              ? "Nothing under maintenance"
+                              : "No deactivated rooms"
                       }
                       description={
-                        roomFilter === "active"
-                          ? "Rooms on this floor that are in service will appear here."
-                          : roomFilter === "maintenance"
-                            ? "Rooms taken out of service for repairs appear here."
-                            : "Rooms you switch off stay here until you bring them back."
+                        roomFilter === "all"
+                          ? "Rooms added to this floor will appear here."
+                          : roomFilter === "active"
+                            ? "Rooms on this floor that are in service will appear here."
+                            : roomFilter === "maintenance"
+                              ? "Rooms taken out of service for repairs appear here."
+                              : "Rooms you switch off stay here until you bring them back."
                       }
                     />
                   ) : (
@@ -364,7 +365,7 @@ export default function OwnerRoomsScreen() {
                       ) : <ListEnd />}
                     </View>
                   )}
-                </Section>
+                </SectionWithDropdown>
               ) : null}
             </>
           )}
@@ -402,9 +403,12 @@ export default function OwnerRoomsScreen() {
   );
 }
 
-type RoomFilter = "active" | "maintenance" | "deactivated";
+type RoomFilter = "all" | "active" | "maintenance" | "deactivated";
 
 function matchesRoomFilter(room: OwnerRoom, filter: RoomFilter) {
+  if (filter === "all") {
+    return true;
+  }
   if (filter === "deactivated") {
     return !room.active;
   }
@@ -412,6 +416,26 @@ function matchesRoomFilter(room: OwnerRoom, filter: RoomFilter) {
     return room.active && room.status === "MAINTENANCE";
   }
   return room.active && room.status !== "MAINTENANCE";
+}
+
+function roomUseNotice({ occupiedCount, reservedCount }: Pick<OwnerRoom, "occupiedCount" | "reservedCount">) {
+  const reservedMessage = `${reservedCount} ${reservedCount === 1 ? "bed is" : "beds are"} reserved.`;
+  if (occupiedCount > 0) {
+    const occupiedMessage = `${occupiedCount} ${occupiedCount === 1 ? "bed is" : "beds are"} in use.`;
+    return {
+      title: "Room in use",
+      message: reservedCount > 0
+        ? `${occupiedMessage} ${reservedMessage} Room status can't be edited or changed while the room is in use or has an active reservation.`
+        : `${occupiedMessage} Room status can't be edited or changed while the room is in use.`,
+    };
+  }
+  if (reservedCount > 0) {
+    return {
+      title: "Room is reserved",
+      message: `${reservedMessage} Room status can't be edited or changed during an active reservation.`,
+    };
+  }
+  return null;
 }
 
 // Compact full-date and date-time formatters  -  Hermes' Intl is limited, so we
@@ -513,60 +537,29 @@ function FloorSelector({ active, floors, onSelect }: { active: string | null; fl
       </Pressable>
 
       {open ? (
-        <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={() => setOpen(false)} statusBarTranslucent transparent visible>
-          {/* Closes by its own close button or the device back button, not a tap
-              on the scrim (user, 2026-09-29). */}
-          <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
-            <View style={{
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                borderRadius: 18,
-                borderWidth: 1,
-                gap: spacing.xs,
-                maxHeight: "70%",
-                maxWidth: 420,
-                padding: spacing.md,
-                width: "100%",
-              }}>
-              <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingBottom: spacing.xs, paddingHorizontal: spacing.xs }}>
-                <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, }}>
-                  Choose floor
-                </ModalTitle>
-                <IconButton accessibilityLabel="Close" icon={X} onPress={() => setOpen(false)} />
-              </View>
-              <ScrollView contentContainerStyle={{ gap: spacing.xs }} showsVerticalScrollIndicator={false}>
-                {floors.map((floor) => {
-                  const selected = floor === active;
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      key={floor || "unassigned"}
-                      onPress={() => {
-                        onSelect(floor);
-                        setOpen(false);
-                      }}
-                      style={{
-                        alignItems: "center",
-                        backgroundColor: selected ? colors.ink : colors.surfaceSunken,
-                        borderColor: selected ? colors.ink : colors.border,
-                        borderRadius: 12,
-                        borderWidth: 1,
-                        flexDirection: "row",
-                        gap: spacing.sm,
-                        paddingHorizontal: spacing.md,
-                        paddingVertical: spacing.md,
-                      }}
-                    >
-                      <Text style={{ color: selected ? colors.surface : colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, }}>
-                        {floor ? `Floor ${floor}` : "Unassigned"}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
+        <SheetShell
+          closeButtonVariant="circle"
+          fullBleed
+          onClose={() => setOpen(false)}
+          showClose
+          size="content"
+          title="Choose floor"
+        >
+          <View>
+            {floors.map((floor) => (
+              <PickerOptionRow
+                fullBleed
+                key={floor || "unassigned"}
+                label={floor ? `Floor ${floor}` : "Unassigned"}
+                onPress={() => {
+                  onSelect(floor);
+                  setOpen(false);
+                }}
+                selected={floor === active}
+              />
+            ))}
           </View>
-        </CenterModal>
+        </SheetShell>
       ) : null}
     </View>
   );
@@ -693,9 +686,8 @@ function RoomCard({
   const { colors, fonts, type } = useTheme();
   const [showInfo, setShowInfo] = useState(false);
   const isAc = room.conditioning === "AC";
-  // Reserved counts: a bed held for an approved room change has somebody
-  // moving into it who has already been told what they are getting.
-  const occupiedOrHeld = room.occupiedCount + room.reservedCount;
+  // A booking or approved room change can reserve an otherwise vacant room.
+  const useNotice = roomUseNotice(room);
   const isDeactivated = !room.active;
   const isMaintenance = room.active && room.status === "MAINTENANCE";
   const statusLabel = isDeactivated ? "Deactivated" : room.status === "PARTIALLY_OCCUPIED" ? "Partial" : humanizeToken(room.status);
@@ -824,17 +816,17 @@ function RoomCard({
           <View style={{ flexDirection: "row" }}>
             <ActionButton disabled={!canManage} icon={RotateCcw} label="Reactivate" onPress={onReactivate} />
           </View>
-        ) : occupiedOrHeld > 0 ? (
+        ) : useNotice ? (
           // Hidden, not disabled. Every one of these is refused by the server
           // while somebody is in the room — the number is on their agreement,
           // the type is what they agreed to rent — so offering them greyed out
           // would be three controls that can never be pressed. The line says
           // what would make them available again.
-          <NoticeBar tone="info" title="Room in use" message={`${occupiedOrHeld} ${occupiedOrHeld === 1 ? "bed is" : "beds are"} occupied or reserved. Move or check out the tenants to edit, change status or deactivate this room.`} />
+          <NoticeBar tone="info" title={useNotice.title} message={useNotice.message} />
         ) : (
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton disabled={!canManage} icon={Pencil} label="Edit" onPress={onEdit} variant="secondary" />
-            <ActionButton disabled={!canManage} icon={Settings2} label="Status" onPress={onStatus} variant="secondary" />
+            <ActionButton borderColor={colors.border} disabled={!canManage} icon={Pencil} label="Edit" onPress={onEdit} variant="secondary" />
+            <ActionButton borderColor={colors.border} disabled={!canManage} icon={Settings2} label="Status" onPress={onStatus} variant="secondary" />
             <IconButton
               accessibilityLabel="Deactivate room"
               bordered
@@ -936,8 +928,8 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
               <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
                 {title}
               </ModalTitle>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
+            <ModalTitleRule />
             {children}
           </View>
         </View>
@@ -1002,10 +994,6 @@ function StatusModal({ onClose, propertyId, room }: { onClose: () => void; prope
   return (
     <ModalShell onClose={onClose} title={`Room ${room.roomNumber} status`}>
       <RoomScroll>
-        <Text style={[type.description, { color: colors.muted }]}>
-          Occupied / partially occupied is set automatically from tenancies. You can mark a vacant room under maintenance or bring it back.
-        </Text>
-
         {occupied ? (
           <View
             style={{
@@ -1162,25 +1150,12 @@ function MaintenanceUntilField({ onChange, value }: { onChange: (value: Date | n
         {value ? <IconButton accessibilityLabel="Clear date" bordered icon={X} onPress={() => onChange(null)} /> : null}
       </View>
       {open ? (
-        <DateTimePicker
-          display={Platform.OS === "ios" ? "inline" : "default"}
-          minimumDate={new Date()}
-          mode="date"
-          onChange={(event: DateTimePickerEvent, selected?: Date) => {
-            if (Platform.OS !== "ios") {
-              setOpen(false);
-            }
-            if (event.type === "set" && selected) {
-              onChange(selected);
-            }
-          }}
-          value={value ?? new Date()}
+        <CalendarPicker
+          minimum={istToday()}
+          onClose={() => setOpen(false)}
+          onPick={(iso) => onChange(dateOfIso(iso))}
+          value={value ? isoOfDate(value) : null}
         />
-      ) : null}
-      {open && Platform.OS === "ios" ? (
-        <View style={{ flexDirection: "row" }}>
-          <ActionButton label="Done" onPress={() => setOpen(false)} variant="secondary" />
-        </View>
       ) : null}
     </View>
   );

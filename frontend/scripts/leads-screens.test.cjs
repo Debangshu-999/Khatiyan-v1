@@ -106,8 +106,8 @@ test("the timeline runs oldest first, in words, with who did each step", () => {
   assert.ok(detail.includes("detail.enquiries.length === 1 ? <EnquiryChip enquiry={detail.enquiries[0]} /> : null"));
   assert.ok(detail.includes("detail.bookings.length === 1 ? <OwnerBookingStatus status={detail.bookings[0].status} /> : null"));
   // The code keeps its size on the lead details, and is a size down under the name on the card.
-  assert.ok(detail.includes("fontSize: 21 }]}>{lead.referenceCode}"));
-  assert.ok(read("src/features/lead/lead-card.tsx").includes("fontSize: 10.5, lineHeight: 14 }]}>{lead.referenceCode}"));
+  assert.ok(detail.includes("fontSize: cardText(21) }]}>{lead.referenceCode}"));
+  assert.ok(read("src/features/lead/lead-card.tsx").includes("fontSize: cardText(10.5), lineHeight: 14 }]}>{lead.referenceCode}"));
 });
 
 test("slots read as times of day", () => {
@@ -231,14 +231,19 @@ test("the property page books a visit or a stay straight, with no enquiry, after
   // Nothing for who manages the place. Who stays there may enquire, and gets no Visit or Booking.
   assert.ok(actions.includes("{staysHere ? null : <GlassActionButton artwork={VISIT_ARTWORK}"));
   assert.ok(actions.includes("{staysHere ? null : <GlassActionButton artwork={BOOKING_ARTWORK}"));
-  // The row floats clear of the tab bar until the page reaches the one below Contacts, where it rests.
+  // One row in a fixed footer, and the app's tabs are hidden while the profile is open.
   const layer = read("src/features/discovery/components/property-profile-layer.tsx");
-  assert.ok(layer.includes("{property && actions.available && !dockInView ? ("));
-  assert.ok(layer.includes("{actions.row(true, pageForGlass)}") && layer.includes("{actions.sheets}"));
-  assert.ok(layer.includes("bottom: TAB_BAR_HEIGHT_PX + spacing.md") && layer.includes("paddingBottom: TAB_BAR_HEIGHT_PX + spacing.md"));
-  assert.ok(layer.includes("<BlurTargetView ref={pageForGlass}"));
+  assert.ok(layer.includes("{actions.row(false)}") && layer.includes("{actions.sheets}"));
+  // Blurred like the tabs, and back and the property's buttons stay in a white card.
+  assert.ok(layer.includes("<BlurTargetView ref={pageForGlass}") && layer.includes("blurTarget={pageForGlass}"));
+  assert.ok(layer.includes("<ProfileTopActions property={property} />") && layer.indexOf("Back to the list") < layer.indexOf("<Animated.ScrollView"));
+  // The strip appears as the page moves, edge to edge.
+  assert.ok(layer.includes('inputRange: [0, 16], outputRange: [0, 1]') && !layer.includes("borderBottomLeftRadius"));
+  assert.ok(layer.includes("paddingBottom: (property && actions.available ? footerHeight : insets.bottom) + spacing.xl"));
+  assert.ok(layer.includes("useHideTabBar(Boolean(propertyId) && focused)"));
+  assert.ok(read("app/(tabs)/_layout.tsx").includes("if (hidden) return null;"));
   const profile = read("src/features/discovery/components/property-profile.tsx");
-  assert.ok(profile.indexOf("{actions ? <View onLayout") > profile.indexOf('<ProfileSection title="Contacts">'));
+  assert.ok(!profile.includes("onActionsDock"));
   // The old row near the top is gone.
   assert.doesNotMatch(profile, /<EnquireAction/);
 });

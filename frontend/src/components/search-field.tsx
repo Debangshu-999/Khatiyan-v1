@@ -5,7 +5,7 @@ import { Search, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
-import { useTheme } from "@/theme/use-theme";
+import { useTheme } from "@/theme/use-theme";
 
 /**
  * Reusable search box for history/data screens: leading search icon, clear
@@ -14,6 +14,9 @@ import { useTheme } from "@/theme/use-theme";
 export function SearchField({
   animatePlaceholder = true,
   autoCapitalize = "none",
+  autoFocus = false,
+  clearButtonVariant = "plain",
+  compact = false,
   onChangeText,
   placeholder,
   trailing,
@@ -27,6 +30,12 @@ export function SearchField({
    * for every letter of something that is never lower case.
    */
   autoCapitalize?: "none" | "characters";
+  /** Opens with the keyboard up: a search the person came here to type (2026-10-29, Quick actions from Home). */
+  autoFocus?: boolean;
+  /** A grey circular clear button where requested; other search fields keep their plain cross. */
+  clearButtonVariant?: "plain" | "circle";
+  /** A shorter field for Home's compact quick-actions card; full screen searches keep their height. */
+  compact?: boolean;
   onChangeText: (value: string) => void;
   placeholder: string;
   /**
@@ -47,17 +56,19 @@ export function SearchField({
       style={{
         alignItems: "center",
         backgroundColor: colors.surface,
-        borderColor: focused ? colors.primary : colors.border,
-        borderRadius: 14,
+        // A dark edge and no shadow (user, 2026-11-02).
+        borderColor: focused ? colors.primary : `${colors.ink}80`,
+        borderRadius: 10,
         borderWidth: focused ? 1.5 : 1,
         flexDirection: "row",
         gap: spacing.sm,
-        minHeight: 50,
-        paddingHorizontal: spacing.md,
+        minHeight: compact ? 44 : 50,
+        paddingHorizontal: compact ? spacing.sm : spacing.md,
       }}
     >
       <Search color={focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
       <AppTextInput
+        autoFocus={autoFocus}
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
         marqueePlaceholder={animatePlaceholder}
@@ -66,12 +77,15 @@ export function SearchField({
         onFocus={() => setFocused(true)}
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
-        style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: 15, }}
+        style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: compact ? 13 : 15, }}
         value={value}
       />
       {value.length > 0 ? (
-        <AnimatedPressable accessibilityLabel="Clear search" onPress={() => onChangeText("")} style={{ padding: 2 }}>
-          <X color={colors.muted} size={17} strokeWidth={2.3} />
+        <AnimatedPressable accessibilityLabel="Clear search" onPress={() => onChangeText("")} hitSlop={clearButtonVariant === "circle" ? 8 : undefined}
+          style={clearButtonVariant === "circle"
+            ? { alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 999, backgroundColor: colors.neutralSoft }
+            : { padding: 2 }}>
+          <X color={colors.muted} size={clearButtonVariant === "circle" ? 15 : 17} strokeWidth={2.3} />
         </AnimatedPressable>
       ) : null}
       {trailing ? (

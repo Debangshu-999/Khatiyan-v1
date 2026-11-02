@@ -17,6 +17,8 @@ export type AccountAvailability = {
   ownedProperties: OwnerProperty[];
   managedProperties: OwnerProperty[];
   loading: boolean;
+  /** Whether the property list has really arrived, rather than being fetched again or having failed. */
+  propertiesKnown: boolean;
 };
 
 export function deriveAccounts(params: {
@@ -88,6 +90,11 @@ export function useAvailableAccounts(): AccountAvailability {
       )),
     managedProperties,
     ownedProperties,
+    /**
+     * Whether the property list has really arrived. While it is being fetched again,
+     * or has failed, an empty list says nothing about what this person owns.
+     */
+    propertiesKnown: propertiesQuery.isSuccess,
   };
 }
 

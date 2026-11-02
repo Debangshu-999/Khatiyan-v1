@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { BellRing } from "lucide-react-native";
 
+import { LoadFailed, loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
@@ -81,6 +82,13 @@ export default function OwnerNudgesScreen({ embedded = false }: { embedded?: boo
       ) : null}
     </>
   );
+
+  const loadFailed = loadFailure(propertiesQuery, sentQuery);
+  if (loadFailed) {
+    return embedded
+      ? <LoadFailed error={loadFailed.error} onReload={loadFailed.reload} />
+      : <LoadFailedScreen failure={loadFailed} />;
+  }
 
   if (embedded) return content;
 

@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.intelligence.discovery;
 
+import com.khatiyan.c_shared.money.Money;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -276,7 +277,7 @@ public class SmartSearchSuggestions {
         }
         long rupees = startingRoomRentPaise / 100;
         long ceiling = (rupees / 1000 + 1) * 1000;
-        return "₹" + String.format(Locale.ROOT, "%,d", ceiling);
+        return "₹" + Money.indianGrouped(ceiling);
     }
 
     private static String trimmed(String value) {

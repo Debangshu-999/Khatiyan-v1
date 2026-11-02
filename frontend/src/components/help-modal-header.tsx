@@ -2,6 +2,7 @@ import { ModalTitle } from "@/components/modal-title";
 import { Image, View } from "react-native";
 import { X } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { softShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 
 export function HelpModalHeader({ title = "How it works" }: { title?: string }) {
@@ -14,10 +15,29 @@ export function HelpModalHeader({ title = "How it works" }: { title?: string }) 
 }
 
 /**
+ * The × on a bottom-up How it works: above the sheet, in a raised white circle (user,
+ * 2026-10-31). A centred How it works keeps its × in the corner, and other bottom
+ * sheets have none.
+ */
+export function HowItWorksClose({ onClose }: { onClose: () => void }) {
+  const { colors } = useTheme();
+  return <AnimatedPressable
+    accessibilityLabel="Close explanation"
+    accessibilityRole="button"
+    hitSlop={8}
+    onPress={onClose}
+    style={{ alignItems: "center", alignSelf: "center", backgroundColor: colors.surface, borderRadius: 999, height: 36, justifyContent: "center", marginBottom: 16, width: 36, ...softShadow(colors.shadow, 2, 8) }}
+  >
+    <X color={colors.ink} size={20} strokeWidth={2.75} />
+  </AnimatedPressable>;
+}
+
+/**
  * The ×. Above a bottom sheet it floats on the scrim; `corner` puts it inside a
  * centred card's top right corner instead, on a sunken disc so it shows on the
  * white (user, 2026-10-28: centred How it works modals, app-wide).
  */
+
 export function HelpModalClose({ corner = false, onClose }: { corner?: boolean; onClose: () => void }) {
   const { colors } = useTheme();
   if (corner) {

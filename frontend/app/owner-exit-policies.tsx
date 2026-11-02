@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DoorOpen, Info, Pencil, Plus } from "lucide-react-native";
+import { LoadFailed } from "@/components/load-failed";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -11,7 +12,7 @@ import { ScreenHeader } from "@/components/screen-header";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
-import { OwnerRulesEditorSkeleton } from "@/components/skeletons/owner";
+import { OwnerItemCatalogueScreenSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { formatMoneyPaise } from "@/features/owner/owner-ui";
@@ -19,7 +20,7 @@ import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { isUnchanged } from "@/features/forms/unchanged";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ConfirmDialog, FormInput, NoticeBar, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -49,7 +50,7 @@ export default function OwnerExitPoliciesScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
-  const { managedProperties, ownedProperties } = useAvailableAccounts();
+  const { managedProperties, ownedProperties, loading: accountsLoading } = useAvailableAccounts();
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
   const propertyId = property?.id ?? "";
 
@@ -135,7 +136,16 @@ export default function OwnerExitPoliciesScreen() {
     }
   }
 
-  const ready = Boolean(property) && !policiesQuery.isLoading && damageCharges !== null && checklist !== null && levelWords !== null;
+  const loadError = property ? (
+    (!policiesQuery.data && policiesQuery.isError ? policiesQuery.error : undefined)
+    ?? (!roomsQuery.data && roomsQuery.isError ? roomsQuery.error : undefined)
+    ?? (!myPropertiesQuery.data && myPropertiesQuery.isError ? myPropertiesQuery.error : undefined)
+  ) : undefined;
+  const loading = accountsLoading || Boolean(property && !loadError && (
+    policiesQuery.isLoading || roomsQuery.isLoading || myPropertiesQuery.isLoading
+    || damageCharges === null || checklist === null || levelWords === null
+  ));
+  const ready = Boolean(property) && !loading && !loadError && damageCharges !== null && checklist !== null && levelWords !== null;
 
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
@@ -144,6 +154,7 @@ export default function OwnerExitPoliciesScreen() {
         safeAreaEdges={["top"]}
         contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE + insets.bottom }}
       >
+        {loading ? <OwnerItemCatalogueScreenSkeleton /> : <>
         <ScreenHeader
           badge={readOnly ? <ViewOnlyChip /> : null}
           italicTail="catalogue & Damages."
@@ -161,9 +172,9 @@ export default function OwnerExitPoliciesScreen() {
             title="No property selected"
             description="Choose an active property from Home before managing its exit policies."
           />
-        ) : policiesQuery.isLoading || damageCharges === null || checklist === null || levelWords === null ? (
-          <OwnerRulesEditorSkeleton />
-        ) : (
+        ) : loadError ? (
+          <LoadFailed error={loadError} onReload={() => void Promise.all([policiesQuery.refetch(), roomsQuery.refetch(), myPropertiesQuery.refetch()])} />
+        ) : damageCharges !== null && levelWords !== null ? (
           <>
             {/* The same four levels for every item, in the property's own words (P1.9.a, 2026-10-29). */}
             <Section title="Damage levels">
@@ -187,7 +198,8 @@ export default function OwnerExitPoliciesScreen() {
 
             {/* The move-out checklist is each tenancy's own now, set at onboarding (user, 2026-10-29). */}
           </>
-        )}
+        ) : null}
+        </>}
 
       {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
       </ScreenScrollView>
@@ -207,8 +219,8 @@ export default function OwnerExitPoliciesScreen() {
 
 const CATEGORY_HEADINGS: Record<DamageCategory, { title: string; tail: string }> = {
   AMENITY: { tail: "items", title: "Room" },
-  BATHROOM: { tail: "bathroom", title: "Attached" },
-  COMMON_TOILET: { tail: "toilet", title: "Common" },
+  BATHROOM: { tail: "washroom", title: "Attached" },
+  COMMON_TOILET: { tail: "washroom", title: "Common" },
   ROOM: { tail: "items", title: "Room" },
 };
 
@@ -309,7 +321,7 @@ function DamageChargesEditor({
               key={category}
               onAdd={readOnly ? undefined : () => setSheet({ category, name: null })}
               summary={`${things.length} item${things.length === 1 ? "" : "s"}, not priced`}
-              tail="toilet"
+              tail="washroom"
               title="Common"
             >
               {things.map((entry, index) => (

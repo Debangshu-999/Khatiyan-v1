@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { CalendarDays, CircleHelp, Copy, ShieldAlert, UserPlus } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
 import { Card } from "@/components/card";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
@@ -35,18 +36,18 @@ export function LeadCard({ lead, onFollowUp, onOpen, showKind = false }: { lead:
   const band = leadBand(lead);
   const canFollowUp = Boolean(lead.followUpEnquiryId && lead.viewerMayFollowUp);
   return <Card style={{ gap: spacing.sm, padding: spacing.md }}>
-    <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+    <CardNameRow rowStyle={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <FitText numberOfLines={1} style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>{cardName(lead.prospectName ?? "Someone")}</FitText>
+        <FitText numberOfLines={1} style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(18), lineHeight: 23 }]}>{cardName(lead.prospectName ?? "Someone")}</FitText>
         {/* The code under the name a size down from the card's other lines (user, 2026-10-17). */}
-        <Text selectable style={[type.description, { color: colors.muted, fontSize: 10.5, lineHeight: 14 }]}>{lead.referenceCode}</Text>
+        <Text selectable style={[smallerCardText(type.description), { color: colors.muted, fontSize: cardText(10.5), lineHeight: 14 }]}>{lead.referenceCode}</Text>
       </View>
-      {showKind || lead.repeat || lead.external ? <View style={{ alignItems: "flex-end", gap: 6 }}>
+      <CardStatus>{showKind || lead.repeat || lead.external ? <View style={{ alignItems: "flex-end", gap: 6 }}>
         {showKind ? <LeadKindChip kind={lead.kind} /> : null}
         {lead.repeat ? <LeadRepeatChip repeat={lead.repeat} /> : null}
         {lead.external ? <ExternalChip /> : null}
-      </View> : null}
-    </View>
+      </View> : null}</CardStatus>
+    </CardNameRow>
 
     {/* The facts side by side across the card, a label over each value with a rule between, so the row
         is used to its end and does not leave its right half empty (user, 2026-10-17). */}
@@ -54,14 +55,14 @@ export function LeadCard({ lead, onFollowUp, onOpen, showKind = false }: { lead:
       {leadFacts(lead).map((fact, index) => <View key={fact.label} style={{ flexDirection: "row", flex: fact.label === "Handler" ? 1.5 : 1, minWidth: 0 }}>
         {index > 0 ? <View style={{ alignSelf: "stretch", backgroundColor: colors.border, marginHorizontal: spacing.sm, width: 1 }} /> : null}
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <FitText numberOfLines={1} style={[type.description, { color: colors.muted }]}>{fact.label}</FitText>
-          <FitText numberOfLines={1} style={[type.description, { color: colors.ink, fontFamily: fonts.sansBold }]}>{fact.value}</FitText>
+          <FitText numberOfLines={1} style={[smallerCardText(type.description), { color: colors.muted }]}>{fact.label}</FitText>
+          <FitText numberOfLines={1} style={[smallerCardText(type.description), { color: colors.ink, fontFamily: fonts.sansBold }]}>{fact.value}</FitText>
         </View>
       </View>)}
     </View>
 
     {band ? <BookingInfoBand icon={CalendarDays} iconGap={6} iconInset={10} tone={band.tone}>
-      <Text style={[type.description, { color: colors.ink }]}>
+      <Text style={[smallerCardText(type.description), { color: colors.ink }]}>
         {band.text}{band.strong ? <Text style={{ fontFamily: fonts.sansBold }}>{` ${band.strong}`}</Text> : null}
       </Text>
     </BookingInfoBand> : null}
@@ -96,7 +97,7 @@ export function LeadKindChip({ kind }: { kind: LeadKind }) {
     neutral: [colors.neutralSoft, colors.neutralText],
   }[tone];
   return <View accessibilityLabel={label} style={{ backgroundColor, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 }}>
-    <Text style={{ color, fontFamily: fonts.sansSemiBold, fontSize: 12 }}>{label}</Text>
+    <Text style={{ color, fontFamily: fonts.sansSemiBold, fontSize: cardText(12) }}>{label}</Text>
   </View>;
 }
 

@@ -1,6 +1,7 @@
 import { ActivityIndicator, Text, View } from "react-native";
 import { ArrowRight, CalendarDays } from "lucide-react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
 import { type BillingCycle } from "@/store/services/billing-api";
@@ -41,8 +42,17 @@ export function BillPaymentIntentsSheet({
   const attemptsQuery = useListMyPaymentIntentsQuery(cycle.id);
   const attempts = attemptsQuery.data ?? [];
 
+  const loadFailed = loadFailure(attemptsQuery);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title="Payment attempts">
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
+  }
+
   return (
-    <SheetShell dismissOnDrag onClose={onClose} title="Payment attempts">
+    <SheetShell size="tall" dismissOnDrag onClose={onClose} title="Payment attempts">
       {/* The code alone, unlabelled. It is the only thing that could be under
           this title, and "Bill" in front of it was a word doing no work.
 

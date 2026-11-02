@@ -17,9 +17,9 @@ export const MAX_CUSTOM_AMENITIES = 50;
 export const MAX_CUSTOM_AMENITY_LENGTH = 80;
 
 export const AMENITY_LABELS: Record<RoomAmenity, string> = {
-  ATTACHED_TOILET: "Attached toilet",
+  ATTACHED_TOILET: "Attached washroom",
   BEDDING: "Bedding",
-  COMMON_TOILET: "Common toilet",
+  COMMON_TOILET: "Common washroom",
   CUPBOARD: "Cupboard",
   GEYSER: "Geyser",
   TV: "TV",
@@ -146,12 +146,12 @@ export function AmenityPicker({
           roomItems,
         )}
         {group(
-          bathroomType === "COMMON" ? "Common toilet" : "Attached bathroom",
+          bathroomType === "COMMON" ? "Common washroom" : "Attached washroom",
           // The section is the common toilet; it is not an item in its own list (user, 2026-10-29).
           bathroomType === "COMMON" ? null : (
             <AmenityCell
               icon={({ color, size }) => <ItemIcon color={color} name="Toilet" size={size} />}
-              label="Attached toilet"
+              label="Attached washroom"
               locked
               on
             />

@@ -244,30 +244,24 @@ test("backend rejection uses the existing error modal channel and never navigate
   assert.deepEqual(h.serverErrors, ["An exit request already exists."]);
 });
 
-test("native picker preserves min/max bounds and dismissing does not change the date", () => {
-  const h = harness({ platform: "android" });
+test("the calendar keeps the min/max bounds, and closing it does not change the date", () => {
+  const h = harness();
   const min = h.parseISODate("2026-10-17");
   const max = h.parseISODate("2026-10-31");
   const picked = [];
   let closed = 0;
   const picker = h.render(h.CheckoutDatePicker, { minimumDate: min, maximumDate: max, value: min, onPick: (value) => picked.push(h.toISODate(value)), onClose: () => closed++ });
-  assert.equal(picker.props.minimumDate, min);
-  assert.equal(picker.props.maximumDate, max);
-  picker.props.onChange({ type: "dismissed" });
+  assert.equal(picker.type, "CalendarPicker");
+  assert.equal(picker.props.minimum, "2026-10-17");
+  assert.equal(picker.props.maximum, "2026-10-31");
+  picker.props.onClose();
   assert.equal(picked.length, 0);
-  picker.props.onChange({ type: "set" }, h.parseISODate("2026-11-02"));
-  assert.deepEqual(picked, ["2026-10-31"]);
-  assert.equal(closed, 2);
-});
-
-test("web picker keeps the shared sheet and date-use action", () => {
-  const h = harness();
-  const props = { minimumDate: h.parseISODate("2026-10-17"), maximumDate: h.parseISODate("2026-10-31"), value: h.parseISODate("2026-10-22"), onPick() {}, onClose() {} };
-  const picker = h.render(h.CheckoutDatePicker, props);
-  assert.equal(picker.type, "SheetShell");
-  assert.equal(find(picker, "ActionButton").props.label, "Use this date");
-  const input = find(picker, "AppTextInput");
-  assert.equal(input.props.defaultValue, "2026-10-22");
+  assert.equal(closed, 1);
+  picker.props.onPick("2026-10-22");
+  assert.deepEqual(picked, ["2026-10-22"]);
+  // Belt and braces, as before.
+  picker.props.onPick("2026-11-02");
+  assert.deepEqual(picked, ["2026-10-22", "2026-10-31"]);
 });
 
 test("reason stays optional, labelled, multiline and capped at 500 characters", () => {
@@ -287,8 +281,9 @@ test("load failures offer retry instead of falsely showing no stay or an availab
     assert.equal(page.type, h.ExitRequestPage);
     assert.equal(page.props.footer, undefined);
     const error = page.props.children;
-    assert.equal(error.props.message, "Something went wrong at our end. Please try again.");
-    assert.equal(typeof error.props.onRetry, "function");
+    assert.equal(error.type, "LoadFailed");
+    assert.equal(error.props.error.status, 503);
+    assert.equal(typeof error.props.onReload, "function");
   }
 });
 

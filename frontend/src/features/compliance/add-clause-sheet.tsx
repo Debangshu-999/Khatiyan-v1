@@ -1,3 +1,4 @@
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
@@ -65,8 +66,8 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
               <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }} >
                 New clause
               </ModalTitle>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
+            <ModalTitleRule />
             <ScrollView
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}
               keyboardShouldPersistTaps="handled"
@@ -96,8 +97,11 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
                   required
                   value={body}
                 />
-                <ActionButton disabled={form.blocked} icon={Plus} label="Add clause" onPress={() => submit(dismiss)} />
             </ScrollView>
+            {/* Fixed under the scrolling fields (user, 2026-11-01). */}
+            <View style={{ flexDirection: "row", paddingTop: spacing.md }}>
+              <ActionButton disabled={form.blocked} icon={Plus} label="Add clause" onPress={() => submit(dismiss)} />
+            </View>
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
           </View>
         </View>

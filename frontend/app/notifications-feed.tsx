@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import { useFocusEffect } from "expo-router";
+import { LoadFailed } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View } from "react-native";
-import { ArchiveRestore, BellOff, ChevronRight, X } from "lucide-react-native";
+import { ArchiveRestore, ChevronRight, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BloomModalShell } from "@/components/bloom-modal-shell";
@@ -130,12 +131,7 @@ export default function NotificationsFeedScreen() {
       ) : null}
 
       {isError ? (
-        <EmptyState
-          icon={BellOff}
-
-          title="Couldn't load notifications"
-          description="Check your backend connection from Account, then pull down to try again."
-        />
+        <LoadFailed error={recentQuery.error} onReload={() => void recentQuery.refetch()} />
       ) : null}
 
       {!isLoading && !isError && recent.length === 0 ? (

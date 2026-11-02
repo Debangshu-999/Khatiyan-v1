@@ -287,7 +287,7 @@ test("a later tenant page failing never becomes an incomplete collection or a fa
   const result = await tenantCollectionEndpoint().queryFn(undefined, {}, {}, async () => ++calls === 1 ? { data: { items: [record()], totalPages: 3 } } : { error });
   assert.equal(result.error, error); assert.equal(result.data, undefined); assert.equal(calls, 2);
   const h = harness({ listQuery: { currentData: undefined, isError: true } }); const tree = h.render(h.listModule.default);
-  assert.equal(nodes(tree, "EmptyState").length, 0); button(tree, "Try again");
+  assert.equal(nodes(tree, "EmptyState").length, 0); one(tree, "LoadFailed");
 });
 
 test("booking details use a single-line reference, snapshot identity and connected offer/activity rows", () => {
@@ -1267,9 +1267,9 @@ test("secondary lines on the booking screens are set in the app's description ty
   // The tenant property board's own style, one for the whole app (typography.ts). Asked for on the booking screens by the user, 2026-10-11.
   const typography = read("src/theme/typography.ts");
   assert.match(typography, /description: \{\s+fontFamily: fonts\.sans,\s+fontSize: 12,\s+lineHeight: 16,/);
-  for (const file of ["app/booking-request.tsx", "src/features/booking/booking-form-parts.tsx", "app/my-bookings.tsx", "app/my-booking-detail.tsx", "app/owner-booking-detail.tsx", "app/owner-booking-settings.tsx", "src/features/booking/booking-request-list.tsx", "src/features/booking/book-a-stay-entry.tsx", "src/features/booking/booking-access-list.tsx", "src/features/booking/booking-date-field.tsx"]) {
+  for (const file of ["app/booking-request.tsx", "src/features/booking/booking-form-parts.tsx", "app/my-bookings.tsx", "app/my-booking-detail.tsx", "app/owner-booking-detail.tsx", "app/owner-booking-settings.tsx", "src/features/booking/booking-request-list.tsx", "src/features/booking/book-a-stay-entry.tsx", "src/features/booking/booking-access-list.tsx"]) {
     const source = read(file);
-    assert.ok(source.includes("type.description, { color: colors.muted"), file);
+    assert.ok(/type\.description\)?, \{ color: colors\.muted/.test(source), file);
     // No muted caption left behind, and no size of its own to undo the type.
     assert.equal(source.includes("type.caption, { color: colors.muted"), false, file);
     assert.equal(/\[type\.description, \{[^}\n]*fontSize/.test(source), false, file);
@@ -1291,30 +1291,21 @@ test("a second tap on a chosen room lets it go, and its photos close with it", (
     assert.equal(button(h.render(h.formModule.Form, formProps), "Continue").props.disabled, true, tab);
   }
 });
-test("the date field opens the system calendar itself on Android, with no sheet behind it", () => {
-  const fieldOn = (os) => {
-    const h = harness(); const picked = [];
-    const field = load(read("src/features/booking/booking-date-field.tsx"), { ...h.dependencies, "react-native": { Platform: { OS: os }, Text: "Text", View: "View" }, "@react-native-community/datetimepicker": { __esModule: true, default: "DateTimePicker" } });
-    const props = { label: "Move-in date", value: "2026-10-18", minimum: "2026-10-18", maximum: "2026-10-31", onChange: (iso) => picked.push(iso) };
-    return { h, picked, draw: () => h.render(field.BookingDateField, props) };
-  };
-  const android = fieldOn("android");
-  assert.equal(nodes(android.draw(), "DateTimePicker").length, 0);
-  one(android.draw(), "AnimatedPressable").props.onPress();
-  let tree = android.draw();
+test("the date field opens the calendar itself, with no sheet behind it", () => {
+  const h = harness(); const picked = [];
+  const field = load(read("src/features/booking/booking-date-field.tsx"), { ...h.dependencies, "react-native": { Text: "Text", View: "View" } });
+  const props = { label: "Move-in date", value: "2026-10-18", minimum: "2026-10-18", maximum: "2026-10-31", onChange: (iso) => picked.push(iso) };
+  const draw = () => h.render(field.BookingDateField, props);
+  assert.equal(nodes(draw(), "CalendarPicker").length, 0);
+  one(draw(), "AnimatedPressable").props.onPress();
+  const tree = draw();
   // The calendar, and nothing around it for it to open over.
   assert.equal(nodes(tree, "SheetShell").length, 0); assert.equal(nodes(tree, "ActionButton").length, 0);
-  const calendar = one(tree, "DateTimePicker");
-  // A day picked is taken at once, and the calendar is gone.
-  calendar.props.onChange({ type: "set" }, new Date(2026, 9, 24, 12));
-  assert.deepEqual(android.picked, ["2026-10-24"]); assert.equal(nodes(android.draw(), "DateTimePicker").length, 0);
-  // Dismissed, it changes nothing. A day outside the bed's dates is not taken.
-  one(android.draw(), "AnimatedPressable").props.onPress(); one(android.draw(), "DateTimePicker").props.onChange({ type: "dismissed" }, undefined);
-  one(android.draw(), "AnimatedPressable").props.onPress(); one(android.draw(), "DateTimePicker").props.onChange({ type: "set" }, new Date(2026, 10, 5, 12));
-  assert.deepEqual(android.picked, ["2026-10-24"]);
-  // The web has no system calendar, so it keeps its sheet with a typed date.
-  const web = fieldOn("web"); one(web.draw(), "AnimatedPressable").props.onPress(); tree = web.draw();
-  assert.equal(nodes(tree, "SheetShell").length, 1); assert.equal(nodes(tree, "DateTimePicker").length, 0); button(tree, "Use this date");
+  const calendar = one(tree, "CalendarPicker");
+  assert.equal(calendar.props.minimum, "2026-10-18"); assert.equal(calendar.props.maximum, "2026-10-31"); assert.equal(calendar.props.value, "2026-10-18");
+  // A day picked is taken, and closing takes the calendar away.
+  calendar.props.onPick("2026-10-24"); calendar.props.onClose();
+  assert.deepEqual(picked, ["2026-10-24"]); assert.equal(nodes(draw(), "CalendarPicker").length, 0);
 });
 
 test("the tenant's accept is the Confirm booking sheet from the image, in the tenant's words", () => {

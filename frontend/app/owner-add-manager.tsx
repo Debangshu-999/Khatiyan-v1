@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { Phone, Search, UserPlus, UserRound } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -53,7 +54,8 @@ export default function OwnerAddManagerScreen() {
   const router = useGuardedRouter();
   const toast = useToast();
   const propertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
-  const property = (useListMyPropertiesQuery().data ?? []).find((item) => item.id === propertyId) ?? null;
+  const propertiesQuery = useListMyPropertiesQuery();
+  const property = (propertiesQuery.data ?? []).find((item) => item.id === propertyId) ?? null;
 
   const [phone, setPhone] = useState("");
   const [lookup, setLookup] = useState<ManagerLookup | null>(null);
@@ -145,6 +147,11 @@ export default function OwnerAddManagerScreen() {
         errorMessage(error) || "Could not assign the manager. Check the details and try again.",
       );
     }
+  }
+
+  const loadFailed = loadFailure(propertiesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   if (!propertyId) {

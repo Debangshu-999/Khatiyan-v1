@@ -90,3 +90,21 @@ test("the line's series is a dropdown and the return tile reads Came back later"
   assert.match(screen, /<StatTile label="Came back later" value=/);
   assert.doesNotMatch(screen, /on another day/);
 });
+
+test("each funnel step reads title, its loss under the title, then the bar, with a line between steps", () => {
+  const funnel = screen.slice(screen.indexOf("function Funnel("), screen.indexOf("function OverTimeCard("));
+  const title = funnel.indexOf("{STEP_PEOPLE[step.key]}");
+  const loss = funnel.indexOf("{`(${lostPercent}% ${MISSED_STEP[step.key]}");
+  const bar = funnel.indexOf("backgroundColor: palette.track");
+  assert.ok(title > 0 && title < loss && loss < bar);
+  assert.match(funnel, /borderTopWidth: index === 0 \? 0 : 1/);
+});
+
+test("why leads were lost is a donut per stage, with the closed enquiries always shown under it", () => {
+  const card = screen.slice(screen.indexOf("function LostLeadsCard("), screen.indexOf("function OverTimeCard("));
+  assert.match(card, /<ChartDropdown accessibilityLabel="Shown for"/);
+  assert.match(card, /LOST_STAGES\.filter\(\(stage\) => activity\.deadLeads\.some/);
+  assert.match(card, /Enquiries closed before any visit<\/Text>\s+<Donut/);
+  assert.doesNotMatch(card, /<BarList|as \$\{/);
+  assert.match(screen, /sorted\.length > 6 \? sorted\.slice\(0, 5\) : sorted/);
+});

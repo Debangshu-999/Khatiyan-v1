@@ -35,6 +35,13 @@ public class FoodModuleSettingService {
     }
 
     @Transactional(readOnly = true)
+    public boolean isAttendanceEnabled(UUID propertyId) {
+        return settingRepository.findById(propertyId)
+                .map(FoodModuleSetting::isAttendanceEnabled)
+                .orElse(false);
+    }
+
+    @Transactional(readOnly = true)
     public boolean isUsable(UUID propertyId) {
         return propertyModule.getActiveProperty(propertyId).foodIncluded() && isEnabled(propertyId);
     }

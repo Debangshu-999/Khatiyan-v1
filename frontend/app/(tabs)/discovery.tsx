@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
 import { Animated, Easing, Image, ImageBackground, Text, View, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import { ArrowUpRight, MapPin } from "lucide-react-native";
+import { ArrowUpRight, MapPin, TrainFront } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { PropertyIcon } from "@/components/property-icon";
@@ -11,7 +12,6 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AiResults } from "@/features/discovery/components/ai-results";
 import { ListingSortButton, ListingSortModal } from "@/features/discovery/components/listing-sort";
-import { DiscoveryEmptyState } from "@/features/discovery/components/discovery-empty-state";
 import { DiscoverySearchCard } from "@/features/discovery/components/discovery-search-card";
 import { DiscoveryTabs, type DiscoveryTab, type DiscoveryTabItem } from "@/features/discovery/components/discovery-tabs";
 import { NearbyPlacesView } from "@/features/discovery/components/nearby-places-view";
@@ -24,10 +24,13 @@ import {
   type PropertyFilterState,
 } from "@/features/discovery/components/property-filter-modal";
 import { PropertyListingCard } from "@/features/discovery/components/property-listing-card";
+import { metroResultLine, metroSearchLabel, tickedStations } from "@/features/discovery/metro/metro-system";
+import { useGetMetroSystemsQuery } from "@/store/services/metro-api";
 import { PropertyProfileLayer, type PropertyProfileLayerHandle } from "@/features/discovery/components/property-profile-layer";
 import type { ProfileSource } from "@/features/analytics/use-profile-view";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { useAppSelector } from "@/store/hooks";
+import { softShadow } from "@/theme/shadows";
 import {
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
@@ -263,6 +266,8 @@ export default function DiscoveryScreen() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
   const [appliedFilters, setAppliedFilters] = useState<PropertyFilterState>(emptyPropertyFilters);
+  const byMetro = appliedFilters.metroStationCodes.length > 0;
+  const metroSystemsQuery = useGetMetroSystemsQuery(undefined, { skip: !byMetro });
   const [page, setPage] = useState(0);
   const debouncedSearchText = useDebouncedValue(searchText, 300);
 
@@ -415,6 +420,7 @@ export default function DiscoveryScreen() {
       bathroomType: appliedFilters.bathroomType,
       propertyType: appliedFilters.propertyType,
       sharingTypes: appliedFilters.sharingTypes,
+      metroStationCodes: appliedFilters.metroStationCodes,
       sort: listingSort,
       // Small, because the list now grows as somebody scrolls. Fifty was one
       // bulk fetch of everything in the region.
@@ -444,11 +450,19 @@ export default function DiscoveryScreen() {
   // Nothing is searched until the user picks/types a location or the device
   // location auto-fills once on load. A cleared search box has no active search,
   // so we skip the query and show a prompt rather than an unscoped listing.
-  const hasActiveSearch = manualSelection || submittedSearch.text.trim().length > 0;
+  const hasActiveSearch = byMetro || manualSelection || submittedSearch.text.trim().length > 0;
   const propertiesQuery = useSearchDiscoveryPropertiesQuery(propertyQueryArgs, {
     skip: activeTab !== "properties" || !hasActiveSearch,
   });
+  // Ticks stand in for the place, so searching a place has to end them, or the
+  // list would silently stay on metro under the new place's name.
+  function clearMetroStations() {
+    setAppliedFilters((previous) => ({ ...previous, metroStationCodes: [] }));
+    setDraftFilters((previous) => ({ ...previous, metroStationCodes: [] }));
+  }
+
   function handleSearch() {
+    clearMetroStations();
     // The toggle chooses the input method, so it chooses what Search does.
     if (aiOn) {
       void runAiSearch();
@@ -508,6 +522,7 @@ export default function DiscoveryScreen() {
       return;
     }
 
+    clearMetroStations();
     aiInFlight.current = true;
     profileLayer.current?.dismiss();
     setPage(0);
@@ -559,6 +574,17 @@ export default function DiscoveryScreen() {
    * location scope waits for READY — searching with no region is how a Kolkata
    * search ends up showing Bengaluru.
    */
+  /** Clears the sentence and its answer, from the box's Clear pill or the empty state. */
+  function clearAiSearch() {
+    clearSearch();
+    setAiQuery("");
+    setAiNotice(null);
+    setAiSort("RELEVANCE");
+    setAppliedFilters(emptyPropertyFilters);
+    setDraftFilters(emptyPropertyFilters);
+    setSuggestionRound((round) => round + 1);
+  }
+
   function applyInterpretation(result: SmartSearchResult) {
     const args = result.searchArgs;
 
@@ -573,6 +599,7 @@ export default function DiscoveryScreen() {
       electricityIncluded: args.electricityIncluded,
       maxRentPaise: args.maxRentPaise,
       mealTypes: args.mealTypes,
+      metroStationCodes: [],
       minRentPaise: args.minRentPaise,
       pgFor: args.pgFor,
       preferredFor: args.preferredFor,
@@ -609,6 +636,7 @@ export default function DiscoveryScreen() {
   // and picked city/area/state — so the pills don't linger after the address is
   // emptied. Returns to the no-location-selected empty state.
   function clearSearch() {
+    clearMetroStations();
     setManualSelection(false);
     setSearchText("");
     setSelectedState("");
@@ -641,6 +669,7 @@ export default function DiscoveryScreen() {
   }
 
   async function selectSuggestion(suggestion: GeoSuggestion) {
+    clearMetroStations();
     const label = suggestion.name ?? suggestion.address ?? "";
     setManualSelection(true);
     setSearchText(label);
@@ -690,8 +719,8 @@ export default function DiscoveryScreen() {
   // "nearby" (same state, different area). The backend already scopes the list
   // to the state and gates out foreign locations, so this is purely labelling.
   const { exactProperties, nearbyProperties } = useMemo(
-    () => splitPropertiesByArea(properties, searchedArea),
-    [properties, searchedArea],
+    () => splitPropertiesByArea(properties, byMetro ? "" : searchedArea),
+    [byMetro, properties, searchedArea],
   );
   const areaLabel = submittedSearch.text.trim();
   const listingAreaLabel = areaLabel.split(",")[0]?.trim() ?? "";
@@ -735,11 +764,15 @@ export default function DiscoveryScreen() {
           ? "searched"
           : "idle";
   // Describe the submitted scope, not edits in the box that have not been searched yet.
-  const searchLocationLabel = aiOn
-    ? aiResult?.resolvedLocation?.displayName?.trim() || areaLabel || (location.searchHint ?? "").trim()
-    : selectedArea && selectedCity
-      ? `${selectedArea}, ${selectedCity}`
-      : areaLabel;
+  const metroStationNames = tickedStations(metroSystemsQuery.data ?? [], appliedFilters.metroStationCodes).map(
+    (station) => station.name,
+  );
+  // The place as the search named it ("Salt Lake"), not the full address it was geocoded to.
+  const searchLocationLabel = byMetro
+    ? metroSearchLabel(appliedFilters.metroStationCodes.length)
+    : aiOn
+    ? aiResult?.resolvedLocation?.locality?.trim() || aiResult?.resolvedLocation?.city?.trim() || aiResult?.resolvedLocation?.displayName?.trim() || listingAreaLabel || (location.searchHint ?? "").trim()
+    : selectedArea || listingAreaLabel;
 
   /**
    * Asks for more when the end comes into view.
@@ -860,6 +893,7 @@ export default function DiscoveryScreen() {
               setAiQuery(value);
               setAiNotice(null);
             }}
+            onAiClear={clearAiSearch}
             areaOptions={areas}
             cityOptions={cities}
             loadingSuggestions={suggestionsQuery.isFetching}
@@ -869,6 +903,7 @@ export default function DiscoveryScreen() {
             // the reverse was wrong. Each one drops the text scope so the two
             // never both hold a region.
             onAreaSelect={(area) => {
+              clearMetroStations();
               setManualSelection(true);
               setTextScope(null);
               setAiExtras(noAiExtras);
@@ -882,6 +917,7 @@ export default function DiscoveryScreen() {
               });
             }}
             onCitySelect={(city) => {
+              clearMetroStations();
               setManualSelection(true);
               setTextScope(null);
               setAiExtras(noAiExtras);
@@ -919,6 +955,7 @@ export default function DiscoveryScreen() {
           />
 
           <PropertyFilterModal
+            deviceLocation={{ city: location.city, latitude: location.latitude, longitude: location.longitude }}
             filters={draftFilters}
             onApply={applyPropertyFilters}
             onClose={() => setFiltersOpen(false)}
@@ -935,14 +972,7 @@ export default function DiscoveryScreen() {
               // A fresh start in AI mode: the answer and the sentence go, the
               // filters it set go with them, and the empty box brings back its
               // suggested searches.
-              onTryAgain={() => {
-                clearSearch();
-                setAiQuery("");
-                setAiSort("RELEVANCE");
-                setAppliedFilters(emptyPropertyFilters);
-                setDraftFilters(emptyPropertyFilters);
-                setSuggestionRound((round) => round + 1);
-              }}
+              onTryAgain={clearAiSearch}
               onView={(propertyId: string) => openProfile(propertyId, "SMART_SEARCH")}
               result={aiResult}
               sort={aiSort}
@@ -952,7 +982,8 @@ export default function DiscoveryScreen() {
 
           {hasActiveSearch && !showingAiResults && !aiSearching ? (
             <>
-          <Card style={{ borderRadius: 28, overflow: "hidden" }}>
+          {/* Direct, not the Card's own: a tab's card shadow is one phones do not draw. */}
+          <Card style={{ borderRadius: 28, overflow: "hidden", ...softShadow(colors.shadow, 4, 12) }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
                 {/* Sort sits beside the title (user, 2026-10-02), not on a
@@ -979,7 +1010,9 @@ export default function DiscoveryScreen() {
                   style={[type.description, { color: colors.muted }]}
                 >
                   {propertyPage
-                    ? exactProperties.length === 0
+                    ? byMetro
+                      ? metroResultLine(metroStationNames, exactProperties.length)
+                      : exactProperties.length === 0
                       ? listingAreaLabel
                         ? `No listing for "${listingAreaLabel}"`
                         : "No listing for this location"
@@ -1032,11 +1065,16 @@ export default function DiscoveryScreen() {
                     textAlign: "center",
                   }}
                 >
-                  No listings found
+                  {byMetro ? "No listings near these stations" : "No listings found"}
                 </Text>
                 <AnimatedPressable
                   accessibilityRole="button"
-                  onPress={clearSearch}
+                  onPress={byMetro
+                    ? () => {
+                        setDraftFilters(appliedFilters);
+                        setFiltersOpen(true);
+                      }
+                    : clearSearch}
                   style={{
                     alignItems: "center",
                     borderColor: colors.primary,
@@ -1050,9 +1088,11 @@ export default function DiscoveryScreen() {
                     paddingHorizontal: spacing.lg,
                   }}
                 >
-                  <MapPin color={colors.primary} size={19} strokeWidth={2.3} />
+                  {byMetro
+                    ? <TrainFront color={colors.primary} size={19} strokeWidth={2.3} />
+                    : <MapPin color={colors.primary} size={19} strokeWidth={2.3} />}
                   <Text style={{ color: colors.primary, fontFamily: fonts.displaySoft, fontSize: 15 }}>
-                    Try a different location
+                    {byMetro ? "Change stations" : "Try a different location"}
                   </Text>
                 </AnimatedPressable>
               </View>
@@ -1065,10 +1105,7 @@ export default function DiscoveryScreen() {
               heading — "19 listings found" and "could not load properties" on
               one screen. */}
           {propertiesQuery.isError && !propertyPage ? (
-            <DiscoveryEmptyState
-              title="Could not load properties"
-              description="Check the backend connection and try searching again."
-            />
+            <LoadFailed error={propertiesQuery.error} onReload={() => void propertiesQuery.refetch()} />
           ) : null}
 
 
@@ -1122,7 +1159,7 @@ export default function DiscoveryScreen() {
               {aiOn ? (
                 // AI search keeps its own empty-state title.
                 <EmptySearchPrompt
-                  title="Tell AI what you're looking for"
+                  title="Tell us what you're looking for"
                 />
               ) : (
                 <EmptySearchPrompt />

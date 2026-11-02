@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.notification.listener;
 
+import com.khatiyan.c_shared.money.Money;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -138,7 +139,7 @@ public class PaymentClaimNotificationEventListener {
 
     /** Whole rupees. A notification is glanced at, and the paise never matter. */
     private static String money(long paise) {
-        return "₹" + String.format("%,d", Math.round(paise / 100.0));
+        return "₹" + Money.indianGrouped(Math.round(paise / 100.0));
     }
 
     private static String name(String tenantName) {

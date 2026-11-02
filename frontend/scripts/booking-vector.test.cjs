@@ -29,6 +29,18 @@ vm.runInNewContext(outputText, {
 });
 const draw = (name, size = 64) => renderToStaticMarkup(React.createElement(exportsObject[name], { size }));
 
+test("facilities has its own scalable black services vector, without changing the blue workspace icons", () => {
+  const xml = draw("FacilitiesIcon", 36);
+  assert.match(xml, /width="36" height="36" viewBox="0 0 64 64"/);
+  assert.match(xml, /fill="#000000"/);
+  assert.doesNotMatch(xml, /#3F6ED8/);
+  assert.equal((xml.match(/width="28" height="28"/g) ?? []).length, 4);
+  assert.match(xml, /M7 12a14/); // Wi-Fi.
+  assert.match(xml, /M41 8v6/); // Dining.
+  assert.match(xml, /cx="48" cy="49" r="5"/); // Laundry.
+  assert.doesNotMatch(xml, /<image|data:image/);
+});
+
 const metricExports = {};
 const metricSource = fs.readFileSync(path.join(__dirname, "../src/components/booking-vector-icons.tsx"), "utf8");
 const metricCompiled = ts.transpileModule(metricSource, {

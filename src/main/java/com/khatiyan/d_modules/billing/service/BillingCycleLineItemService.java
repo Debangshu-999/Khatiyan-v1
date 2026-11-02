@@ -3,6 +3,8 @@ package com.khatiyan.d_modules.billing.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,6 +28,7 @@ import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItem;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
+import com.khatiyan.d_modules.billing.model.BillingLineSettlementAction;
 import com.khatiyan.d_modules.billing.repository.BillingCycleLineItemRepository;
 import com.khatiyan.d_modules.billing.repository.BillingCycleRepository;
 
@@ -42,6 +45,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 public class BillingCycleLineItemService {
+
+    /** The part of a line that a Damage bill took from the deposit, kept as its own line. */
+    private static final String FROM_DEPOSIT = " (from deposit)";
 
     private final BillingCycleRepository billingCycleRepository;
     private final BillingCycleLineItemRepository lineItemRepository;
@@ -338,6 +344,99 @@ public class BillingCycleLineItemService {
                 request.amountPaise());
 
         return toResponse(cycle);
+    }
+
+    /**
+     * Takes up to {@code capPaise} of a one-off bill off the deposit, line by
+     * line in order (2026-10-31). A line bigger than what is left stays on the
+     * bill for the rest, and the part taken becomes its own line, so a bill
+     * shows both. A bill with nothing left on it is settled.
+     */
+    @Transactional
+    public BillingCycleResponse moveBillToDeposit(UUID actorUserId, UUID billingCycleId, long capPaise) {
+        BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        ensureCycleStillEditable(cycle);
+
+        long budget = Math.min(capPaise, depositManagerService.availableBalance(cycle.getTenancyId()));
+        if (budget <= 0) {
+            throw new ValidationException("There is no deposit left to charge against.");
+        }
+        List<BillingCycleLineItem> lines = lineItemRepository.findByBillingCycleId(cycle.getId()).stream()
+                .sorted(Comparator.comparingInt(BillingCycleLineItem::getDisplayOrder))
+                .filter(line -> line.getType() == BillingCycleLineItemType.EXTRA_CHARGE)
+                .filter(line -> line.getSettlementAction() == BillingLineSettlementAction.ADDED_TO_BILL)
+                .filter(line -> line.getAmountPaise() > 0)
+                .toList();
+        for (BillingCycleLineItem line : lines) {
+            if (budget <= 0) {
+                break;
+            }
+            BillingCycleLineItem moved = line;
+            if (line.getAmountPaise() > budget) {
+                line.adjust(line.getAmountPaise() - budget, actorUserId);
+                moved = lineItemRepository.saveAndFlush(BillingCycleLineItem.oneOffBillLine(
+                        cycle, fromDepositLabel(line.getLabel()), budget, actorUserId, nextDisplayOrder(cycle.getId())));
+            }
+            moved.adjustFromDeposit(null, actorUserId);
+            depositManagerService.upsertBillingLineDeduction(
+                    actorUserId, cycle.getTenancyId(), cycle.getId(), moved.getId(),
+                    moved.getSettlementAmountPaise(), moved.getLabel());
+            budget -= moved.getSettlementAmountPaise();
+            publishLineItemEvent(moved, BillingLineItemNotificationAction.MOVED_TO_DEPOSIT);
+        }
+        lineItemRepository.flush();
+        calculateCycle(cycle);
+        if (cycle.getTotalAmountPaise() == 0) {
+            cycle.settleFromDeposit(Instant.now());
+        }
+        log.info("Bill moved to deposit billingCycleId={} actorUserId={} totalLeftPaise={}",
+                billingCycleId, actorUserId, cycle.getTotalAmountPaise());
+        return toResponse(cycle);
+    }
+
+    /**
+     * Puts everything a one-off bill took from the deposit back on the bill
+     * (2026-10-31). A part taken from a bigger line goes back into that line.
+     */
+    @Transactional
+    public BillingCycleResponse moveBillOffDeposit(UUID actorUserId, UUID billingCycleId) {
+        BillingCycle cycle = getManagedCycle(actorUserId, billingCycleId);
+        ensureCycleStillEditable(cycle);
+
+        List<BillingCycleLineItem> lines = lineItemRepository.findByBillingCycleId(cycle.getId());
+        List<BillingCycleLineItem> onDeposit = lines.stream()
+                .filter(line -> line.getSettlementAction() == BillingLineSettlementAction.ADJUSTED_FROM_DEPOSIT)
+                .sorted(Comparator.comparing(line -> line.getLabel().endsWith(FROM_DEPOSIT)))
+                .toList();
+        if (onDeposit.isEmpty()) {
+            throw new ValidationException("Nothing on this bill came off the deposit.");
+        }
+        for (BillingCycleLineItem line : onDeposit) {
+            BillingCycleLineItem whole = line.getLabel().endsWith(FROM_DEPOSIT)
+                    ? lines.stream().filter(other -> other != line && fromDepositLabel(other.getLabel()).equals(line.getLabel())).findFirst().orElse(null)
+                    : null;
+            if (whole == null) {
+                line.adjustToBill(line.getSettlementAmountPaise(), actorUserId);
+                depositManagerService.clearBillingLineMovement(actorUserId, cycle.getTenancyId(), line.getId());
+                publishLineItemEvent(line, BillingLineItemNotificationAction.MOVED_TO_BILL);
+                continue;
+            }
+            whole.adjust(whole.getAmountPaise() + line.getSettlementAmountPaise(), actorUserId);
+            depositManagerService.removeBillingLineMovement(actorUserId, cycle.getTenancyId(), line.getId());
+            lineItemRepository.delete(line);
+            lineItemRepository.flush();
+            publishLineItemEvent(whole, BillingLineItemNotificationAction.MOVED_TO_BILL);
+        }
+        lineItemRepository.flush();
+        calculateCycle(cycle);
+        log.info("Bill moved off deposit billingCycleId={} actorUserId={} totalPaise={}",
+                billingCycleId, actorUserId, cycle.getTotalAmountPaise());
+        return toResponse(cycle);
+    }
+
+    private static String fromDepositLabel(String label) {
+        String base = label.length() > 120 - FROM_DEPOSIT.length() ? label.substring(0, 120 - FROM_DEPOSIT.length()) : label;
+        return base + FROM_DEPOSIT;
     }
 
     /**

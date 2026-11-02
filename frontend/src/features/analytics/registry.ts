@@ -37,6 +37,7 @@ import {
   TenureCard,
   TermsEndingCard,
   TimeToSignCard,
+  TransitionedVsNewCard,
   UpcomingExitsCard,
 } from "@/features/analytics/cards/tenants-cards";
 import type { MetricResult, PeriodResponse } from "@/features/analytics/types";
@@ -86,6 +87,7 @@ export const CARD_REGISTRY: Record<string, ComponentType<CardProps>> = {
   "tenants.tenure": TenureCard,
   "tenants.terms_ending": TermsEndingCard,
   "tenants.time_to_sign": TimeToSignCard,
+  "tenants.transitioned_vs_new": TransitionedVsNewCard,
   "tenants.upcoming_exits": UpcomingExitsCard,
 };
 

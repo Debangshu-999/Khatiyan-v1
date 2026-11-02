@@ -82,6 +82,10 @@ public class ExpenseService {
         if (expenseRepository.existsByReversesExpenseId(original.getId())) {
             throw new ValidationException("This expense has already been reversed");
         }
+        // An earlier month has been closed and reported on (user, 2026-11-01).
+        if (original.incurredBefore(YearMonth.now(ZoneId.of("Asia/Kolkata")))) {
+            throw new ValidationException("Only this month's expenses can be reversed");
+        }
         Expense reversal = expenseRepository.save(
                 Expense.reversalOf(original, request.reason(), actorUserId, LocalDate.now()));
         return ExpenseResponse.from(reversal, categoryName(propertyId, reversal.getCategoryId()), false);

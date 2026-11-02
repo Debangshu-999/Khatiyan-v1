@@ -133,6 +133,12 @@ function nativeHeaderHarness() {
       Animated: { Value: AnimatedValue, Text: "AnimatedText", View: "AnimatedView", multiply: (a, b) => new AnimatedNode(() => a.getValue() * b.getValue()) },
       View: "View", Text: "Text", StyleSheet: { flatten },
     },
+    "@/components/compact-screen-header": {
+      COMPACT_SCREEN_HEADERS: false,
+      CompactHeaderBar: "CompactHeaderBar",
+      CompactHeaderSlotContext: { Provider: "CompactHeaderSlot" },
+      CompactScreenHeader: "CompactScreenHeader",
+    },
     "@/components/header-note": { HeaderNote: "HeaderNote" },
     "@/components/header-scroll-layout": { SCREEN_HEADER_COLLAPSE_DISTANCE },
     "@/theme/spacing": { spacing: { xs: 6, sm: 10, md: 14, lg: 18 } },

@@ -2,6 +2,7 @@ import { type ComponentType } from "react";
 import { Text, View } from "react-native";
 import { Timer, type LucideProps } from "lucide-react-native";
 
+import { cardText } from "@/components/card-name-row";
 import { GhostPill } from "@/components/skeletons/boundary";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -221,7 +222,10 @@ export function formatClosesIn(closesAt: string) {
  * A person's initials in a soft disc: a face for a card without a photo. The
  * owner's enquiry cards and the VMS visit cards (user, 2026-10-04).
  */
-export function InitialsAvatar({ name }: { name: string | null }) {
+/** A pale green the eye can see on a white card. `jadeSoft` is nearly white. */
+const PALE_GREEN = "#D1FAE5";
+
+export function InitialsAvatar({ name, tone = "blue" }: { name: string | null; tone?: "blue" | "green" }) {
   const { colors, fonts } = useTheme();
   const initials =
     (name ?? "")
@@ -236,14 +240,14 @@ export function InitialsAvatar({ name }: { name: string | null }) {
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.primarySoft,
+          backgroundColor: tone === "green" ? PALE_GREEN : colors.primarySoft,
           borderRadius: 999,
           height: 42,
           justifyContent: "center",
           width: 42,
         }}
       >
-        <Text style={{ color: colors.primaryDeep, fontFamily: fonts.displaySoft, fontSize: 15 }}>{initials}</Text>
+        <Text style={{ color: tone === "green" ? colors.ink : colors.primaryDeep, fontFamily: fonts.displaySoft, fontSize: 15 }}>{initials}</Text>
       </View>
     </GhostPill>
   );
@@ -297,7 +301,7 @@ export function StateChip({
       }}
     >
       {Icon ? <Icon color={palette.text} size={12} strokeWidth={2.5} /> : null}
-      <FitText numberOfLines={stretch ? 1 : undefined} style={{ color: palette.text, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 11 }}>{label}</FitText>
+      <FitText numberOfLines={stretch ? 1 : undefined} style={{ color: palette.text, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: cardText(11) }}>{label}</FitText>
     </View>
   );
 }

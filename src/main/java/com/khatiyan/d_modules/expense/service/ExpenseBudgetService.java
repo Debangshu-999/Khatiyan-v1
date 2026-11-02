@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.expense.service;
 
+import com.khatiyan.c_shared.money.Money;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
@@ -133,7 +134,7 @@ public class ExpenseBudgetService {
             long received = budgetInForce.incomeReceivedPaise(propertyId, YearMonth.from(thisMonth));
             if (request.incomePartPaise() > received) {
                 throw new ValidationException("Enter no more than "
-                        + java.text.NumberFormat.getCurrencyInstance(java.util.Locale.of("en", "IN")).format(received / 100.0)
+                        + "₹" + Money.indianGrouped(received / 100) + ".%02d".formatted(received % 100)
                         + ", the income received so far this month.");
             }
         }

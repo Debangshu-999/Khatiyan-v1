@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
-import { BellRing } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -30,11 +30,7 @@ export default function NudgesScreen({ embedded = false }: { embedded?: boolean 
       {nudgesQuery.isLoading ? <SkeletonCard /> : null}
 
       {nudgesQuery.isError ? (
-        <EmptyState
-          description="Check your connection, then pull down to try again."
-          icon={BellRing}
-          title="Couldn't load nudges"
-        />
+        <LoadFailed error={nudgesQuery.error} onReload={() => void nudgesQuery.refetch()} />
       ) : null}
 
       {!nudgesQuery.isLoading && !nudgesQuery.isError && nudges.length === 0 ? (

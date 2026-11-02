@@ -134,4 +134,52 @@ class BillReceiptPdfServiceTest {
                 .isLessThan(receipt.indexOf("<td>Booking token received</td>"));
         assertThat(service.buildXhtml(firstBillWithDeposit(), LETTERHEAD)).doesNotContain("Booking token");
     }
+
+    private static BillingCycleResponse oneOffBill(String label) {
+        return new BillingCycleResponse(
+                CYCLE, "BIL-2026-000286", UUID.randomUUID(), "TEN-2026-000062",
+                UUID.randomUUID(), "Test Tenant", null, null, UUID.randomUUID(), UUID.randomUUID(), "104",
+                TenancyBillingType.MONTHLY, BillingCycleCategory.ONE_OFF, null,
+                LocalDate.of(2026, 10, 29), LocalDate.of(2026, 10, 29), LocalDate.of(2026, 10, 29),
+                BillingCollectionTiming.CYCLE_START, 0,
+                0, 1_500_00, 0, null, 0, 1_500_00,
+                BillingCycleStatus.UNPAID, null, Instant.now(), Instant.now(),
+                List.of(line(BillingCycleLineItemType.EXTRA_CHARGE, label, 1_500_00, BillingLineSettlementAction.ADDED_TO_BILL)), null, 0L);
+    }
+
+    @Test
+    void oneOffBillsDoNotPrintBaseRent() {
+        String receipt = service.buildXhtml(oneOffBill("Cleaning fee"), LETTERHEAD);
+        assertThat(receipt).doesNotContain("<td>Base Rent</td>")
+                .contains("<td>Cleaning fee</td><td class=\"amt\">₹1,500.00</td>")
+                .contains("<td>Subtotal</td><td class=\"amt\">₹1,500.00</td>")
+                .contains("<td>Total Amount Due</td><td class=\"amt\">₹1,500.00</td>");
+    }
+
+    @Test
+    void damageChargesPrintTheItemAndLevelAboveTheirReferenceAndEscapeBoth() {
+        String receipt = service.buildXhtml(oneOffBill("Damage DMG-2026-000278: AC (split) & <fan> (D2)"), LETTERHEAD);
+        assertThat(receipt).contains("<td>Damage: AC (split) &amp; &lt;fan&gt; - D2<div class=\"charge-reference\">(DMG-2026-000278)</div></td><td class=\"amt\">₹1,500.00</td>");
+    }
+
+    @Test
+    void oneOffDetailsUseBillNameAndBothPartyTablesAreStacked() {
+        String receipt = service.buildXhtml(oneOffBill("Damage DMG-2026-000278: AC (D2)"), LETTERHEAD);
+        assertThat(receipt).contains("<td class=\"label\">Bill name</td><td class=\"value\">Damage bill</td>")
+                .doesNotContain("Bill Cycle", "party-layout", "party-cell");
+        assertThat(receipt.split("<div class=\"box party\">", -1)).hasSize(3);
+        assertThat(receipt.indexOf("Bill Details</th>")).isLessThan(receipt.indexOf("Bill To</th>"));
+        assertThat(service.buildXhtml(firstBillWithDeposit(), LETTERHEAD))
+                .contains("<td class=\"label\">Bill Cycle</td><td class=\"value\">Cycle 1</td>");
+    }
+
+    @Test
+    void aDamageReceiptKeepsItsSplitNumberAndReadsAsADamageBill() {
+        for (String suffix : List.of("", ", split 2")) {
+            String receipt = service.buildXhtml(oneOffBill("Damage DMG-2026-000279: Cupboard (D3)" + suffix), LETTERHEAD);
+            assertThat(receipt).contains("<td class=\"label\">Bill name</td><td class=\"value\">Damage bill</td>")
+                    .contains("<td>Damage: Cupboard - D3" + suffix + "<div class=\"charge-reference\">(DMG-2026-000279)</div></td><td class=\"amt\">₹1,500.00</td>")
+                    .contains("Damage bill");
+        }
+    }
 }

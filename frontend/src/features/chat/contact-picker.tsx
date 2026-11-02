@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonCard } from "@/components/skeleton";
@@ -69,8 +70,17 @@ export function ContactPicker({
       .filter((group) => group.people.length > 0);
   }, [contactsQuery.data, roles]);
 
+  const loadFailed = loadFailure(contactsQuery);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title={title}>
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
+  }
+
   return (
-    <SheetShell dismissOnDrag onClose={onClose} title={title}>
+    <SheetShell size="tall" dismissOnDrag onClose={onClose} title={title}>
       {contactsQuery.isLoading ? <SkeletonCard /> : null}
 
       {!contactsQuery.isLoading && grouped.length === 0 ? (

@@ -142,6 +142,35 @@ public class DiscoveryModule {
             com.khatiyan.d_modules.discovery.api.dto.DiscoverySort sort,
             int page,
             int size) {
+        return searchVisibleProperties(
+                state, city, countryCode, locality, latitude, longitude, radiusKm, pgFor, minRentPaise, maxRentPaise,
+                preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes, propertyType,
+                sort, null, page, size);
+    }
+
+    /** The same search, near ticked metro stations when any are given. */
+    public PageResponse<PropertyDiscoveryCardResponse> searchVisibleProperties(
+            String state,
+            String city,
+            String countryCode,
+            String locality,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            Double radiusKm,
+            PgFor pgFor,
+            Long minRentPaise,
+            Long maxRentPaise,
+            PreferredTenantType preferredFor,
+            Boolean foodIncluded,
+            List<MealType> mealTypes,
+            Boolean electricityIncluded,
+            BathroomType bathroomType,
+            List<SharingType> sharingTypes,
+            PropertyType propertyType,
+            com.khatiyan.d_modules.discovery.api.dto.DiscoverySort sort,
+            List<String> metroStationCodes,
+            int page,
+            int size) {
         return propertyDiscoveryService.searchVisibleProperties(
                 state,
                 city,
@@ -161,6 +190,7 @@ public class DiscoveryModule {
                 sharingTypes == null ? null : Set.copyOf(sharingTypes),
                 propertyType,
                 sort,
+                metroStationCodes,
                 page,
                 size);
     }

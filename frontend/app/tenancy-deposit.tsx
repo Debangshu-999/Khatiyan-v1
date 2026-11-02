@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { Landmark } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -31,6 +32,11 @@ export default function TenancyDepositScreen() {
     skip: !tenancyId,
   });
   const deposit = depositQuery.data;
+
+  const loadFailed = loadFailure(depositQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView>

@@ -9,9 +9,9 @@ import { Skeleton, SkeletonCard, SkeletonList } from "./primitives";
 function FoodDayStripSkeleton({ contained = false, showDates = false }: { contained?: boolean; showDates?: boolean }) {
   if (contained) {
     return (
-      <ScrollView contentContainerStyle={{ gap: spacing.sm }} horizontal showsHorizontalScrollIndicator={false} style={{ alignSelf: "stretch" }}>
+      <ScrollView contentContainerStyle={{ gap: spacing.xs }} horizontal showsHorizontalScrollIndicator={false} style={{ alignSelf: "stretch", flexGrow: 0 }}>
         {Array.from({ length: 7 }).map((_, index) => (
-          <Skeleton height={showDates ? 64 : 54} key={index} radius={radii.lg} width={112} />
+          <Skeleton height={30} key={index} radius={radii.pill} width={showDates ? 92 : 56} />
         ))}
       </ScrollView>
     );
@@ -169,7 +169,11 @@ export function FoodMenuSkeleton({ contained = false }: { contained?: boolean } 
 export function FoodForecastSkeleton() {
   return (
     <View style={{ gap: spacing.sm }}>
-      <FoodDayStripSkeleton contained showDates />
+      <ScrollView contentContainerStyle={{ gap: spacing.xs }} horizontal showsHorizontalScrollIndicator={false} style={{ alignSelf: "stretch", flexGrow: 0 }}>
+        {Array.from({ length: 7 }).map((_, index) => (
+          <Skeleton height={30} key={index} radius={radii.pill} width={92} />
+        ))}
+      </ScrollView>
       <Skeleton height={42} radius={radii.sm} />
       <SkeletonList body={1} rows={3} />
     </View>

@@ -1,3 +1,7 @@
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { pinnedFooterEdge } from "@/components/pinned-footer";
+import { HelpModalClose } from "@/components/help-modal-header";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useState } from "react";
@@ -11,6 +15,9 @@ import { CalendarDays, Clock3, Megaphone, Paperclip, Pencil, Save, Users, X } fr
 
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { FieldError } from "@/components/field-error";
+import { NotchedInput } from "@/components/notched-input";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -19,7 +26,7 @@ import { OwnerNoticeDetailSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { AttachmentSection, useNoticeAttachments } from "@/features/notice/notice-attachments";
-import { Fact, FactRow, LaneBadge, PriorityFact, noticeLane, priorityLabel } from "@/features/notice/notice-ui";
+import { Fact, FactRow, PriorityFact, priorityLabel, PriorityMark } from "@/features/notice/notice-ui";
 import { ActionButton, FormInput, IconButton } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import {
@@ -46,6 +53,7 @@ const PRIORITIES: NoticePriority[] = ["NORMAL", "IMPORTANT", "URGENT", "EMERGENC
  * mode discards only the text fields and never the files.
  */
 export default function OwnerNoticeDetailScreen() {
+  const insets = useSafeAreaInsets();
   const router = useGuardedRouter();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
@@ -209,14 +217,21 @@ export default function OwnerNoticeDetailScreen() {
     }
   }
 
+  const loadFailed = loadFailure(noticeQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingTop: spacing.md }}>
+    <View style={{ backgroundColor: colors.background, flex: 1 }}>
+    <ScreenScrollView safeAreaEdges={editing ? ["top"] : ["top", "bottom"]} contentContainerStyle={{ paddingTop: spacing.md }}>
       {unsaved.dialog}
-      {/* No back control, so no row to centre the title against — it simply
-          leads the screen, the way every other header in the app does. */}
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22 }}>
-        Notice details
-      </Text>
+      <ScreenHeader
+        title={editing ? "Edit details" : "Notice details"}
+        trailing={notice && editable ? (
+          <EditToggle editing={editing} onPress={() => (editing ? leaveEditMode() : setEditRequested(true))} />
+        ) : undefined}
+      />
 
       {noticeQuery.isLoading ? <OwnerNoticeDetailSkeleton /> : null}
 
@@ -230,42 +245,33 @@ export default function OwnerNoticeDetailScreen() {
 
       {notice ? (
         <>
-          {/* What this notice IS: its state, who it went to, and when. The
+          {/* What this notice IS: who it went to, and when. The
               wording lives in the message card below rather than being
               previewed here as well — one body of text printed twice on one
               screen says nothing the second time. */}
           <Card>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              <LaneBadge lane={noticeLane(notice)} />
-              <View style={{ flex: 1 }} />
-              {/* On the card, not in the header bar: it acts on this notice, so
-                  it belongs beside it. Borderless — an outlined button next to
-                  the tinted lane badge made two boxed objects on one line, and
-                  the pencil already says this is a control. */}
-              {editable ? (
-                <EditToggle editing={editing} onPress={() => (editing ? leaveEditMode() : setEditRequested(true))} />
-              ) : null}
-            </View>
-
-            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-              <View style={{ flex: 1 }}>
-                {field === "title" ? (
-                  <FormInput
-                    error={form.errors.title}
-                    label="Title"
-                    onChangeText={setTitle}
-                    placeholder="Notice title"
-                    value={title}
-                  />
-                ) : (
-                  <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, lineHeight: 26 }}>
-                    {title}
-                  </Text>
-                )}
+            <View style={{ gap: spacing.xs }}>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                <View style={field === "title" ? { flex: 1, minWidth: 0 } : { flexShrink: 1 }}>
+                  {field === "title" ? (
+                    <NotchedInput
+                      invalid={Boolean(form.errors.title)}
+                      label="Title"
+                      onChangeText={setTitle}
+                      placeholder="Notice title"
+                      value={title}
+                    />
+                  ) : (
+                    <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, lineHeight: 26 }}>
+                      {title}
+                    </Text>
+                  )}
+                </View>
+                {editing ? (
+                  <FieldPencil active={field === "title"} onPress={() => setField(field === "title" ? null : "title")} />
+                ) : null}
               </View>
-              {editing ? (
-                <FieldPencil active={field === "title"} onPress={() => setField(field === "title" ? null : "title")} />
-              ) : null}
+              <FieldError message={field === "title" ? form.errors.title : undefined} />
             </View>
 
             {/* Tinted blocks with white between them, not hairline rules. Three
@@ -382,14 +388,6 @@ export default function OwnerNoticeDetailScreen() {
             </Card>
           ) : null}
 
-          {editing ? (
-            <ActionButton
-              disabled={updateState.isLoading}
-              icon={Save}
-              label={updateState.isLoading ? "Saving…" : "Save changes"}
-              onPress={save}
-            />
-          ) : null}
         </>
       ) : null}
 
@@ -407,6 +405,18 @@ export default function OwnerNoticeDetailScreen() {
       {attachments.overlays}
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </ScreenScrollView>
+    {/* Pinned to the foot of the screen, under the scrolling page (user, 2026-10-31). */}
+    {notice && editing ? (
+      <View style={{ ...pinnedFooterEdge(colors), flexDirection: "row", paddingBottom: insets.bottom + spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+        <ActionButton
+          disabled={updateState.isLoading}
+          icon={Save}
+          label={updateState.isLoading ? "Saving…" : "Save changes"}
+          onPress={save}
+        />
+      </View>
+    ) : null}
+    </View>
   );
 }
 
@@ -492,6 +502,7 @@ function PriorityPickerModal({
             overflow: "hidden",
             width: "100%",
           }}>
+          <HelpModalClose corner onClose={onClose} />
           <View
             style={{
               alignItems: "center",
@@ -502,18 +513,18 @@ function PriorityPickerModal({
               paddingVertical: spacing.sm,
             }}
           >
-            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Select priority
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 
           {/* The same row every other picker in the app uses. Its hairline runs
               above each option INCLUDING the first, which is what separates the
               list from the heading above it. */}
-          <View style={{ paddingHorizontal: spacing.lg }}>
+          <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}>
             {PRIORITIES.map((option) => (
               <PickerOptionRow
+                icon={<PriorityMark priority={option} size={18} />}
                 key={option}
                 label={priorityLabel(option)}
                 onPress={() => onSelect(option)}
@@ -531,9 +542,8 @@ function PriorityPickerModal({
  * Enter or leave edit mode.
  *
  * <p>
- * Not an {@code ActionButton}. Every variant of that draws a border or a fill,
- * and this sits on the same line as the lane badge, where a second bounded
- * object competes with the status it is meant to sit quietly beside.
+ * In the "Notice details" row, as a pill with a grey border and black text
+ * (user, 2026-10-31).
  */
 function EditToggle({ editing, onPress }: { editing: boolean; onPress: () => void }) {
   const { colors, fonts } = useTheme();
@@ -545,10 +555,19 @@ function EditToggle({ editing, onPress }: { editing: boolean; onPress: () => voi
       accessibilityRole="button"
       hitSlop={10}
       onPress={onPress}
-      style={{ alignItems: "center", flexDirection: "row", gap: 6, paddingVertical: 2 }}
+      style={{
+        alignItems: "center",
+        borderColor: colors.borderStrong,
+        borderRadius: 999,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: 5,
+        paddingHorizontal: spacing.sm + 2,
+        paddingVertical: 4,
+      }}
     >
-      <Icon color={colors.primary} size={16} strokeWidth={2.3} />
-      <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 14 }}>
+      <Icon color={colors.ink} size={14} strokeWidth={2.3} />
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
         {editing ? "Cancel" : "Edit"}
       </Text>
     </AnimatedPressable>

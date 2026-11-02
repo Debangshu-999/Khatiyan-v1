@@ -5,10 +5,11 @@ import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react-native"
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
-import { spacing } from "@/theme/spacing";
+import { softShadow } from "@/theme/shadows";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
@@ -56,13 +57,16 @@ export function MonthSelector({
         style={{
           alignItems: "center",
           backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 16,
+          borderColor: colors.borderStrong,
+          // The card radius and shadow, on every screen that uses it (user, 2026-11-01).
+          borderCurve: "continuous",
+          borderRadius: radii.card,
           borderWidth: 1,
           flexDirection: "row",
           justifyContent: "space-between",
           paddingHorizontal: spacing.sm,
           paddingVertical: spacing.xs,
+          ...softShadow(colors.shadow, 4, 12),
         }}
       >
         <RoundIconButton icon={ChevronLeft} label="Previous month" onPress={() => onChange(shiftMonth(value, -1, limit))} />
@@ -111,7 +115,7 @@ function MonthGridModal({
   onPick: (month: string) => void;
   value: string;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
   const [year, setYear] = useState(Number(value.slice(0, 4)));
 
   // The furthest month, which is usually this one but may be the next — and
@@ -156,9 +160,6 @@ function MonthGridModal({
               />
             </View>
 
-            <Pressable accessibilityLabel="Close" accessibilityRole="button" hitSlop={10} onPress={() => dismiss()}>
-              <X color={colors.ink} size={20} strokeWidth={2.2} />
-            </Pressable>
           </View>
 
           {/* Rows of three. */}
@@ -169,35 +170,13 @@ function MonthGridModal({
               const future = year > thisYear || (year === thisYear && index > thisMonthIndex);
 
               return (
-                <AnimatedPressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: future, selected }}
+                <MonthTile
                   disabled={future}
                   key={name}
+                  label={name}
                   onPress={() => dismiss(() => onPick(month))}
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: selected ? colors.ink : "transparent",
-                    borderColor: selected ? colors.ink : colors.border,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    // Three across, accounting for the two gaps between them.
-                    flexBasis: "31%",
-                    flexGrow: 1,
-                    justifyContent: "center",
-                    opacity: future ? 0.35 : 1,
-                    paddingVertical: spacing.md,
-                  }}
-                >
-                  <Text
-                    style={[
-                      type.body,
-                      { color: selected ? colors.surface : colors.ink, fontFamily: fonts.sansBold },
-                    ]}
-                  >
-                    {name}
-                  </Text>
-                </AnimatedPressable>
+                  selected={selected}
+                />
               );
             })}
           </View>
@@ -206,6 +185,52 @@ function MonthGridModal({
         </View>
       </View>}
     </BottomSheetModal>
+  );
+}
+
+/** One tile of the month grid, three across. The calendar's month and year grids use it too. */
+export function MonthTile({
+  disabled,
+  label,
+  onPress,
+  selected,
+}: {
+  disabled: boolean;
+  label: string;
+  onPress: () => void;
+  selected: boolean;
+}) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected }}
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: selected ? colors.ink : "transparent",
+        borderColor: selected ? colors.ink : colors.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        // Three across, accounting for the two gaps between them.
+        flexBasis: "31%",
+        flexGrow: 1,
+        justifyContent: "center",
+        opacity: disabled ? 0.35 : 1,
+        paddingVertical: spacing.md,
+      }}
+    >
+      <Text
+        style={[
+          type.body,
+          { color: selected ? colors.surface : colors.ink, fontFamily: fonts.sansBold },
+        ]}
+      >
+        {label}
+      </Text>
+    </AnimatedPressable>
   );
 }
 

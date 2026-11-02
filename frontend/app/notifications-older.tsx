@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
+import { LoadFailed } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import { BellOff } from "lucide-react-native";
 
 import { ListEnd } from "@/components/list-end";
 import { EmptyState } from "@/components/empty-state";
@@ -105,12 +105,7 @@ export default function NotificationsOlderScreen() {
       {isLoading ? <SkeletonCard /> : null}
 
       {isError ? (
-        <EmptyState
-          icon={BellOff}
-
-          title="Couldn't load older notifications"
-          description="Try again from Account once the backend is reachable."
-        />
+        <LoadFailed error={olderQuery.error} onReload={() => void olderQuery.refetch()} />
       ) : null}
 
       {!isLoading && !isError ? (

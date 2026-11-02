@@ -59,7 +59,8 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/discovery/properties",
                                 "/api/v1/discovery/properties/**",
-                                "/api/v1/discovery/local-place-tags").permitAll()
+                                "/api/v1/discovery/local-place-tags",
+                                "/api/v1/discovery/metro").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/discovery/me/local-places").hasRole("USER")
 
                         .requestMatchers(HttpMethod.POST, "/api/v1/properties").hasRole("OWNER")

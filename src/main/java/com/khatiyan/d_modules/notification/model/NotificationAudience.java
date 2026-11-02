@@ -71,6 +71,7 @@ public enum NotificationAudience {
                     TENANCY_EXIT_EXECUTED, NOTICE_PUBLISHED, BILLING_CYCLE_GENERATED,
                     BILLING_CYCLE_CANCELLED,
                     BILLING_LATE_FEE_APPLIED, BILLING_LINE_ITEM_CHANGED,
+                    DAMAGE_RECORDED, DAMAGE_RECORD_UPDATED, DAMAGE_RECORD_REMOVED,
                     PAYMENT_SUCCEEDED, PAYMENT_FAILED,
                     // The owner could not find their payment — the tenant's
                     // answer to "has my rent gone through".

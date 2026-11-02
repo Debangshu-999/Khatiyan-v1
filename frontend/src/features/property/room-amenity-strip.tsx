@@ -11,8 +11,8 @@ import { useTheme } from "@/theme/use-theme";
 
 /** Exported for a card that names a room's amenities in words beside their glyphs (the booking form). */
 export const ROOM_AMENITY_LABELS: Record<RoomAmenity, string> = {
-  ATTACHED_TOILET: "Attached toilet",
-  COMMON_TOILET: "Common toilet",
+  ATTACHED_TOILET: "Attached washroom",
+  COMMON_TOILET: "Common washroom",
   BEDDING: "Bedding",
   CUPBOARD: "Cupboard",
   GEYSER: "Geyser",

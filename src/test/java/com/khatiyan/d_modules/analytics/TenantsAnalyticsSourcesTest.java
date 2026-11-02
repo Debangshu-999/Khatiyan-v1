@@ -87,6 +87,34 @@ class TenantsAnalyticsSourcesTest {
     }
 
     @Test
+    void joinCountsSplitCarriedOverStaysFromTheMoveIns() {
+        UUID room = fx.room(p, 6, 3, 1, "PARTIALLY_OCCUPIED", true);
+        assertThat(tenancy.hasTransitionedStay(p)).isFalse();
+
+        // Waiting for the tenant to sign its deed: carried over, but not yet.
+        transition(fx.monthlyStay(p, room, "PENDING_ACCEPTANCE", LocalDate.of(2026, 8, 5), null));
+        assertThat(tenancy.hasTransitionedStay(p)).isFalse();
+
+        transition(fx.monthlyStay(p, room, "ACTIVE", LocalDate.of(2026, 8, 1), null));
+        transition(fx.monthlyStay(p, room, "EXITED", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 20)));
+        transition(fx.monthlyStay(p, room, "ACTIVE", LocalDate.of(2026, 6, 1), null));
+        fx.monthlyStay(p, room, "ACTIVE", LocalDate.of(2026, 7, 10), null);
+        fx.monthlyStay(p, room, "CANCELLED", LocalDate.of(2026, 7, 11), null);
+        fx.dailyStay(p, room, LocalDate.of(2026, 9, 24), LocalDate.of(2026, 9, 28));
+        fx.monthlyStay(other, fx.room(other, 2, 1, 0, "PARTIALLY_OCCUPIED", true), "ACTIVE", LocalDate.of(2026, 8, 1), null);
+
+        assertThat(tenancy.hasTransitionedStay(p)).isTrue();
+        assertThat(tenancy.hasTransitionedStay(other)).isFalse();
+        assertThat(tenancy.joinCounts(p, JUL, SEP_END)).isEqualTo(new TenancyAnalytics.JoinCounts(2, 1));
+        // New joiners are exactly the move-ins, which leave the carried-over stays out.
+        assertThat(tenancy.monthlyMoves(p, JUL, SEP_END).stream().mapToInt(DayMoves::moveIns).sum()).isEqualTo(1);
+    }
+
+    private void transition(UUID stay) {
+        jdbc.update("UPDATE tenancy.tenancies SET transitioned = true, moved_in_on = start_date - 30 WHERE id = ?", stay);
+    }
+
+    @Test
     void moveOutsAreNewestFirstAndOnlyLettableRoomsHaveVacancies() {
         UUID room = fx.room(p, 3, 1, 0, "PARTIALLY_OCCUPIED", true);
         UUID target = fx.room(p, 1, 1, 0, "OCCUPIED", true);

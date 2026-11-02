@@ -9,6 +9,8 @@ public record FoodModuleOverviewResponse(
         UUID propertyId,
         boolean foodAvailableInProperty,
         boolean moduleEnabled,
+        /** Record meal attendance is on. */
+        boolean attendanceEnabled,
         Set<MealType> availableMeals,
         long activeItems,
         long activeProfiles,

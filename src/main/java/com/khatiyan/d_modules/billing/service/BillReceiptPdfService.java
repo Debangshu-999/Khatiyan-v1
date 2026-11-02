@@ -9,6 +9,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,7 @@ import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleLineItemResponse;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemStatus;
+import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleLineItemType;
 import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.billing.model.BillingLineSettlementAction;
@@ -51,6 +54,7 @@ public class BillReceiptPdfService {
     /** Dates are the tenant's, so they are read in the tenant's zone. */
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
+    private static final Pattern DAMAGE_CHARGE = Pattern.compile("^Damage (DMG-\\d{4}-\\d+): (.+) \\((D[123])\\)(, split \\d+)?$");
 
     /**
      * The receipt as PDF bytes.
@@ -115,12 +119,14 @@ public class BillReceiptPdfService {
         long subtotal = cycle.baseAmountPaise() + depositTotal + cycle.extraChargePaise() + cycle.lateFeeAmountPaise();
 
         StringBuilder charges = new StringBuilder();
-        charges.append(row("Base Rent", money(cycle.baseAmountPaise()), false));
+        if (cycle.category() != BillingCycleCategory.ONE_OFF) {
+            charges.append(row("Base Rent", money(cycle.baseAmountPaise()), false));
+        }
         for (BillingCycleLineItemResponse deposit : deposits) {
             charges.append(row(deposit.label(), money(deposit.amountPaise()), false));
         }
         for (BillingCycleLineItemResponse extra : extras) {
-            charges.append(row(extra.label(), money(extra.amountPaise()), false));
+            charges.append(chargeRow(extra.label(), extra.amountPaise()));
         }
         if (unitemised > 0) {
             charges.append(row("Extra charges", money(unitemised), false));
@@ -151,7 +157,7 @@ public class BillReceiptPdfService {
         }
 
         String billDetails = detailRow("Bill Number", cycle.referenceCode(), true)
-                + detailRow("Bill Cycle", billTitle(cycle), false)
+                + detailRow(cycle.category() == BillingCycleCategory.ONE_OFF ? "Bill name" : "Bill Cycle", billTitle(cycle), false)
                 + detailRow("Bill Date", date(cycle.createdAt()), false)
                 + detailRow("Due Date", date(cycle.rentDueDate()), false)
                 + detailRow("Bill Status", humanize(cycle.status().name()), false)
@@ -192,9 +198,7 @@ public class BillReceiptPdfService {
 
                 h1.title { font-size: 31px; font-weight: 700; margin: 42px 0 30px; text-align: center; }
 
-                table.party-layout { border-collapse: collapse; table-layout: fixed; width: 100%%; }
-                table.party-layout td.party-cell { padding: 0 8px 0 0; vertical-align: top; width: 50%%; }
-                table.party-layout td.party-cell.last { padding: 0 0 0 8px; }
+                .party + .party { margin-top: 14px; }
                 .box { border: 1px solid #c9dcf2; border-radius: 7px; overflow: hidden; }
                 table.detail, table.grid { border-collapse: collapse; table-layout: fixed; width: 100%%; }
                 table.detail th, table.grid th, .summary-head { background: #e6f1ff; font-size: 17px; font-weight: 700; padding: 13px 15px; text-align: left; }
@@ -208,6 +212,7 @@ public class BillReceiptPdfService {
                 table.grid th:last-child { border-right: 0; width: 34%%; }
                 table.grid td { border-top: 1px solid #c9dcf2; font-size: 12px; padding: 11px 15px; }
                 table.grid td.amt { width: 34%%; }
+                .charge-reference { color: #4f5d78; font-size: 10px; margin-top: 3px; }
 
                 .summary { margin-top: 22px; }
                 .summary-head { border-bottom: 1px solid #c9dcf2; }
@@ -244,26 +249,18 @@ public class BillReceiptPdfService {
 
               <h1 class="title">Tenancy Bill Receipt</h1>
 
-              <table class="party-layout">
-                <tr>
-                  <td class="party-cell">
-                    <div class="box">
-                      <table class="detail">
-                        <tr><th colspan="2">Bill Details</th></tr>
-                        %s
-                      </table>
-                    </div>
-                  </td>
-                  <td class="party-cell last">
-                    <div class="box">
-                      <table class="detail">
-                        <tr><th colspan="2">Bill To</th></tr>
-                        %s
-                      </table>
-                    </div>
-                  </td>
-                </tr>
-              </table>
+              <div class="box party">
+                <table class="detail">
+                  <tr><th colspan="2">Bill Details</th></tr>
+                  %s
+                </table>
+              </div>
+              <div class="box party">
+                <table class="detail">
+                  <tr><th colspan="2">Bill To</th></tr>
+                  %s
+                </table>
+              </div>
 
               <div class="box charges">
                 <table class="grid">
@@ -300,9 +297,22 @@ public class BillReceiptPdfService {
     }
 
     private static String row(String label, String amount, boolean strong) {
+        return row(label, null, amount, strong);
+    }
+
+    private static String row(String label, String reference, String amount, boolean strong) {
         String rowClass = strong ? " class=\"total\"" : "";
-        return "<tr" + rowClass + "><td>" + escape(label) + "</td><td class=\"amt\">"
+        String referenceLine = reference == null ? "" : "<div class=\"charge-reference\">" + escape(reference) + "</div>";
+        return "<tr" + rowClass + "><td>" + escape(label) + referenceLine + "</td><td class=\"amt\">"
                 + escape(amount) + "</td></tr>";
+    }
+
+    /** The same two-line damage charge as the on-screen receipt, without changing its stored label. */
+    private static String chargeRow(String label, long amountPaise) {
+        Matcher damage = DAMAGE_CHARGE.matcher(label);
+        return damage.matches()
+                ? row("Damage: " + damage.group(2) + " - " + damage.group(3) + (damage.group(4) == null ? "" : damage.group(4)), "(" + damage.group(1) + ")", money(amountPaise), false)
+                : row(label, money(amountPaise), false);
     }
 
     private static String detailRow(String label, String value, boolean code) {
@@ -310,12 +320,14 @@ public class BillReceiptPdfService {
                 + (code ? " code" : "") + "\">" + escape(blankToDash(value)) + "</td></tr>";
     }
 
-    /** Rent cycles are numbered; a one-off bill takes its first line's label. */
+    /** Rent cycles are numbered; damage has a short bill name, with item details in the charges table. */
     private static String billTitle(BillingCycleResponse cycle) {
         if (cycle.cycleNumber() != null) {
             return "Cycle " + cycle.cycleNumber();
         }
-        return cycle.lineItems().isEmpty() ? "One-off bill" : cycle.lineItems().get(0).label();
+        String label = cycle.lineItems().isEmpty() ? "One-off bill" : cycle.lineItems().get(0).label();
+        Matcher damage = DAMAGE_CHARGE.matcher(label);
+        return damage.matches() ? "Damage bill" : label;
     }
 
     private static String money(long paise) {

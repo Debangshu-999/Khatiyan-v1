@@ -1,9 +1,11 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
 import { deviceLabel, devicePlatform } from "@/auth/device-identity";
+import { freshAccessToken, refreshSession } from "@/auth/session-refresh";
 import { clearWalletAccess, walletAccessToken } from "@/auth/wallet-access";
 import { checkResponseShape } from "@/store/response-guards";
 import { sessionExpired } from "@/store/slices/auth-slice";
+import { readUnanswered, serverAnswered } from "@/store/slices/connection-slice";
 import { noteStaleRefusal } from "@/store/stale-refusal";
 import type { RootState } from "@/store/store";
 
@@ -21,6 +23,8 @@ import type { RootState } from "@/store/store";
  */
 const EXPECTED_FAILURES: Record<string, number[]> = {
   getMyActiveTenancy: [403, 404],
+  // A manager whose sections never show stays: the Manage tab still asks.
+  listPropertyTenancies: [403],
 };
 
 function isExpectedFailure(endpoint: string, status: unknown) {
@@ -88,6 +92,10 @@ export const API_TAGS = [
   // Separate from Property so editing a menu does not refetch rooms and
   // listing details across the workspace.
   "Food",
+  // Meal passes and attendance. Separate from "Food" because a scan at the
+  // counter should refresh the counts, not every menu and profile on screen.
+  "MealAttendance",
+  "MealRatings",
   // One day's cooking forecast. Separate from "Food" because the forecast is
   // DERIVED — from menus, profiles and subscriptions — so re-deriving it on
   // every unrelated food edit would refetch a heavy read while an owner is
@@ -96,6 +104,8 @@ export const API_TAGS = [
   "FoodForecast",
   // Owner analytics. Nothing invalidates it in v1: pull to refresh refetches.
   "Analytics",
+  // Damage records and each room's item condition (2026-10-29).
+  "DamageRecords",
 ] as const;
 
 /**
@@ -113,6 +123,11 @@ export function ifMatch(version: number): Record<string, string> {
  */
 function isStaleConflict(data: unknown): boolean {
   return typeof data === "object" && data !== null && (data as { code?: unknown }).code === "STALE";
+}
+
+/** A read of this endpoint in flight with no earlier result, so its screen has nothing to draw. */
+function isFirstLoad(queries: Record<string, { data?: unknown; endpointName?: string; status?: string } | undefined>, endpoint: string) {
+  return Object.values(queries).some((query) => query?.endpointName === endpoint && query.status === "pending" && query.data === undefined);
 }
 
 export const api = createApi({
@@ -140,7 +155,7 @@ export const api = createApi({
         if (token) {
           headers.set("Authorization", `Bearer ${token}`);
         }
-        const walletToken = walletAccessToken(token);
+        const walletToken = walletAccessToken((getState() as RootState).auth.user?.id ?? null);
         if (walletToken && ["listServiceBalanceEntries", "startServiceBalanceTopUp", "getServiceBalanceTopUp"].includes(apiContext.endpoint)) headers.set("X-Wallet-Unlock", walletToken);
         // Names this device in the signed-in devices list. Sent on every request
         // rather than only on sign-in: a token is minted by six endpoints, and
@@ -158,7 +173,40 @@ export const api = createApi({
       await new Promise((resolve) => setTimeout(resolve, state.appConfig.slowNetworkMs));
     }
 
-    const result = await baseQuery(args, apiContext, extraOptions);
+    // Renewed first if it is about to run out, so the usual case never sees a 401.
+    if (hadToken) {
+      await freshAccessToken(apiContext);
+    }
+    const sentToken = (apiContext.getState() as RootState).auth.accessToken;
+    let result = await baseQuery(args, apiContext, extraOptions);
+
+    // Refused all the same: its clock was off, or it was renewed while this was on its way.
+    // A 401 means the request was never acted on, so it is safe to send again, once.
+    let keptSignedIn = false;
+    if (result.error?.status === 401 && hadToken) {
+      const { accessToken: latest, refreshToken } = (apiContext.getState() as RootState).auth;
+      if (refreshToken) {
+        const renewed = latest && latest !== sentToken ? latest : await refreshSession(apiContext);
+        if (renewed) {
+          result = await baseQuery(args, apiContext, extraOptions);
+        } else if ((apiContext.getState() as RootState).auth.refreshToken) {
+          // The server could not be reached to renew it. That is not a sign-out.
+          keptSignedIn = true;
+        }
+      }
+    }
+
+    // Whether the server answered at all, for the whole-app failure screen. A
+    // read this app cancelled itself says nothing about the server.
+    const unanswered = result.error?.status === "FETCH_ERROR" || result.error?.status === "TIMEOUT_ERROR";
+    if (unanswered) {
+      if (apiContext.type === "query" && !apiContext.signal.aborted) {
+        apiContext.dispatch(readUnanswered({ nothingToShow: isFirstLoad((apiContext.getState() as RootState).api.queries, apiContext.endpoint) }));
+      }
+    } else if ((apiContext.getState() as RootState).connection.unansweredReads > 0) {
+      apiContext.dispatch(serverAnswered());
+    }
+
     if (result.error?.status === 403 && (result.error.data as { code?: string } | undefined)?.code === "WALLET_LOCKED") clearWalletAccess();
 
     // Dev-only: a failed read otherwise leaves no trace at all. Screens that
@@ -184,7 +232,7 @@ export const api = createApi({
     // `hadToken` is the whole guard: a 401 from the sign-in endpoints means a
     // wrong PIN, not a dead session, and announcing "your session expired" to
     // someone who is not signed in would be nonsense.
-    if (result.error?.status === 401 && hadToken) {
+    if (result.error?.status === 401 && hadToken && !keptSignedIn) {
       apiContext.dispatch(sessionExpired());
     }
 

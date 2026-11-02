@@ -1,8 +1,11 @@
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Image, Text, View, type ImageSourcePropType } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
+import { TenantDamageRecords } from "@/features/damage/tenant-damage-records";
 import {
   ArrowLeftRight,
   Banknote,
@@ -239,6 +242,11 @@ export default function TenancyScreen() {
         : null,
   });
 
+  const loadFailed = loadFailure(activeTenancyQuery, tenanciesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   if (activeTenancyQuery.isFetching && !activeTenancy) {
     return (
       <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
@@ -323,6 +331,9 @@ export default function TenancyScreen() {
               title="Move-in checklist"
             />
           ) : null}
+
+          {/* Damage recorded in their name, with their share and bill (user, 2026-10-29). */}
+          <TenantDamageRecords tenancyId={activeTenancy.tenancy.id} />
 
           {/* A door to the bills, no bill card above it (user, 2026-09-27).
               Paying happens on My Bills, where every bill of the month is. */}
@@ -500,14 +511,14 @@ function TenancyOverviewCard({
         <View style={{ gap: spacing.sm }}>
           {/* One identity row: the label belongs to the property name, while
               the live tenancy state stays visible at the trailing edge. */}
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <PropertyArtwork size={24} />
             {/* No "Current stay" eyebrow (user, 2026-09-27): the name alone. */}
             <View style={{ flex: 1, minWidth: 0 }}>
               <FitText
                 minimumFontScale={0.78}
                 numberOfLines={1}
-                style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}
+                style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(22), lineHeight: 27 }]}
               >
                 {activeTenancy.property.name}
               </FitText>
@@ -515,10 +526,10 @@ function TenancyOverviewCard({
             {/* Hidden before the start date. "Active" there is the record's
                 status, not the tenant's reality, and the bubble below already
                 says when it begins. */}
-            {tenancyNotStarted(activeTenancy.tenancy.startDate) ? null : (
+            <CardStatus>{tenancyNotStarted(activeTenancy.tenancy.startDate) ? null : (
               <TenancyStatusPill status={activeTenancy.tenancy.status} />
-            )}
-          </View>
+            )}</CardStatus>
+          </CardNameRow>
 
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <View style={{ alignItems: "center", width: 24 }}>
@@ -674,7 +685,7 @@ function TenancyStatusPill({ status }: { status: string }) {
       }}
     >
       <View style={{ backgroundColor: dot, borderRadius: 999, height: 7, width: 7 }} />
-      <FitText numberOfLines={1} style={{ color: text, fontFamily: fonts.sansBold, fontSize: 12 }}>
+      <FitText numberOfLines={1} style={{ color: text, fontFamily: fonts.sansBold, fontSize: cardText(12) }}>
         {tenancyStatusLabel(status as TenancyStatus)}
       </FitText>
     </View>

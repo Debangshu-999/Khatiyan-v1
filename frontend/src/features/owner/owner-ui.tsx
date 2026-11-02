@@ -1,3 +1,4 @@
+import { CenterDialogContext } from "@/components/modal-kind";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Animated, Easing, Modal, Text, View, type TextStyle, type ViewStyle } from "react-native";
@@ -7,6 +8,7 @@ import { ArrowLeft, CircleAlert, CircleCheck, Info, X, type LucideProps } from "
 type LucideIcon = ComponentType<LucideProps>;
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { ArrowBullet } from "@/components/arrow-bullet";
 import { StatusPill } from "@/components/status-pill";
 import { tapHaptic } from "@/lib/haptics";
 import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
@@ -115,6 +117,7 @@ export function ActionButton({
   disabled,
   icon: Icon,
   label,
+  oneLine,
   onPress,
   trailingIcon: TrailingIcon,
   variant = "primary",
@@ -125,6 +128,8 @@ export function ActionButton({
   disabled?: boolean;
   icon?: ComponentType<LucideProps>;
   label: string;
+  /** For a narrow button in a row: smaller type that shrinks to stay on one line, instead of wrapping. */
+  oneLine?: boolean;
   onPress: () => void;
   /** After the label: an arrow on a button that moves to the next step. */
   trailingIcon?: ComponentType<LucideProps>;
@@ -261,11 +266,14 @@ export function ActionButton({
           button instead of spilling past its padding. Wrapping, not ellipsis:
           a half-read action is worse than a taller button. */}
       <Text
+        adjustsFontSizeToFit={oneLine}
+        minimumFontScale={oneLine ? 0.8 : undefined}
+        numberOfLines={oneLine ? 1 : undefined}
         style={{
           color: foreground,
           flexShrink: 1,
           fontFamily: fonts.sansBold,
-          fontSize: compact ? 13 : 14,
+          fontSize: oneLine ? 12 : compact ? 13 : 14,
           textAlign: "center",
         }}
       >
@@ -299,6 +307,7 @@ export function FormInput({
   autoCapitalize = "sentences",
   borderOnContainer = false,
   error,
+  errorColor,
   icon: Icon,
   inputStyle,
   keyboardType,
@@ -335,6 +344,8 @@ export function FormInput({
   disabled?: boolean;
   // Inline validation message; tints the field and label red while present.
   error?: string;
+  /** Optional high-contrast error ink for a field on a custom dark surface. */
+  errorColor?: string;
   /**
    * A glyph on the LABEL line, left of the text.
    *
@@ -371,12 +382,13 @@ export function FormInput({
 }) {
   const { colors, fonts, type } = useTheme();
   const [focused, setFocused] = useState(false);
+  const invalidColor = errorColor ?? colors.danger;
   // Constant border width so focusing never nudges the layout; the colour does
   // the talking — danger wins over focus, focus wins over rest.
   const borderColor = disabled
     ? colors.border
     : error
-      ? colors.danger
+      ? invalidColor
       : focused
         ? colors.primary
         : colors.borderStrong;
@@ -386,7 +398,7 @@ export function FormInput({
   const labelColor = disabled
     ? colors.kicker
     : error
-      ? colors.danger
+      ? invalidColor
       : focused
         ? colors.primary
         : colors.muted;
@@ -396,7 +408,7 @@ export function FormInput({
   const labelRow = (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
       {Icon ? <Icon color={labelColor} size={15} strokeWidth={2.2} /> : null}
-      <Text style={[type.label, { color: labelColor }, labelStyle, error ? { color: colors.danger } : null]}>
+      <Text style={[type.label, { color: labelColor }, labelStyle, error ? { color: invalidColor } : null]}>
         {label}
         <RequiredMark required={required} />
       </Text>
@@ -405,7 +417,7 @@ export function FormInput({
   );
 
   const errorText = error ? (
-    <Text style={[type.caption, { color: colors.danger }]}>
+    <Text accessibilityLiveRegion="polite" style={[type.caption, { color: invalidColor }]}>
       {error}
     </Text>
   ) : null;
@@ -523,7 +535,7 @@ export function FormInput({
  * than of controls; the squared-off ink selection matches the tab switcher and
  * the option-picker rows instead. The pill remains the default everywhere else.
  */
-export function ChoiceButton({ active, label, onPress, square }: { active: boolean; label: string; onPress: () => void; square?: boolean }) {
+export function ChoiceButton({ active, label, onPress, soft = false, square }: { active: boolean; label: string; onPress: () => void; soft?: boolean; square?: boolean }) {
   const { colors, fonts } = useTheme();
   return (
     <AnimatedPressable
@@ -534,9 +546,10 @@ export function ChoiceButton({ active, label, onPress, square }: { active: boole
         // Square is the segmented look, and it takes the app's selection green
         // rather than a solid ink slab: a row of these sat on a form as the
         // darkest thing present, pulling the eye to a control instead of to
-        // what it was answering. The pill keeps its solid primary — it is a
-        // single choice acting as a button, not one segment among several.
-        backgroundColor: active ? (square ? colors.jadeSoft : colors.primary) : colors.surface,
+        // what it was answering. Pills keep their solid primary by default;
+        // forms can opt into a softer pale-blue selection.
+        alignItems: "center",
+        backgroundColor: active ? (square ? colors.jadeSoft : soft ? colors.primarySoft : colors.primary) : colors.surface,
         borderColor: active ? (square ? colors.jade : colors.primary) : colors.borderStrong,
         borderRadius: square ? 0 : 999,
         borderWidth: 1,
@@ -546,7 +559,7 @@ export function ChoiceButton({ active, label, onPress, square }: { active: boole
         paddingVertical: 9,
       }}
     >
-      <Text style={{ color: active && !square ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
+      <Text style={{ color: active && !square ? (soft ? colors.primaryDeep : colors.onPrimary) : colors.ink, fontFamily: fonts.sansBold, fontSize: 13, }}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -565,6 +578,7 @@ export function NoticeBar({
   icon: NoticeIcon,
   message,
   messageStyle,
+  selectable = true,
   title,
   tone = "success",
 }: {
@@ -573,6 +587,8 @@ export function NoticeBar({
   /** Text, or text with a nested pressable link. */
   message: ReactNode;
   messageStyle?: TextStyle;
+  /** Disable native selection where an explanatory notice must not take a selection highlight. */
+  selectable?: boolean;
   title: string;
   /** "info" is the blue one: an explanation rather than a precaution. */
   tone?: "success" | "warning" | "danger" | "info";
@@ -623,7 +639,7 @@ export function NoticeBar({
           {title}
         </Text>
         {/* Keeps its own type, not the app's description style (user, 2026-09-29). */}
-        <Text selectable style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 18 }, messageStyle]}>
+        <Text selectable={selectable} style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 18 }, messageStyle]}>
           {message}
         </Text>
       </View>
@@ -692,6 +708,7 @@ export function ConfirmDialog({
   }
   return (
     <Modal animationType={animatedTransition ? "none" : "fade"} onShow={open} navigationBarTranslucent onRequestClose={() => finish(onCancel)} statusBarTranslucent transparent visible>
+      <CenterDialogContext.Provider value>
       <Animated.View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <Animated.View
           style={{
@@ -718,9 +735,7 @@ export function ConfirmDialog({
             <View style={{ gap: spacing.xs }}>
               {bullets.map((bullet) => (
                 <View key={bullet} style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <Text style={[type.modalDescription, { color: colors.kicker }]}>
-                    •
-                  </Text>
+                  <ArrowBullet lineHeight={type.modalDescription.lineHeight} />
                   <Text style={[type.modalDescription, { color: colors.muted, flex: 1 }]}>
                     {bullet}
                   </Text>
@@ -745,6 +760,7 @@ export function ConfirmDialog({
           </View>
         </Animated.View>
       </Animated.View>
+      </CenterDialogContext.Provider>
     </Modal>
   );
 }

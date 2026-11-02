@@ -145,6 +145,12 @@ public class ComplianceModule {
         return tenancyAgreementService.pendingStayChecks(actorUserId, tenancyId);
     }
 
+    /** How this stay's tenant was verified, for the tenant profile. */
+    public com.khatiyan.d_modules.compliance.api.dto.TenantIdentityChecksResponse identityChecks(
+            UUID actorUserId, UUID tenancyId) {
+        return tenancyAgreementService.identityChecks(actorUserId, tenancyId);
+    }
+
     /** The owner gives a pending stay's tenant more verification tries. */
     public java.util.List<com.khatiyan.d_modules.verification.model.VerificationGrant> provideVerificationAttempts(
             UUID actorUserId,

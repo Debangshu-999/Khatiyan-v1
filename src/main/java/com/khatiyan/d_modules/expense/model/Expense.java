@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.expense.model;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -126,6 +127,11 @@ public class Expense extends BaseEntity {
     }
 
     /** Correction: a negative row that nets out an existing entry. */
+    /** Whether it belongs to a month before the given one. */
+    public boolean incurredBefore(YearMonth month) {
+        return YearMonth.from(incurredDate).isBefore(month);
+    }
+
     public static Expense reversalOf(Expense original, String reason, UUID createdByUserId, LocalDate reversedOn) {
         return new Expense(original.propertyId, original.categoryId, original.paidTo, -original.amountPaise,
                 reversedOn, ExpenseEntryType.REVERSAL, null, null, original.id, reason, createdByUserId);

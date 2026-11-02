@@ -14,7 +14,11 @@ export type FitTextProps = Omit<TextProps, "adjustsFontSizeToFit"> & {
  * <p>It only ever changes the size of its own text, never the layout: it
  * shrinks within the space its style already gives it. A name that should
  * give way beside a chip says so itself (`flex: 1`, `minWidth: 0`).
+ *
+ * <p>Only one line is fitted, as on the web. Asked to fit two, Android broke a
+ * label and hid its second word, so longer text simply wraps (user, 2026-11-01).
  */
 export function FitText({ minimumFontScale = 0.7, numberOfLines = 1, style, ...props }: FitTextProps) {
-  return <Text {...props} adjustsFontSizeToFit minimumFontScale={minimumFontScale} numberOfLines={numberOfLines} style={style} />;
+  const oneLine = numberOfLines === 1;
+  return <Text {...props} adjustsFontSizeToFit={oneLine} minimumFontScale={oneLine ? minimumFontScale : undefined} numberOfLines={numberOfLines} style={style} />;
 }

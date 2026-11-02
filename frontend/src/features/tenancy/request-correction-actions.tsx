@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { ActivityIndicator, Platform, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import {
   BedDouble,
   CalendarDays,
@@ -10,6 +9,7 @@ import {
   type LucideProps,
 } from "lucide-react-native";
 
+import { CalendarPicker } from "@/components/calendar-picker";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
@@ -363,61 +363,18 @@ function ChangeDateSheet({
   value: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const minimum = parseISODate(minimumDate);
-  const maximum = parseISODate(maximumDate);
-  const [draft, setDraft] = useState(() => parseISODate(clampISODate(value, minimumDate, maximumDate)));
-  const [androidPickerOpen, setAndroidPickerOpen] = useState(false);
-  const [webValue, setWebValue] = useState(toISODate(draft));
-  const parsedWebValue = parseISODateOrNull(webValue);
-  const webValueValid = parsedWebValue != null && parsedWebValue >= minimum && parsedWebValue <= maximum;
-
-  function handleNativeChange(event: DateTimePickerEvent, selected?: Date) {
-    if (Platform.OS === "android") {
-      setAndroidPickerOpen(false);
-    }
-    if (event.type === "set" && selected) {
-      setDraft(clampDate(selected, minimum, maximum));
-    }
-  }
+  const [draft, setDraft] = useState(() => clampISODate(value, minimumDate, maximumDate));
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   return (
     <SheetShell animated onClose={onBack} title="Change checkout date">
       <ValuePanel label="Original checkout date" value={formatDate(originalValue)} />
       <View style={{ gap: spacing.xs }}>
         <Text style={[type.label, { color: colors.inkSoft }]}>New checkout date</Text>
-        {Platform.OS === "web" ? (
-          <AppTextInput
-            autoCapitalize="none"
-            onChangeText={setWebValue}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.kicker}
-            style={{
-              backgroundColor: colors.surface,
-              borderColor: webValueValid ? colors.borderStrong : colors.danger,
-              borderRadius: 14,
-              borderWidth: 1,
-              color: colors.ink,
-              fontFamily: fonts.sansMedium,
-              fontSize: 15,
-              minHeight: 50,
-              paddingHorizontal: spacing.md,
-            }}
-            value={webValue}
-          />
-        ) : Platform.OS === "ios" ? (
-          <DateTimePicker
-            display="inline"
-            maximumDate={maximum}
-            minimumDate={minimum}
-            mode="date"
-            onChange={handleNativeChange}
-            value={draft}
-          />
-        ) : (
-          <AnimatedPressable
+        <AnimatedPressable
             accessibilityLabel="Choose a new checkout date"
             accessibilityRole="button"
-            onPress={() => setAndroidPickerOpen(true)}
+            onPress={() => setPickerOpen(true)}
             style={{
               alignItems: "center",
               backgroundColor: colors.surfaceSunken,
@@ -432,31 +389,27 @@ function ChangeDateSheet({
           >
             <CalendarDays color={colors.ink} size={18} strokeWidth={2.2} />
             <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
-              {formatDate(toISODate(draft))}
+              {formatDate(draft)}
             </Text>
           </AnimatedPressable>
-        )}
         <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
           Choose between {formatDate(minimumDate)} and {formatDate(maximumDate)}.
         </Text>
       </View>
       <ActionButton
-        disabled={Platform.OS === "web" && !webValueValid}
         icon={Check}
         label="Save change"
         onPress={() => {
-          const resolved = Platform.OS === "web" && parsedWebValue ? parsedWebValue : draft;
-          onSave(toISODate(resolved));
+          onSave(draft);
           onBack();
         }}
       />
-      {androidPickerOpen ? (
-        <DateTimePicker
-          display="default"
-          maximumDate={maximum}
-          minimumDate={minimum}
-          mode="date"
-          onChange={handleNativeChange}
+      {pickerOpen ? (
+        <CalendarPicker
+          maximum={maximumDate}
+          minimum={minimumDate}
+          onClose={() => setPickerOpen(false)}
+          onPick={setDraft}
           value={draft}
         />
       ) : null}
@@ -491,7 +444,7 @@ function ChangeRoomSheet({
   const selectionAvailable = availableRooms.some((room) => room.id === draft);
 
   return (
-    <SheetShell animated onClose={onBack} title="Change room">
+    <SheetShell size="tall" animated onClose={onBack} title="Change room">
       <ValuePanel label="Originally requested" value={roomLabel(originalRoom, originalRoomId)} />
       <View style={{ gap: spacing.sm }}>
         <Text style={[type.label, { color: colors.inkSoft }]}>Select a new room</Text>

@@ -34,10 +34,9 @@ export function softShadow(color: string, offsetY: number, blur: number, opacity
  * What a card on one of the tab screens keeps: the shadow exactly as it was
  * written before, which a browser draws and a phone does not.
  *
- * <p>The new shadow is for the screens inside a module only (user,
- * 2026-10-11: "The box shadow should only apply in the screen inside a module
- * not the 5 tabs of home, discover, chat, manage and account"). So the tabs
- * are left as they were, on both.
+ * <p>Discover, Chats, Manage and Account keep their original treatment. Home
+ * now explicitly opts into the phone-visible shadows used inside modules
+ * (user, 2026-10-29).
  */
 export function tabShadow(color: string, offsetY: number, blur: number, opacity = 1): ViewStyle {
   return { shadowColor: color, shadowOffset: { height: offsetY, width: 0 }, shadowOpacity: opacity, shadowRadius: blur };
@@ -45,13 +44,15 @@ export function tabShadow(color: string, offsetY: number, blur: number, opacity 
 
 /**
  * The shadow for a piece that is drawn on tab screens and module screens
- * alike, such as a card: the new one inside a module, the old one on a tab.
+ * alike: the new one inside a module or Home, the old one on other tabs.
  * Asked once at the top of the component, then used like {@link softShadow}.
  */
 export function useSoftShadow() {
   // The same test the screen's scroll view uses to leave room for the tab bar.
-  const onATab = useSegments()[0] === "(tabs)";
-  return onATab ? tabShadow : softShadow;
+  const segments: readonly string[] = useSegments();
+  const onATab = segments[0] === "(tabs)";
+  const onHome = onATab && (segments[1] == null || segments[1] === "index");
+  return onATab && !onHome ? tabShadow : softShadow;
 }
 
 /** The colour at part of its own strength. Only an rgba() colour can be weakened, and the theme's shadow is one. */

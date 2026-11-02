@@ -1,4 +1,5 @@
 import { Text, View } from "react-native";
+import { ArrowBullet } from "@/components/arrow-bullet";
 import { SheetShell } from "@/components/sheet-shell";
 import { useTheme } from "@/theme/use-theme";
 import { flattenTimeline, type TimelineEntry } from "./request-chain";
@@ -30,7 +31,7 @@ export function RequestTimelineSheet({ anchorNote, entries, onClose, referenceCo
             borderLeftColor: colors.primary, padding: 12, gap: 8 }}>
             {anchorNote.split(/\.\s+(?=Notice counts)/).map((note, index) => (
               <View key={index} style={{ flexDirection: "row", gap: 8 }}>
-                <Text style={{ color: colors.ink, fontWeight: "700" }}>•</Text>
+                <ArrowBullet lineHeight={type.modalDescription.lineHeight} />
                 <Text style={[type.modalDescription, { color: colors.ink, fontWeight: "700", flex: 1 }]}>{note}</Text>
               </View>
             ))}

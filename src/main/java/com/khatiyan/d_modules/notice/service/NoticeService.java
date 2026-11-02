@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.notice.service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -212,11 +213,9 @@ public class NoticeService {
         if (!notice.getVisibleFrom().isAfter(now)) {
             throw new ValidationException("This notice is already live and cannot be delayed");
         }
+        ensureLaterThanCurrent(notice.getVisibleFrom(), visibleFrom);
         if (!visibleFrom.isAfter(now)) {
             throw new ValidationException("Pick a time in the future");
-        }
-        if (visibleFrom.isBefore(notice.getVisibleFrom())) {
-            throw new ValidationException("A notice can be postponed, not brought forward");
         }
 
         notice.delayTo(visibleFrom);
@@ -229,6 +228,16 @@ public class NoticeService {
                 actorUserId);
 
         return NoticeResponse.from(notice);
+    }
+
+    /** The same time is no delay (user, 2026-11-02). To the minute, as the owner picks it and sees it. */
+    static void ensureLaterThanCurrent(Instant current, Instant picked) {
+        if (picked.truncatedTo(ChronoUnit.MINUTES).equals(current.truncatedTo(ChronoUnit.MINUTES))) {
+            throw new ValidationException("Pick a later time to postpone this notice");
+        }
+        if (picked.isBefore(current)) {
+            throw new ValidationException("A notice can be postponed, not brought forward");
+        }
     }
 
     /**

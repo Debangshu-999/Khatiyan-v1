@@ -1,8 +1,9 @@
 import type { PropsWithChildren, ReactNode } from "react";
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { Image, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { ClipboardList } from "lucide-react-native";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ActionCard } from "@/components/action-card";
 import { useGetMoveInChecklistQuery } from "@/store/services/tenancy-api";
 import { openDialer } from "@/lib/dial";
@@ -29,14 +30,18 @@ import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
 import { PaperAgreementPhotos } from "@/features/compliance/paper-agreement-photos";
+import { TenantVerificationSection } from "@/features/tenancy/tenant-verification-section";
+import { istToday } from "@/features/analytics/period";
 
 export default function OwnerActiveTenancyDetailScreen() {
   const router = useGuardedRouter();
   const params = useLocalSearchParams<{
+    agreementValidityMonths?: string;
     billingStarted?: string;
     billingType?: string;
     dailyRatePaise?: string;
     depositAmountPaise?: string;
+    fixedTerm?: string;
     guestStay?: string;
     plannedEndDate?: string;
     referenceCode?: string;
@@ -97,10 +102,15 @@ export default function OwnerActiveTenancyDetailScreen() {
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   // Only a fixed term has an end date to state. An indefinite stay runs until
-  // somebody gives notice, so both fields stay blank rather than inventing a
-  // date from a notice period that has not been served.
-  const fixedTerm = Boolean(tenancy?.fixedTerm);
-  const agreedEndDate = fixedTerm ? tenancy?.endDate ?? tenancy?.agreementEndDate ?? null : null;
+  // somebody gives notice, so it states a planned checkout instead, blank rather
+  // than inventing a date from a notice period that has not been served.
+  // The params hold it until the record loads, so a definite stay never shows
+  // the indefinite label or a blank date on the way in.
+  const fixedTerm = tenancy ? Boolean(tenancy.fixedTerm) : stringParam(params.fixedTerm) === "true";
+  const agreementMonths = tenancy ? tenancy.agreementValidityMonths ?? null : numberParam(params.agreementValidityMonths);
+  const agreedEndDate = fixedTerm
+    ? tenancy?.checkoutDate ?? tenancy?.agreementEndDate ?? (stringParam(params.plannedEndDate) || null)
+    : null;
   // An existing tenant's stay counts from when they really moved in, before Khatiyan (P1.1, 2026-10-28).
   const stayStartDate = tenancy?.movedInOn ?? tenancy?.startDate ?? (stringParam(params.startDate) || null);
   const transitioned = Boolean(tenancy?.transitioned);
@@ -116,7 +126,12 @@ export default function OwnerActiveTenancyDetailScreen() {
    */
   const isDaily = billingType === "DAILY";
   const plannedEndDate = stringParam(params.plannedEndDate) || tenancy?.plannedEndDate || null;
-  const stayEndDate = isDaily ? plannedEndDate : agreedEndDate;
+  const stayEndDate = isDaily ? plannedEndDate : fixedTerm ? agreedEndDate : tenancy?.checkoutDate ?? plannedEndDate;
+  const stayEndLabel = isDaily ? "Checkout" : fixedTerm ? "End date" : "Planned checkout";
+  // How long they have stayed so far, not how long the stay will run: up to today,
+  // or to the day it ended. ISO dates, so the earlier one sorts first.
+  const today = istToday();
+  const stayedUntil = tenancy?.endDate && tenancy.endDate < today ? tenancy.endDate : today;
 
   const depositEligible = billingType !== "DAILY";
   const depositQuery = useGetManagedTenancyDepositQuery(tenancyId, { skip: !tenancyId || !depositEligible });
@@ -184,6 +199,11 @@ export default function OwnerActiveTenancyDetailScreen() {
     }
   }
 
+  const loadFailed = loadFailure(tenanciesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView
       safeAreaEdges={["top", "bottom"]}
@@ -198,7 +218,7 @@ export default function OwnerActiveTenancyDetailScreen() {
       />
 
       <View style={{ alignItems: "center", gap: spacing.md }}>
-        <InitialsAvatar name={tenantName} />
+        <InitialsAvatar name={tenantName} photoUrl={tenancy?.tenantPhotoUrl ?? null} />
         <View style={{ alignItems: "center", gap: spacing.xxs }}>
           <FitText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, }}>
             {cardName(tenantName)}
@@ -230,23 +250,16 @@ export default function OwnerActiveTenancyDetailScreen() {
           {transitioned ? (
             <>
               <CardRule />
-              {tenancy?.verifiedBeforeKhatiyan ? (
-                <FieldPair
-                  left={<ReadonlyField label="Moved in on" value={formatDate(tenancy?.movedInOn ?? null)} />}
-                  right={<ReadonlyField label="Identity" value="Verified before Khatiyan" />}
-                />
-              ) : (
-                <FieldRow>
-                  <ReadonlyField label="Moved in on" value={formatDate(tenancy?.movedInOn ?? null)} />
-                </FieldRow>
-              )}
+              <FieldRow>
+                <ReadonlyField label="Moved in on" value={formatDate(tenancy?.movedInOn ?? null)} />
+              </FieldRow>
             </>
           ) : null}
           <CardRule />
-          {/* Blank for an indefinite agreement, on purpose — see above. */}
+          {/* Blank for an indefinite agreement until someone gives notice — see above. */}
           <FieldPair
-            left={<ReadonlyField label={isDaily ? "Checkout" : "End date"} value={formatDate(stayEndDate)} />}
-            right={<ReadonlyField label="Stay duration" value={formatDuration(stayStartDate, stayEndDate)} />}
+            left={<ReadonlyField label={stayEndLabel} value={formatDate(stayEndDate)} />}
+            right={<ReadonlyField label="Stay duration" value={formatDuration(stayStartDate, stayedUntil)} />}
           />
           <CardRule />
           <FieldRow>
@@ -356,20 +369,7 @@ export default function OwnerActiveTenancyDetailScreen() {
         </FlatCard>
       </View>
 
-      {guestStay ? null : (
-        <View style={{ gap: spacing.sm }}>
-          <SectionTitle title="Tenant verification" />
-          <FlatCard>
-            {/* Placeholder until onboarding returns the verification services
-                enabled for this tenancy. The section shape is final; only the
-                rows will become data-driven. */}
-            <FieldPair
-              left={<ReadonlyField label="Aadhaar verification" tone="danger" value="Pending" />}
-              right={<ReadonlyField label="PAN verification" tone="danger" value="Pending" />}
-            />
-          </FlatCard>
-        </View>
-      )}
+      <TenantVerificationSection tenancyId={tenancyId} />
 
       <View style={{ gap: spacing.sm }}>
         <SectionTitle title="Tenancy details" />
@@ -387,9 +387,7 @@ export default function OwnerActiveTenancyDetailScreen() {
           <CardRule />
           <FieldPair
             left={<ReadonlyField label="Billing started" value={params.billingStarted === "true" ? "Yes" : "No"} />}
-            right={
-              <ReadonlyField label="Planned checkout" value={formatDate(stringParam(params.plannedEndDate))} />
-            }
+            right={<ReadonlyField label="Agreement type" value={agreementTypeLabel(isDaily, fixedTerm, agreementMonths)} />}
           />
           <CardRule />
           <FieldRow>
@@ -414,8 +412,10 @@ export default function OwnerActiveTenancyDetailScreen() {
   );
 }
 
-function InitialsAvatar({ name }: { name: string }) {
+function InitialsAvatar({ name, photoUrl }: { name: string; photoUrl: string | null }) {
   const { colors, fonts } = useTheme();
+  // Their profile photo, or the initials without one or if it will not load (user, 2026-11-01).
+  const [failed, setFailed] = useState(false);
   return (
     <View
       // No fill, and the same 40px initials as the owner profile. The tinted
@@ -431,9 +431,19 @@ function InitialsAvatar({ name }: { name: string }) {
         width: 108,
       }}
     >
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 40, letterSpacing: 0.5 }}>
-        {initialsFor(name)}
-      </Text>
+      {photoUrl && !failed ? (
+        <Image
+          accessibilityIgnoresInvertColors
+          onError={() => setFailed(true)}
+          resizeMode="cover"
+          source={{ uri: photoUrl }}
+          style={{ height: 108, width: 108 }}
+        />
+      ) : (
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 40, letterSpacing: 0.5 }}>
+          {initialsFor(name)}
+        </Text>
+      )}
     </View>
   );
 }
@@ -577,6 +587,17 @@ function humanizeToken(value: string) {
     .join(" ");
 }
 
+/** A daily stay has no agreement. */
+function agreementTypeLabel(isDaily: boolean, fixedTerm: boolean, months: number | null) {
+  if (isDaily) {
+    return "No agreement";
+  }
+  if (!fixedTerm) {
+    return "Indefinite";
+  }
+  return months ? `Definite (${months} ${months === 1 ? "month" : "months"})` : "Definite";
+}
+
 function formatMoney(value?: number | null) {
   if (value == null) {
     return "Not set";
@@ -585,12 +606,12 @@ function formatMoney(value?: number | null) {
 }
 
 /**
- * Span between two dates, as someone would say it: "6 months", "1 year 2 months",
- * "3 months 12 days".
+ * Span between two dates in months, to one decimal: "4.8 months" (user,
+ * 2026-11-01), never years or days.
  *
- * <p>Calendar months, not 30-day blocks — a stay from the 5th of one month to
- * the 5th of the next is one month whatever its length, and dividing by 30
- * would report it as "1 month 1 day" for the long ones.
+ * <p>Calendar months, not 30-day blocks: a stay from the 5th of one month to the
+ * 5th of the next is exactly one month. The days left over count as a share of
+ * the month they fall in.
  */
 function formatDuration(start?: string | null, end?: string | null) {
   if (!start || !end) {
@@ -602,31 +623,21 @@ function formatDuration(start?: string | null, end?: string | null) {
     return "-";
   }
 
-  let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
-  // Borrow a month when the day-of-month has not come round yet, then count the
-  // leftover days from that borrowed anniversary.
+  let whole = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+  // Borrow a month when the day-of-month has not come round yet.
   const anniversary = new Date(from);
-  anniversary.setMonth(from.getMonth() + months);
+  anniversary.setMonth(from.getMonth() + whole);
   if (anniversary > to) {
-    months -= 1;
+    whole -= 1;
     anniversary.setMonth(anniversary.getMonth() - 1);
   }
-  const days = Math.round((to.getTime() - anniversary.getTime()) / 86_400_000);
+  const next = new Date(anniversary);
+  next.setMonth(anniversary.getMonth() + 1);
+  const months = whole + (to.getTime() - anniversary.getTime()) / (next.getTime() - anniversary.getTime());
 
-  const parts: string[] = [];
-  const years = Math.floor(months / 12);
-  const monthsLeft = months % 12;
-  if (years > 0) {
-    parts.push(`${years} year${years === 1 ? "" : "s"}`);
-  }
-  if (monthsLeft > 0) {
-    parts.push(`${monthsLeft} month${monthsLeft === 1 ? "" : "s"}`);
-  }
-  // Days only matter when they are not drowned out by a year of context.
-  if (days > 0 && years === 0) {
-    parts.push(`${days} day${days === 1 ? "" : "s"}`);
-  }
-  return parts.length > 0 ? parts.join(" ") : "0 days";
+  // One decimal, dropped when it is a whole number: "6 months", not "6.0 months".
+  const shown = Math.round(months * 10) / 10;
+  return `${shown} ${shown === 1 ? "month" : "months"}`;
 }
 
 function formatDate(value?: string | null) {

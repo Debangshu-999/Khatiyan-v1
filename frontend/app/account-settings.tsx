@@ -42,7 +42,7 @@ import { Card } from "@/components/card";
 import { Divider } from "@/components/divider";
 import { Skeleton } from "@/components/skeletons";
 import { AccountDeviceAlertSkeleton, AccountIdentityFieldsSkeleton } from "@/components/skeletons/account";
-import { SessionCountdown, SignedInDevices } from "@/features/auth/signed-in-devices";
+import { SignedInDevices } from "@/features/auth/signed-in-devices";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
 import { classifyToast } from "@/components/toast";
@@ -116,6 +116,7 @@ export default function AccountSettingsScreen() {
   async function persistTokenSession(response: TokenResponse) {
     const session = {
       accessToken: response.accessToken,
+      refreshToken: response.refreshToken,
       user: response.user,
     };
     dispatch(setSession(session));
@@ -195,7 +196,6 @@ export default function AccountSettingsScreen() {
             </Section>
 
             <Section title="Signed-in devices">
-              <SessionCountdown />
               <SignedInDevices />
             </Section>
 
@@ -859,7 +859,7 @@ function errorMessage(error: unknown) {
   if (typeof error === "object" && error && "status" in error) {
     const queryError = error as { status?: unknown; error?: unknown; data?: unknown };
     if (queryError.status === "FETCH_ERROR") {
-      return "Could not reach the backend.";
+      return "Could not connect. Check your connection and try again.";
     }
     if (typeof queryError.status === "number") {
       if (typeof queryError.data === "object" && queryError.data && "message" in queryError.data) {

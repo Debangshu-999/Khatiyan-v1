@@ -1,3 +1,5 @@
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Text, View } from "react-native";
@@ -36,6 +38,7 @@ import {
 } from "@/store/services/property-board-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 
 const NO_CATEGORY_ILLUSTRATION = require("../assets/empty-states/No-Category_512x512.png");
 
@@ -69,7 +72,13 @@ export default function OwnerBoardScreen() {
 
   const [categoryModal, setCategoryModal] = useState<{ category: BoardCategory | null } | null>(null);
   const [itemModal, setItemModal] = useState<{ item: BoardItem | null; categoryId: string } | null>(null);
+  useQuickActionIntent({ "board-category": () => setCategoryModal({ category: null }) }, Boolean(selectedProperty && canManageBoard));
   const [pendingDelete, setPendingDelete] = useState<{ kind: "category" | "item"; id: string; label: string } | null>(null);
+
+  const loadFailed = loadFailure(propertiesQuery, categoriesQuery, itemsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -285,8 +294,8 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
             <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {category ? "Edit category" : "New category"}
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
           <FormInput
             error={form.errors.name}
             label="Name"
@@ -371,8 +380,8 @@ function ItemModal({
             <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {item ? "Edit item" : "New item"}
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
           <FormInput
             error={form.errors.title}
             label="Title"

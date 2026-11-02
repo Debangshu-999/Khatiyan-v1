@@ -61,7 +61,7 @@ class PropertyModuleTest {
     void setUp() {
         propertyModule = new PropertyModule(
                 roomService, propertyService, propertyManagerService, managerAccessPolicy, roomMoldService,
-                propertyVisitSlotService);
+                propertyVisitSlotService, null);
     }
 
     @Test

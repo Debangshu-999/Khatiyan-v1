@@ -1994,6 +1994,11 @@ public class BillingCycleService {
         if (reason.isEmpty()) {
             throw new ValidationException("Give a reason for cancelling this bill");
         }
+        // The deposit deduction hangs off the line, and a cancelled bill can't give it back.
+        if (lineItemRepository.findByBillingCycleId(bill.getId()).stream()
+                .anyMatch(line -> line.getSettlementAction() == BillingLineSettlementAction.ADJUSTED_FROM_DEPOSIT)) {
+            throw new ValidationException("Part of this bill came off the deposit. Move it back to the bill first.");
+        }
 
         bill.cancelOneOff(reason, actorUserId, Instant.now());
         BillingCycle saved = billingCycleRepository.saveAndFlush(bill);

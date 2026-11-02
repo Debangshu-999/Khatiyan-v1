@@ -1,9 +1,12 @@
+import { pinnedFooterEdge } from "@/components/pinned-footer";
+import { FilterBubble } from "@/components/filter-bubbles";
+import { LoadFailed, loadFailure } from "@/components/load-failed";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, BackHandler, Keyboard, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronRight, Info, Phone, Plus, ReceiptIndianRupee, ReceiptText, UserRound, Users, X } from "lucide-react-native";
+import { ChevronRight, Info, Phone, Plus, ReceiptIndianRupee, UserRound, Users, X } from "lucide-react-native";
 
 import { ListEnd } from "@/components/list-end";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -32,6 +35,7 @@ import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 
 const NO_PERSON_ILLUSTRATION = require("../assets/empty-states/No-Person_512x512.png");
 
@@ -70,6 +74,7 @@ export default function OwnerTenantBillsScreen() {
   const { colors, type } = useTheme();
   const insets = useSafeAreaInsets();
   const [addOpen, setAddOpen] = useState(false);
+  useQuickActionIntent({ "new-bill": () => setAddOpen(true) }, Boolean(selected && selected.propertyId === propertyId && canManageBilling), selected?.id);
 
   // The whole tenancy's bills arrive in one response, so this pages the RENDER
   // rather than the fetch — which is the only reason it can be this simple, and
@@ -126,6 +131,7 @@ export default function OwnerTenantBillsScreen() {
       surface={colors.surface}
     >
       <TenantBillsHeader
+        onBack={selected ? () => { selectTenant(null); return true; } : undefined}
         canManageBilling={canManageBilling}
         propertyName={property?.name ?? null}
         selectedTenantName={selected?.tenantName?.trim() || null}
@@ -156,22 +162,16 @@ export default function OwnerTenantBillsScreen() {
     {selected ? (
       <View
         style={{
+          ...pinnedFooterEdge(colors),
           backgroundColor: colors.surface,
-          borderCurve: "continuous",
-          borderTopColor: colors.border,
-          borderTopLeftRadius: radii.card,
-          borderTopRightRadius: radii.card,
-          borderTopWidth: 1,
           bottom: 0,
-          elevation: 12,
           gap: spacing.sm,
           left: 0,
-          paddingBottom: insets.bottom + spacing.sm,
+          paddingBottom: insets.bottom + spacing.md,
           paddingHorizontal: spacing.lg,
           paddingTop: spacing.md,
           position: "absolute",
           right: 0,
-          ...softShadow(colors.shadow, -4, 14),
         }}
       >
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
@@ -200,10 +200,12 @@ export default function OwnerTenantBillsScreen() {
 
 function TenantBillsHeader({
   canManageBilling,
+  onBack,
   propertyName,
   selectedTenantName,
 }: {
   canManageBilling: boolean;
+  onBack?: () => boolean | void;
   propertyName: string | null;
   selectedTenantName: string | null;
 }) {
@@ -219,6 +221,7 @@ function TenantBillsHeader({
     <ScreenHeader
       badge={!canManageBilling ? <ViewOnlyChip /> : null}
       italicTail="bills."
+      onBack={onBack}
       subtitle={description}
       title="Tenant"
       titleAdjustsFontSizeToFit
@@ -245,6 +248,11 @@ function TenantPicker({ onSelect, propertyId }: { onSelect: (tenancy: TenancySum
       [t.tenantName ?? "", t.tenantPhone ?? "", t.referenceCode].some((field) => field.toLowerCase().includes(needle)),
     );
   }, [search, tenancies]);
+
+  const loadFailed = loadFailure(tenanciesQuery);
+  if (loadFailed) {
+    return <LoadFailed error={loadFailed.error} onReload={loadFailed.reload} />;
+  }
 
   return (
     <View style={{ gap: spacing.md }}>
@@ -547,47 +555,5 @@ function AddOneOffBillSheet({ onClose, tenancy }: { onClose: () => void; tenancy
 }
 
 function FilterPill({ active, count, label, onPress }: { active: boolean; count: number; label: string; onPress: () => void }) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: active ? colors.primarySoft : colors.surfaceSunken,
-        borderCurve: "continuous",
-        borderRadius: 999,
-        flex: 1,
-        justifyContent: "center",
-        minHeight: 42,
-        minWidth: 0,
-        paddingHorizontal: spacing.xs,
-      }}
-    >
-      <FitText
-        numberOfLines={1}
-        style={[
-          type.caption,
-          {
-            color: active ? colors.primaryDeep : colors.muted,
-            fontFamily: fonts.sansSemiBold,
-            fontSize: 12,
-          },
-        ]}
-      >
-        {label} ({count})
-      </FitText>
-      <View
-        style={{
-          backgroundColor: active ? colors.primary : "transparent",
-          borderRadius: 999,
-          height: 2.5,
-          marginTop: 3,
-          width: 18,
-        }}
-      />
-    </AnimatedPressable>
-  );
+  return <FilterBubble active={active} count={count} label={label} onPress={onPress} />;
 }

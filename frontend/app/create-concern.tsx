@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AppTextInput } from "@/components/app-text-input";
 import { FieldError } from "@/components/field-error";
@@ -68,7 +69,8 @@ export default function CreateConcernScreen() {
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const [createConcern, createState] = useCreateConcernMutation();
-  const activeTenancy = useGetMyActiveTenancyQuery().data;
+  const activeTenancyQuery = useGetMyActiveTenancyQuery();
+  const activeTenancy = activeTenancyQuery.data;
   const [category, setCategory] = useState<ConcernCategory>("MAINTENANCE");
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -209,6 +211,11 @@ export default function CreateConcernScreen() {
       form.failFromServer(errorMessage(createError));
     }
   };
+
+  const loadFailed = loadFailure(activeTenancyQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   if (activeTenancy && tenancyNotStarted(activeTenancy.tenancy.startDate)) {
     return (

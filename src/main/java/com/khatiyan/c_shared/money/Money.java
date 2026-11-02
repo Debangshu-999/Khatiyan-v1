@@ -47,6 +47,28 @@ public record Money(long paise) {
     public String formatRupees() {
         long rupees = paise / 100;
         long fractional = Math.abs(paise % 100);
-        return "Rs. %,d.%02d".formatted(rupees, fractional);
+        return "Rs. %s.%02d".formatted(indianGrouped(rupees), fractional);
+    }
+
+    /**
+     * A whole number grouped the Indian way: 1,18,610, never 118,610 (user,
+     * 2026-11-01). Written by hand because Java cannot do it: {@code %,d} and
+     * {@code NumberFormat} group in threes even for the en-IN locale.
+     */
+    public static String indianGrouped(long number) {
+        String digits = Long.toString(Math.abs(number));
+        String sign = number < 0 ? "-" : "";
+        if (digits.length() <= 3) {
+            return sign + digits;
+        }
+        String head = digits.substring(0, digits.length() - 3);
+        StringBuilder grouped = new StringBuilder(sign);
+        for (int i = 0; i < head.length(); i++) {
+            if (i > 0 && (head.length() - i) % 2 == 0) {
+                grouped.append(',');
+            }
+            grouped.append(head.charAt(i));
+        }
+        return grouped.append(',').append(digits.substring(digits.length() - 3)).toString();
     }
 }

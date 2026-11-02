@@ -6,14 +6,15 @@ import {
   refreshPendingMarks,
   type PendingMarks,
   type WorkspaceSortMode,
+  type WorkspaceViewMode,
 } from "@/features/owner/workspace-sort";
 
-type WorkspaceSort = { customOrder: string[]; marks: PendingMarks; mode: WorkspaceSortMode };
+type WorkspaceSort = { customOrder: string[]; marks: PendingMarks; mode: WorkspaceSortMode; view: WorkspaceViewMode };
 
-const DEFAULT: WorkspaceSort = { customOrder: [], marks: {}, mode: "AZ" };
+const DEFAULT: WorkspaceSort = { customOrder: [], marks: {}, mode: "AZ", view: "list" };
 
 /**
- * The Manage tab's sort, kept per person on this device (user, 2026-10-04):
+ * The Manage tab's sort and list/grid view, kept per person on this device:
  * the mode they chose, the order they dragged the cards into, and for Dynamic,
  * when each module last got something waiting.
  *
@@ -44,7 +45,12 @@ export function useWorkspaceSort(
     void loadWorkspaceSortForUser(userId).then((stored) => {
       if (!active) return;
       if (stored) {
-        const read = { customOrder: stored.customOrder ?? [], marks: stored.marks ?? {}, mode: stored.mode ?? "AZ" };
+        const read: WorkspaceSort = {
+          customOrder: stored.customOrder ?? [],
+          marks: stored.marks ?? {},
+          mode: stored.mode ?? "AZ",
+          view: stored.view === "grid" ? "grid" : "list",
+        };
         saved.current = read;
         setSort(read);
       }
@@ -89,5 +95,9 @@ export function useWorkspaceSort(
     setSort((current) => ({ ...current, customOrder }));
   }, []);
 
-  return { ...sort, setCustomOrder, setMode };
+  const setView = useCallback((view: WorkspaceViewMode) => {
+    setSort((current) => ({ ...current, view }));
+  }, []);
+
+  return { ...sort, setCustomOrder, setMode, setView };
 }

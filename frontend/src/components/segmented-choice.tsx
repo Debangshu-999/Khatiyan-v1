@@ -27,12 +27,15 @@ export function SegmentedChoice<T extends string>({
   disabled,
   onChange,
   options,
+  radius = 0,
   value,
 }: {
   /** Greys the whole row and swallows presses — for a choice not yet available. */
   disabled?: boolean;
   onChange: (value: T) => void;
   options: SegmentedOption<T>[];
+  /** Optional softer corners; existing segmented controls keep their square shape. */
+  radius?: number;
   /** Null shows no selection, for a choice that must be made deliberately. */
   value: T | null;
 }) {
@@ -55,7 +58,7 @@ export function SegmentedChoice<T extends string>({
               backgroundColor: active ? colors.primary : colors.surface,
               borderColor: active ? colors.primary : colors.borderStrong,
               opacity: disabled ? 0.45 : 1,
-              borderRadius: 0,
+              borderRadius: radius,
               borderWidth: 1,
               flex: 1,
               justifyContent: "center",

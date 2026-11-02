@@ -1,10 +1,20 @@
 package com.khatiyan.a_auth.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -28,20 +38,35 @@ import com.khatiyan.c_shared.exception.ValidationException;
 @Service
 public class UserSessionService {
 
+    private static final Logger log = LoggerFactory.getLogger(UserSessionService.class);
+    private static final SecureRandom RANDOM = new SecureRandom();
+    /**
+     * How long a used refresh token is still honoured. The app may never have received
+     * the reply to using it, on a bad connection: that must not sign anyone out.
+     */
+    static final Duration REFRESH_GRACE = Duration.ofSeconds(30);
+
+    /** A renewal: the session it belongs to, and the new refresh token to hand back. */
+    public record RotatedRefresh(UUID userId, UUID sessionId, String refreshToken) {
+    }
+
     private final UserSessionRepository userSessionRepository;
     private final AuthStateCache authStateCache;
     private final ApplicationEventPublisher eventPublisher;
     private final int maxActiveSessions;
+    private final Duration sessionLifetime;
 
     public UserSessionService(
             UserSessionRepository userSessionRepository,
             AuthStateCache authStateCache,
             ApplicationEventPublisher eventPublisher,
-            @Value("${app.auth.max-active-sessions:4}") int maxActiveSessions) {
+            @Value("${app.auth.max-active-sessions:4}") int maxActiveSessions,
+            @Value("${app.jwt.refresh-token-expiry-days:30}") long refreshTokenExpiryDays) {
         this.userSessionRepository = userSessionRepository;
         this.authStateCache = authStateCache;
         this.eventPublisher = eventPublisher;
         this.maxActiveSessions = maxActiveSessions;
+        this.sessionLifetime = Duration.ofDays(refreshTokenExpiryDays);
     }
 
     /**
@@ -80,23 +105,77 @@ public class UserSessionService {
         authStateCache.sessionRevoked(session.getJti(), session.getExpiresAt());
     }
 
+    /** @return the new session's refresh token, which is not kept anywhere in the clear */
     @Transactional
-    public void open(
+    public String open(
             UUID userId,
             UUID sessionId,
             String deviceLabel,
             String platform,
-            Instant now,
-            Instant expiresAt) {
+            Instant now) {
         // Decided BEFORE the row is saved, or the row we just wrote would be the
         // prior sighting that proves the device is not new.
         boolean unfamiliar = isUnfamiliarDevice(userId, deviceLabel);
 
-        userSessionRepository.save(
-                UserSession.opened(userId, sessionId, deviceLabel, platform, now, expiresAt));
+        String refreshToken = newRefreshToken();
+        userSessionRepository.save(UserSession.opened(
+                userId, sessionId, deviceLabel, platform, now, now.plus(sessionLifetime), hash(refreshToken)));
 
         if (unfamiliar) {
             eventPublisher.publishEvent(new NewDeviceSignedInEvent(userId, deviceLabel));
+        }
+        return refreshToken;
+    }
+
+    /**
+     * Swaps a refresh token for a new one, and moves the session's end on, so someone who
+     * keeps using the app stays signed in and someone who stops is signed out.
+     *
+     * <p>A token works once. The one just used is honoured for {@link #REFRESH_GRACE} after,
+     * for a reply lost on the way back. Used again after that, it was copied: whoever holds
+     * it may not be the owner, and there is no telling which of the two is asking, so the
+     * session ends. Returns empty rather than throwing, or that revocation would roll back.
+     */
+    @Transactional
+    public Optional<RotatedRefresh> rotate(String presented, Instant now) {
+        String presentedHash = hash(presented);
+        Optional<UserSession> current = userSessionRepository.findByRefreshTokenHash(presentedHash);
+        String next = newRefreshToken();
+        if (current.isPresent()) {
+            UserSession session = current.get();
+            if (!session.isLive(now)) {
+                return Optional.empty();
+            }
+            session.rotateRefreshToken(hash(next), now, now.plus(sessionLifetime));
+            return Optional.of(new RotatedRefresh(session.getUserId(), session.getJti(), next));
+        }
+        Optional<UserSession> previous = userSessionRepository.findByPreviousRefreshTokenHash(presentedHash);
+        if (previous.isEmpty() || !previous.get().isLive(now)) {
+            return Optional.empty();
+        }
+        UserSession session = previous.get();
+        if (session.withinRefreshGrace(now, REFRESH_GRACE)) {
+            session.replaceRefreshTokenInGrace(hash(next), now.plus(sessionLifetime));
+            return Optional.of(new RotatedRefresh(session.getUserId(), session.getJti(), next));
+        }
+        log.warn("A used refresh token came back, ending the session sessionId={} userId={}", session.getJti(), session.getUserId());
+        session.revoke(now);
+        authStateCache.sessionRevoked(session.getJti(), session.getExpiresAt());
+        return Optional.empty();
+    }
+
+    private static String newRefreshToken() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    static String hash(String refreshToken) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(refreshToken.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is not available", impossible);
         }
     }
 

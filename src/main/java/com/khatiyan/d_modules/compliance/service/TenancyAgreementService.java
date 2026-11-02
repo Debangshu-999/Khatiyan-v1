@@ -119,6 +119,9 @@ public class TenancyAgreementService {
     /** Runs ordinary onboarding's own checks on an existing tenant's request. */
     private final Validator validator;
 
+    /** What a move-in checklist finds worse than the room's level is recorded as a damage (2026-10-29). */
+    private final com.khatiyan.d_modules.billing.damage.DamageRecordService damageRecords;
+
     public TenancyAgreementService(
             TenancyAgreementRepository agreementRepository,
             AgreementService agreementService,
@@ -132,7 +135,9 @@ public class TenancyAgreementService {
             VerificationModule verificationModule,
             AgreementAcceptanceWindow acceptanceWindow,
             ObjectMapper objectMapper,
-            Validator validator) {
+            Validator validator,
+            com.khatiyan.d_modules.billing.damage.DamageRecordService damageRecords) {
+        this.damageRecords = damageRecords;
         this.agreementRepository = agreementRepository;
         this.agreementService = agreementService;
         this.assembler = assembler;
@@ -324,7 +329,8 @@ public class TenancyAgreementService {
         return propertyModule.findRoomForDisplay(propertyId, roomId)
                 .map(room -> {
                     List<String> labels = new ArrayList<>();
-                    room.amenities().forEach(amenity -> labels.add(humanize(amenity.name())));
+                    // "Attached washroom", never "toilet", on the deed (user, 2026-10-29).
+                    room.amenities().forEach(amenity -> labels.add(humanize(amenity.name()).replace("toilet", "washroom")));
                     labels.addAll(room.customAmenities());
                     return labels;
                 })
@@ -585,12 +591,49 @@ public class TenancyAgreementService {
      * own move-out checklist (2026-10-29), with the stay.
      */
     private void recordMoveInChecklist(UUID actorUserId, OnboardTenancyWithAgreementRequest request, TenancyResponse tenancy) {
+        boolean monthly = tenancy.billingType() == com.khatiyan.d_modules.tenancy.model.TenancyBillingType.MONTHLY;
+        // Every monthly move-in records the room's condition (user, 2026-10-29).
+        if (monthly && request.moveInChecklist() == null) {
+            throw new ValidationException("Record the move-in checklist before onboarding.");
+        }
         if (request.moveInChecklist() != null) {
             tenancyModule.recordMoveInChecklist(tenancy.id(), actorUserId, request.moveInChecklist());
+            if (tenancy.roomId() != null) {
+                applyToRoomCondition(actorUserId, tenancy, request.moveInChecklist());
+            }
         }
         if (request.moveOutChecklist() != null) {
             tenancyModule.setMoveOutChecklist(tenancy.id(), request.moveOutChecklist());
         }
+    }
+
+    /**
+     * The checklist becomes the room's condition, and every item it finds worse
+     * than the room's level becomes a damage record with nobody responsible, so
+     * it can be repaired later (2026-10-29). Read before writing: the levels it
+     * is compared against are the room's as they were.
+     */
+    private void applyToRoomCondition(UUID actorUserId, TenancyResponse tenancy,
+            com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput checklist) {
+        java.util.Map<String, com.khatiyan.d_modules.property.model.DamageLevel> before = new java.util.HashMap<>();
+        propertyModule.roomConditions(tenancy.roomId()).forEach(condition ->
+                before.put(condition.itemName().trim().toLowerCase(Locale.ROOT), condition.level()));
+
+        List<com.khatiyan.d_modules.property.api.dto.RoomConditionWrite> writes = new ArrayList<>();
+        List<com.khatiyan.d_modules.billing.damage.DamageRecordService.FoundDamage> found = new ArrayList<>();
+        for (var item : checklist.items()) {
+            String section = item.section() == com.khatiyan.d_modules.tenancy.model.MoveInSection.BATHROOM ? "BATHROOM" : "ROOM";
+            writes.add(new com.khatiyan.d_modules.property.api.dto.RoomConditionWrite(
+                    item.name(), section, item.damageLevel(), item.photoUrls()));
+            var was = before.getOrDefault(item.name().trim().toLowerCase(Locale.ROOT),
+                    com.khatiyan.d_modules.property.model.DamageLevel.NA);
+            if (item.damageLevel().ordinal() > was.ordinal()) {
+                found.add(new com.khatiyan.d_modules.billing.damage.DamageRecordService.FoundDamage(
+                        item.name(), section, item.damageLevel(), item.photoUrls()));
+            }
+        }
+        propertyModule.applyMoveInConditions(tenancy.roomId(), actorUserId, writes);
+        damageRecords.recordFoundAtMoveIn(tenancy.propertyId(), tenancy.roomId(), actorUserId, found);
     }
 
     /** Result of agreement-path onboarding: the pending tenancy + its agreement. */
@@ -1162,6 +1205,27 @@ public class TenancyAgreementService {
                 .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId.toString()));
         propertyModule.ensureCanManage(actorUserId, tenancy.propertyId(), ManagerResource.TENANCY_CREATE);
         return verificationModule.grantsForTenancy(tenancyId);
+    }
+
+    /**
+     * How this stay's tenant was verified, for the tenant profile. Open to anyone
+     * who can see the stays here, unlike the sheet above, which spends money.
+     */
+    @Transactional(readOnly = true)
+    public com.khatiyan.d_modules.compliance.api.dto.TenantIdentityChecksResponse identityChecks(
+            UUID actorUserId, UUID tenancyId) {
+        TenancyResponse tenancy = tenancyModule.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId.toString()));
+        propertyModule.ensureCanView(actorUserId, tenancy.propertyId(), ManagerResource.TENANCIES);
+        var idCheck = tenancyModule.findIdCheckRecord(tenancyId).orElse(null);
+        String checkedByName = idCheck == null || idCheck.checkedByUserId() == null
+                ? null
+                : authModule.findById(idCheck.checkedByUserId()).map(user -> user.fullName()).orElse(null);
+        return com.khatiyan.d_modules.compliance.api.dto.TenantIdentityChecksResponse.of(
+                verificationModule.grantsForTenancy(tenancyId),
+                idCheck,
+                checkedByName,
+                tenancy.verifiedBeforeKhatiyan());
     }
 
     /**

@@ -33,11 +33,7 @@ class EndTenancyRequestTest {
         EndTenancyRequest request = new EndTenancyRequest(
                 List.of(),
                 false,
-                new DamageCharge(
-                        List.of("Mattress"),
-                        List.of(),
-                        ExitChargeInstrument.DEPOSIT,
-                        null),
+                new DamageCharge(List.of(java.util.UUID.randomUUID()), List.of()),
                 List.of(),
                 null);
 
@@ -53,11 +49,7 @@ class EndTenancyRequestTest {
                         "Early exit charge",
                         null)),
                 false,
-                new DamageCharge(
-                        List.of("Mattress"),
-                        List.of(),
-                        ExitChargeInstrument.ONE_OFF_BILL,
-                        null),
+                new DamageCharge(List.of(), List.of(java.util.UUID.randomUUID())),
                 List.of(),
                 null);
 

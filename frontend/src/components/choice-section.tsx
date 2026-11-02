@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 import { Text, View, type ViewStyle } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
@@ -9,9 +9,15 @@ import { useTheme } from "@/theme/use-theme";
 
 type LucideIcon = ComponentType<LucideProps>;
 
+/** Solid, so a chip's border cannot show darker through a see-through fill. */
+const FADED_BLACK = "#5C5C5C";
+/** A section with no icon, as on Property filters, selects in faded black (user, 2026-11-01). */
+const FadedSelection = createContext(false);
+
 /**
  * A titled block of choices: an icon disc, a caps title, one line saying what
- * is being asked, and the choices indented under the words.
+ * is being asked, and the choices indented under the words. With no icon, as on
+ * Property filters, the title is a bold sentence-case label (user, 2026-11-01).
  *
  * <p>Born in the discovery filter sheet and shared with the property editor, so
  * a searcher filtering on "Attached bathroom" and an owner declaring one are
@@ -19,6 +25,7 @@ type LucideIcon = ComponentType<LucideProps>;
  */
 export function ChoiceSection({
   below,
+  cardStyle,
   children,
   contentStyle,
   description,
@@ -32,41 +39,54 @@ export function ChoiceSection({
    * by side would be too narrow to read their labels.
    */
   below?: ReactNode;
+  cardStyle?: ViewStyle;
   children: ReactNode;
   contentStyle?: ViewStyle;
   description: string;
   /** A short line under the choices, for what an empty selection means. */
   footnote?: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
 
   return (
-    <ChoiceCard>
+    <FadedSelection.Provider value={!Icon}>
+    <ChoiceCard style={cardStyle}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.neutralSoft,
-            borderRadius: 999,
-            height: 48,
-            justifyContent: "center",
-            width: 48,
-          }}
-        >
-          <Icon color={colors.inkSoft} size={23} strokeWidth={2.2} />
-        </View>
+        {Icon ? (
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: colors.neutralSoft,
+              borderRadius: 999,
+              height: 48,
+              justifyContent: "center",
+              width: 48,
+            }}
+          >
+            <Icon color={colors.inkSoft} size={23} strokeWidth={2.2} />
+          </View>
+        ) : null}
         <View style={{ flex: 1, gap: 1 }}>
           <Text
             style={[
               type.eyebrow,
-              {
-                color: colors.inkSoft,
-                fontFamily: fonts.sansBold,
-                fontSize: 11.5,
-                letterSpacing: 0.65,
-              },
+              Icon
+                ? {
+                    color: colors.inkSoft,
+                    fontFamily: fonts.sansBold,
+                    fontSize: 11.5,
+                    letterSpacing: 0.65,
+                  }
+                : {
+                    color: colors.ink,
+                    fontFamily: fonts.sansBold,
+                    fontSize: 16,
+                    fontWeight: "800",
+                    letterSpacing: 0,
+                    textTransform: "none",
+                  },
             ]}
           >
             {title}
@@ -84,6 +104,7 @@ export function ChoiceSection({
       </View>
       {below}
     </ChoiceCard>
+    </FadedSelection.Provider>
   );
 }
 
@@ -150,11 +171,13 @@ export function ChoiceGrid<T extends string>({
 
 /** Pick any number, including none. */
 export function MultiChoiceGrid<T extends string>({
+  columns,
   getLabel,
   onToggle,
   options,
   selected,
 }: {
+  columns?: 2 | 3;
   getLabel: (value: T) => string;
   onToggle: (value: T) => void;
   options: readonly T[];
@@ -164,6 +187,7 @@ export function MultiChoiceGrid<T extends string>({
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
       {options.map((option) => (
         <ChoiceChip
+          columns={columns}
           key={option}
           label={getLabel(option)}
           onPress={() => onToggle(option)}
@@ -187,7 +211,9 @@ export function ChoiceChip({
   onPress: () => void;
   selected: boolean;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, isDark, fonts, type } = useTheme();
+  const faded = useContext(FadedSelection);
+  const selectedFill = faded && !isDark ? FADED_BLACK : colors.inkSoft;
 
   return (
     <AnimatedPressable
@@ -196,8 +222,8 @@ export function ChoiceChip({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: selected ? colors.inkSoft : colors.surface,
-        borderColor: selected ? colors.inkSoft : colors.border,
+        backgroundColor: selected ? selectedFill : colors.surface,
+        borderColor: selected ? selectedFill : colors.border,
         borderRadius: 12,
         borderWidth: 1,
         flexBasis: columns === 2 ? "46%" : "28%",

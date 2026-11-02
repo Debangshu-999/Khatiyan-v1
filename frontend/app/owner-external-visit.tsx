@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
 import { Text, View } from "react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
@@ -141,6 +142,11 @@ export default function OwnerExternalVisitScreen() {
     } catch (caught) {
       form.failFromServer(errorMessage(caught));
     }
+  }
+
+  const loadFailed = loadFailure(visitsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (

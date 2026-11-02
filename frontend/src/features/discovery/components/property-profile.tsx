@@ -10,7 +10,7 @@ import { openDialer } from "@/lib/dial";
 import { trackContactTap } from "@/features/analytics/use-profile-view";
 import type { PropertyDiscoveryDetail } from "@/store/services/discovery-api";
 import { NOTICE_PERIOD_LABELS } from "@/store/services/property-api";
-import { useSoftShadow } from "@/theme/shadows";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { formatDepositPaise, formatMoneyPaise, humanizeToken } from "../discovery-format";
@@ -21,22 +21,13 @@ import { FitText } from "@/components/fit-text";
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 
 /**
- * @param actions       Enquire, Visit and Booking, resting just below Contacts (user, 2026-10-17)
- * @param onActionsDock where that row sits, from the top of the profile. The screen floats the
- *                      same row until the page reaches it
  */
 export function PropertyProfile({
-  actions,
-  onActionsDock,
   property,
 }: {
-  actions?: ReactNode;
-  onActionsDock?: (y: number) => void;
   property: PropertyDiscoveryDetail;
 }) {
-  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
-  const toast = useToast();
   const facilities = [...(property.facilities ?? []), ...(property.customFacilities ?? [])];
   const imageUrls = property.imageUrls?.length
     ? property.imageUrls
@@ -71,41 +62,8 @@ export function PropertyProfile({
     void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destination}`);
   }
 
-  function showDummyAction(label: string) {
-    toast.warning(`${label} is not available yet.`);
-  }
-
   return (
     <View style={{ gap: spacing.xl }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end" }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: 21,
-            borderWidth: 1,
-            height: 42,
-            justifyContent: "center",
-            paddingHorizontal: spacing.md,
-            ...softShadow(colors.shadow, 2, 8, 0.12),
-          }}
-        >
-          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12 }}>
-            {humanizeToken(property.type)}
-          </Text>
-        </View>
-        <RoundIconButton
-          icon="bookmark-outline"
-          label="Save property"
-          onPress={() => showDummyAction("Save")}
-        />
-        <RoundIconButton
-          icon="share-variant-outline"
-          label="Share property"
-          onPress={() => showDummyAction("Share")}
-        />
-      </View>
 
       <PropertyMediaCarousel
         captions={(property.images ?? []).map((image) => image.caption)}
@@ -176,20 +134,15 @@ export function PropertyProfile({
       >
         <View
           style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            borderWidth: 1,
             flexDirection: "row",
             flexWrap: "wrap",
             gap: spacing.sm,
-            padding: spacing.sm,
+            justifyContent: "space-between",
           }}
         >
           <DetailCard icon="home-outline" label="Property type" value={humanizeToken(property.type)} />
           <DetailCard icon="currency-inr" label="Rent starts from" value={formatMoneyPaise(property.startingRoomRentPaise)} />
-          <DetailCard icon="database-outline" label="Deposit" value={formatDepositPaise(property.standardDepositPaise)} />
+          <DetailCard icon="sack-outline" label="Deposit" value={formatDepositPaise(property.standardDepositPaise)} />
           <DetailCard
             icon="calendar-month-outline"
             label="Stay type"
@@ -270,8 +223,6 @@ export function PropertyProfile({
 
       </ProfileSection>
 
-      {/* Where the floating row of actions comes to rest once the page is scrolled to its end. */}
-      {actions ? <View onLayout={(event) => onActionsDock?.(event.nativeEvent.layout.y)}>{actions}</View> : null}
     </View>
   );
 }
@@ -291,8 +242,49 @@ function ProfileSection({ children, title, trailing }: { children: ReactNode; ti
   );
 }
 
+/** The type and the Save and Share buttons, kept in the screen's fixed top bar (user, 2026-11-02). */
+export function ProfileTopActions({ property }: { property: PropertyDiscoveryDetail }) {
+  const { colors, fonts } = useTheme();
+  const toast = useToast();
+
+  function showDummyAction(label: string) {
+    toast.warning(`${label} is not available yet.`);
+  }
+
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 21,
+            borderWidth: 1,
+            height: 42,
+            justifyContent: "center",
+            paddingHorizontal: spacing.md,
+            ...softShadow(colors.shadow, 2, 8, 0.12),
+          }}
+        >
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12 }}>
+            {humanizeToken(property.type)}
+          </Text>
+        </View>
+        <RoundIconButton
+          icon="bookmark-outline"
+          label="Save property"
+          onPress={() => showDummyAction("Save")}
+        />
+        <RoundIconButton
+          icon="share-variant-outline"
+          label="Share property"
+          onPress={() => showDummyAction("Share")}
+        />
+      </View>
+  );
+}
+
 function RoundIconButton({ icon, label, onPress }: { icon: MaterialIconName; label: string; onPress: () => void }) {
-  const softShadow = useSoftShadow();
   const { colors } = useTheme();
   return (
     <AnimatedPressable
@@ -325,7 +317,6 @@ const BAN_RING = 34;
  *                across it (user, 2026-10-02, for electricity not included).
  */
 function QuickHighlight({ banned, crossed, icon, label }: { banned?: boolean; crossed?: boolean; icon: MaterialIconName; label: string }) {
-  const softShadow = useSoftShadow();
   const { colors, fonts } = useTheme();
   return (
     <View
@@ -341,7 +332,7 @@ function QuickHighlight({ banned, crossed, icon, label }: { banned?: boolean; cr
         minHeight: 78,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
-        ...softShadow(colors.shadow, 2, 8, 0.08),
+        ...softShadow(colors.shadow, 4, 12),
         width: "48%",
       }}
     >
@@ -395,6 +386,7 @@ function DetailCard({ icon, label, value }: { icon: MaterialIconName; label: str
     <View
       style={{
         alignItems: "center",
+        backgroundColor: colors.surface,
         borderColor: colors.border,
         borderCurve: "continuous",
         borderRadius: radii.card,
@@ -404,6 +396,7 @@ function DetailCard({ icon, label, value }: { icon: MaterialIconName; label: str
         minHeight: 92,
         padding: spacing.sm,
         width: "48%",
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <PropertyDetailIcon color={colors.inkSoft} icon={icon} size={25} />
@@ -420,6 +413,20 @@ function DetailCard({ icon, label, value }: { icon: MaterialIconName; label: str
 function PropertyDetailIcon({ color, icon, size }: { color: string; icon: MaterialIconName; size: number }) {
   if (icon === "air-conditioner") {
     return <AirVent color={color} size={size} strokeWidth={1.9} />;
+  }
+  if (icon === "sack-outline") {
+    // A money bag with a rupee on it, for the deposit (user, 2026-11-02). The icon set has none.
+    return (
+      <View style={{ height: size, width: size }}>
+        <MaterialCommunityIcons color={color} name={icon} size={size} />
+        <Text
+          allowFontScaling={false}
+          style={{ color, fontSize: size * 0.42, fontWeight: "800", left: 0, lineHeight: size * 0.5, position: "absolute", right: 0, textAlign: "center", top: size * 0.42 }}
+        >
+          ₹
+        </Text>
+      </View>
+    );
   }
 
   return <MaterialCommunityIcons color={color} name={icon} size={size} />;
@@ -438,13 +445,14 @@ function FacilitiesGrid({ facilities }: { facilities: string[] }) {
   return (
     <View
       style={{
-        backgroundColor: colors.surfaceRaised,
+        backgroundColor: colors.surface,
         borderColor: colors.border,
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.sm,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -519,6 +527,7 @@ function PreferenceCard({ icon, label, value }: { icon: MaterialIconName; label:
         minHeight: 136,
         padding: spacing.sm,
         width: "31%",
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <MaterialCommunityIcons color={colors.inkSoft} name={icon} size={27} />
@@ -542,7 +551,6 @@ function ContactCard({
   phone: string;
   role: "Owner" | "Manager";
 }) {
-  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
 
   return (
@@ -558,7 +566,7 @@ function ContactCard({
         gap: spacing.md,
         minHeight: 112,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 2, 8, 0.08),
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <MaterialCommunityIcons color={colors.kicker} name="account-circle-outline" size={48} />
@@ -614,12 +622,13 @@ function UnavailableContact({ message }: { message: string }) {
   return (
     <View
       style={{
-        backgroundColor: colors.surfaceRaised,
+        backgroundColor: colors.surface,
         borderColor: colors.border,
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
         padding: spacing.md,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <Text style={[type.bodyStrong, { color: colors.muted }]}>{message}</Text>

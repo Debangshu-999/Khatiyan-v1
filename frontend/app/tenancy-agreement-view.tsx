@@ -1,6 +1,7 @@
 import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -27,6 +28,11 @@ export default function TenancyAgreementViewScreen() {
   // deed here: its photos are the agreement (P1.1, 2026-10-28).
   const tenancy = useGetMyActiveTenancyQuery().data?.tenancy ?? null;
   const paperPhotos = tenancy?.agreementOnPaper ? tenancy.paperAgreementPhotoUrls ?? [] : [];
+
+  const loadFailed = loadFailure(agreementQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView>

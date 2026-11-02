@@ -1,6 +1,7 @@
 import { Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { WizardHeader } from "@/components/wizard-header";
@@ -25,6 +26,11 @@ export default function OwnerRoomTypesScreen() {
   const { propertyId } = useLocalSearchParams<{ propertyId?: string }>();
 
   const property = useGetPropertyQuery(propertyId ?? "", { skip: !propertyId });
+
+  const loadFailed = loadFailure(property);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <>

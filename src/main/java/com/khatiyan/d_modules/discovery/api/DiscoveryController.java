@@ -65,6 +65,7 @@ public class DiscoveryController {
             @RequestParam(required = false) List<SharingType> sharingTypes,
             @RequestParam(required = false) PropertyType propertyType,
             @RequestParam(defaultValue = "RELEVANCE") DiscoverySort sort,
+            @RequestParam(required = false) List<String> metroStationCodes,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return discoveryModule.searchVisibleProperties(
@@ -86,6 +87,7 @@ public class DiscoveryController {
                 sharingTypes,
                 propertyType,
                 sort,
+                metroStationCodes,
                 page,
                 size);
     }

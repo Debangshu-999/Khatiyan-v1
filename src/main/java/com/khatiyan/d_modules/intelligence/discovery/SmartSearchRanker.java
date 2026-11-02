@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.intelligence.discovery;
 
+import com.khatiyan.c_shared.money.Money;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -403,7 +404,7 @@ public class SmartSearchRanker {
     }
 
     private static String rupees(long paise) {
-        return "Rs " + String.format(Locale.ROOT, "%,d", paise / 100);
+        return "Rs " + Money.indianGrouped(paise / 100);
     }
 
     /** Exposed for the reason writer, which needs the same distance wording. */

@@ -3,6 +3,23 @@ import type { MoveInChecklistInput } from "@/store/services/tenancy-api";
 import type { TenancySummary } from "@/store/services/tenancy-api";
 import type { VerificationGrant } from "@/store/services/verification-api";
 
+/** The manual ID check on a stay. Gender and the age check are absent on old declarations. */
+export type TenantManualCheck = {
+  documentType: string | null;
+  lastFour: string | null;
+  gender: string | null;
+  ageChecked: boolean;
+  checkedAt: string | null;
+  checkedByName: string | null;
+};
+
+/** How a stay's tenant was verified. All empty means nobody verified them. */
+export type TenantIdentityChecks = {
+  ekycChecks: VerificationGrant[];
+  manualCheck: TenantManualCheck | null;
+  verifiedBeforeKhatiyan: boolean;
+};
+
 export type AgreementStatus = "DRAFT" | "PENDING_ACCEPTANCE" | "ACCEPTED" | "CANCELLED";
 
 /**
@@ -592,6 +609,12 @@ export const complianceApi = api.injectEndpoints({
       providesTags: ["Verification"],
     }),
 
+    /** How this stay's tenant was verified, for the tenant profile. */
+    getTenantIdentityChecks: builder.query<TenantIdentityChecks, string>({
+      query: (tenancyId) => ({ url: `/api/v1/compliance/tenancies/${tenancyId}/identity-checks` }),
+      providesTags: ["Verification"],
+    }),
+
     /**
      * Gives a pending stay's tenant more verification attempts, or orders a
      * check that was not ordered at onboarding. The tenant is notified.
@@ -632,6 +655,7 @@ export const {
   useOnboardTenantWithAgreementMutation,
   useOnboardExistingTenantMutation,
   usePreviewTenancyAgreementQuery,
+  useGetTenantIdentityChecksQuery,
   useProvideVerificationAttemptsMutation,
   useUpdatePropertyAgreementSettingsMutation,
   useUpdateTenancyAgreementTemplateMutation,

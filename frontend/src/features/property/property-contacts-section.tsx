@@ -1,3 +1,4 @@
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useState } from "react";
 import { Text, View } from "react-native";
@@ -70,6 +71,11 @@ export function PropertyContactsSection({ canManage, propertyId }: { canManage: 
     } catch (error) {
       opErrors.failFromServer(errorMessage(error) || "Could not remove the contact.");
     }
+  }
+
+  const loadFailed = loadFailure(contactsQuery);
+  if (loadFailed) {
+    return <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />;
   }
 
   return (

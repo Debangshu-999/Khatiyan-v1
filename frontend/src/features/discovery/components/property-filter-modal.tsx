@@ -1,25 +1,21 @@
-import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef, useState, type ComponentType } from "react";
-import { PanResponder, ScrollView, Text, TextInput, View, type ViewStyle } from "react-native";
+import { Modal, PanResponder, ScrollView, Text, TextInput, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Path } from "react-native-svg";
 import {
-  Bath,
-  BedDouble,
-  GraduationCap,
+  ArrowLeft,
   Mars,
   Search,
+  TrainFront,
   UsersRound,
-  UtensilsCrossed,
   Venus,
-  Wallet,
   X,
-  Zap,
   type LucideProps,
 } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { BottomSheetModal } from "@/components/bottom-sheet-modal";
-import { PropertyIcon } from "@/components/property-icon";
+import { TabSwitcher } from "@/components/tab-switcher";
+import { pinnedFooterEdge } from "@/components/pinned-footer";
 import { PropertyFiltersSkeleton } from "@/components/skeletons";
 import { ChoiceChip, ChoiceGrid, ChoiceSection, MultiChoiceGrid } from "@/components/choice-section";
 import {
@@ -35,10 +31,15 @@ import {
   type PropertyType,
   type RoomType,
 } from "@/store/services/property-api";
+import { useGetMetroSystemsQuery } from "@/store/services/metro-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { softShadow } from "@/theme/shadows";
 
 import { humanizeToken } from "../discovery-format";
+import { MetroLineScreen } from "../metro/metro-line-screen";
+import type { DevicePoint } from "../metro/metro-system";
+import { MetroTab } from "../metro/metro-tab";
 
 type LucideIcon = ComponentType<LucideProps>;
 
@@ -61,6 +62,8 @@ export type PropertyFilterState = {
   bathroomType: BathroomType | null;
   sharingTypes: RoomType[];
   propertyType: PropertyType | null;
+  /** Ticked stations: properties within 5 km of any. They replace the searched place while any are ticked. */
+  metroStationCodes: string[];
 };
 
 /**
@@ -74,6 +77,7 @@ export const emptyPropertyFilters: PropertyFilterState = {
   electricityIncluded: null,
   maxRentPaise: null,
   mealTypes: [],
+  metroStationCodes: [],
   minRentPaise: null,
   pgFor: null,
   preferredFor: null,
@@ -82,6 +86,8 @@ export const emptyPropertyFilters: PropertyFilterState = {
 };
 
 type PropertyFilterModalProps = {
+  /** The person's current city decides which metro the tab shows. */
+  deviceLocation: DevicePoint;
   filters: PropertyFilterState;
   onApply: (filters: PropertyFilterState) => void;
   onClose: () => void;
@@ -100,10 +106,37 @@ export function countActivePropertyFilters(filters: PropertyFilterState) {
   if (filters.bathroomType !== null) count += 1;
   if (filters.sharingTypes.length > 0) count += 1;
   if (filters.propertyType !== null) count += 1;
+  if (filters.metroStationCodes.length > 0) count += 1;
   return count;
 }
 
+/** The choices take the card's full width, with no empty column under its icon (user, 2026-10-31). */
+const FULL_WIDTH = { marginLeft: 0 };
+
+type FilterPageTab = "general" | "metro";
+
+// Filled in the tab's own colour, so white on the selected pill. Drawn here for
+// the hole in its head: lucide's pin only fills to a solid blob.
+function FilledMapPin({ color, size = 18 }: LucideProps) {
+  return (
+    <Svg height={size} viewBox="0 0 24 24" width={size}>
+      <Path
+        clipRule="evenodd"
+        d="M12 1a9 9 0 0 1 9 9c0 5.4-5.9 10.9-7.8 12.5a1.9 1.9 0 0 1-2.4 0C8.9 20.9 3 15.4 3 10a9 9 0 0 1 9-9zm0 5.75a3.25 3.25 0 1 0 0 6.5a3.25 3.25 0 0 0 0-6.5z"
+        fill={color}
+        fillRule="evenodd"
+      />
+    </Svg>
+  );
+}
+
+const FILTER_PAGE_TABS: { icon: LucideIcon; label: string; value: FilterPageTab }[] = [
+  { icon: FilledMapPin, label: "General search", value: "general" },
+  { icon: TrainFront, label: "Search along metro", value: "metro" },
+];
+
 export function PropertyFilterModal({
+  deviceLocation,
   filters,
   onApply,
   onClose,
@@ -113,22 +146,51 @@ export function PropertyFilterModal({
 }: PropertyFilterModalProps) {
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
+  // Direct, not useSoftShadow: this opens from a tab, whose shadow phones do not draw.
+  const raisedCard = softShadow(colors.shadow, 4, 12);
 
   // The sheet's skeleton holds while it slides up (user, 2026-10-02): the
   // eight sections of chips are the heaviest thing on the frame, and laying
   // them out on the same frames as the slide made the opening stutter.
   const [contentReady, setContentReady] = useState(false);
+  const [pageTab, setPageTab] = useState<FilterPageTab>("general");
+  const [openLineCode, setOpenLineCode] = useState<string | null>(null);
+  // Here, not in the tab: the tab unmounts while a line is open.
+  const [pickedCityCode, setPickedCityCode] = useState<string | null>(null);
+  const systemsQuery = useGetMetroSystemsQuery(undefined, { skip: !visible });
+  const openLine =
+    systemsQuery.data?.flatMap((system) => system.lines).find((line) => line.code === openLineCode) ?? null;
+  // Reopens where the ticks are, so somebody who searched by metro sees them.
+  const opensOnMetro = filters.metroStationCodes.length > 0;
+  const codesOnOpening = useRef("");
   useEffect(() => {
     if (!visible) {
       setContentReady(false);
+      setOpenLineCode(null);
       return;
     }
+    setPageTab(opensOnMetro ? "metro" : "general");
+    codesOnOpening.current = filters.metroStationCodes.join();
     const timer = setTimeout(() => setContentReady(true), SHEET_ENTER_MS);
     return () => clearTimeout(timer);
   }, [visible]);
 
   function update(partial: Partial<PropertyFilterState>) {
     onUpdate({ ...filters, ...partial });
+  }
+
+  // Back from a line returns to the tab, not out of the filters.
+  function handleBack() {
+    if (openLine) {
+      setOpenLineCode(null);
+      return;
+    }
+    // The metro tab has no Search button, so leaving with changed ticks is what applies them.
+    if (filters.metroStationCodes.join() !== codesOnOpening.current) {
+      onApply(filters);
+      return;
+    }
+    onClose();
   }
 
   function toggleMeal(meal: MealType) {
@@ -146,91 +208,69 @@ export function PropertyFilterModal({
   }
 
   return (
-    <BottomSheetModal
+    // A page of its own over the tab, with the wallet history's header (user, 2026-10-31).
+    <Modal
+      animationType="slide"
       navigationBarTranslucent
-      onRequestClose={onClose}
+      onRequestClose={handleBack}
       statusBarTranslucent
+      transparent={false}
       visible={visible}
     >
-      {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        <View
-          style={{
-            backgroundColor: colors.surfaceRaised,
-            borderTopLeftRadius: 28,
-            borderTopRightRadius: 28,
-            maxHeight: "94%",
-            overflow: "hidden",
-          }}
-        >
-          <View
-            style={{
-              alignSelf: "center",
-              backgroundColor: colors.borderStrong,
-              borderRadius: 999,
-              height: 5,
-              marginTop: spacing.sm,
-              width: 42,
-            }}
+      <View style={{ backgroundColor: colors.surface, flex: 1, paddingTop: insets.top }}>
+        {openLine ? (
+          <MetroLineScreen
+            line={openLine}
+            onBack={handleBack}
+            onChange={(metroStationCodes) => update({ metroStationCodes })}
+            onDone={() => onApply(filters)}
+            selected={filters.metroStationCodes}
           />
-          <View
-            style={{
-              alignItems: "center",
-              flexDirection: "row",
-              justifyContent: "space-between",
-              paddingBottom: spacing.md,
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.md,
-            }}
-          >
-            <View style={{ flex: 1, gap: 2 }}>
-              <ModalTitle
-                style={{
-                  color: colors.ink,
-                  fontFamily: fonts.display,
-                  fontSize: 24,
-                  letterSpacing: -0.45,
-                }}
-              >
-                Property filters
-              </ModalTitle>
-              <Text style={[type.modalDescription, { color: colors.muted }]}>
-                Refine listed PG and hostel profiles
-              </Text>
-            </View>
+        ) : (<>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 14, paddingHorizontal: 18, paddingVertical: 16 }}>
             <AnimatedPressable
-              accessibilityLabel="Close filters"
+              accessibilityLabel="Back"
               accessibilityRole="button"
-              // A smaller disc than before, the same 34pt as the sort sheet's
-              // close. The wider hitSlop keeps the tap target as large as it was.
-              hitSlop={14}
-              onPress={() => dismiss()}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.neutralSoft,
-                borderRadius: 999,
-                height: 34,
-                justifyContent: "center",
-                width: 34,
-              }}
+              onPress={handleBack}
+              style={{ alignItems: "center", borderColor: colors.border, borderRadius: 999, borderWidth: 1, height: 36, justifyContent: "center", width: 36 }}
             >
-              <X color={colors.muted} size={18} strokeWidth={2.3} />
+              <ArrowLeft color={colors.ink} size={21} strokeWidth={2.75} />
             </AnimatedPressable>
+            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 18 }}>Property filters</Text>
+          </View>
+
+          <View style={{ paddingBottom: spacing.sm, paddingHorizontal: spacing.md }}>
+            <TabSwitcher active={pageTab} onChange={setPageTab} options={FILTER_PAGE_TABS} />
           </View>
 
           <ScrollView
             contentContainerStyle={{
+              flexGrow: 1,
               gap: spacing.md,
-              paddingBottom: 116 + insets.bottom,
+              // The metro tab has no footer, and its credit sits at the foot of the page.
+              paddingBottom: (pageTab === "metro" ? spacing.md : 116) + insets.bottom,
               paddingHorizontal: spacing.md,
               paddingTop: spacing.xs,
             }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {!contentReady ? <PropertyFiltersSkeleton /> : (<>
+            {!contentReady ? <PropertyFiltersSkeleton /> : pageTab === "metro" ? (
+              <View style={{ flexGrow: 1, paddingTop: spacing.md }}>
+                <MetroTab
+                  deviceLocation={deviceLocation}
+                  onChange={(metroStationCodes) => update({ metroStationCodes })}
+                  onOpenLine={setOpenLineCode}
+                  onPickCity={setPickedCityCode}
+                  pickedCityCode={pickedCityCode}
+                  selected={filters.metroStationCodes}
+                />
+              </View>
+            ) : (<>
             <ChoiceSection
+              cardStyle={raisedCard}
+              contentStyle={FULL_WIDTH}
               description="What kind of place are you looking for?"
-              icon={PropertyIcon}
               title="Property type"
             >
               <ChoiceGrid
@@ -245,13 +285,14 @@ export function PropertyFilterModal({
                 visible profile with no property-type restriction, so hostels
                 come back alongside PGs — the heading has to cover both. */}
             <ChoiceSection
+              cardStyle={raisedCard}
+              contentStyle={FULL_WIDTH}
               description="Who can stay at this property?"
-              icon={UsersRound}
               title="PG/Hostel for"
             >
               <ChoiceGrid
-                getIcon={(option) => PG_FOR_ICONS[option]}
-                getLabel={(option) => (option === "ANYONE" ? "Any" : humanizeToken(option))}
+                getIcon={(option) => (option === "ANYONE" ? undefined : PG_FOR_ICONS[option])}
+                getLabel={(option) => (option === "ANYONE" ? "Anyone" : humanizeToken(option))}
                 options={PG_FOR_OPTIONS}
                 selected={filters.pgFor ?? "ANYONE"}
                 onSelect={(value) => update({ pgFor: value === "ANYONE" ? null : value })}
@@ -259,9 +300,34 @@ export function PropertyFilterModal({
             </ChoiceSection>
 
             <ChoiceSection
-              contentStyle={{ marginLeft: 0 }}
+              cardStyle={raisedCard}
+              contentStyle={FULL_WIDTH}
+              description="Select one or more room occupancies"
+              title="Room sharing"
+            >
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                <ChoiceChip
+                  columns={2}
+                  label="Any"
+                  onPress={() => update({ sharingTypes: [] })}
+                  selected={filters.sharingTypes.length === 0}
+                />
+                {ROOM_TYPES.map((sharingType) => (
+                  <ChoiceChip
+                    columns={2}
+                    key={sharingType}
+                    label={sharingType === "FOUR_SHARING" ? "Four" : humanizeToken(sharingType)}
+                    onPress={() => toggleSharing(sharingType)}
+                    selected={filters.sharingTypes.includes(sharingType)}
+                  />
+                ))}
+              </View>
+            </ChoiceSection>
+
+            <ChoiceSection
+              cardStyle={raisedCard}
+              contentStyle={FULL_WIDTH}
               description="Set your preferred monthly budget"
-              icon={Wallet}
               title="Budget"
             >
               <RentRange
@@ -277,8 +343,9 @@ export function PropertyFilterModal({
             </ChoiceSection>
 
             <ChoiceSection
+              cardStyle={raisedCard}
+              contentStyle={FULL_WIDTH}
               description="Who is this property suitable for?"
-              icon={GraduationCap}
               title="Preferred for"
             >
               <ChoiceGrid
@@ -290,12 +357,14 @@ export function PropertyFilterModal({
             </ChoiceSection>
 
             <ChoiceSection
+              cardStyle={raisedCard}
+              contentStyle={FULL_WIDTH}
               description="Which meals should be included?"
-              icon={UtensilsCrossed}
               title="Meals included"
             >
               <MultiChoiceGrid
-                getLabel={humanizeToken}
+                columns={2}
+                getLabel={(meal) => (meal === "EVENING_SNACKS" ? "Snacks" : humanizeToken(meal))}
                 onToggle={toggleMeal}
                 options={MEAL_TYPES}
                 selected={filters.mealTypes}
@@ -303,8 +372,9 @@ export function PropertyFilterModal({
             </ChoiceSection>
 
             <ChoiceSection
+              cardStyle={raisedCard}
+              contentStyle={FULL_WIDTH}
               description="Is electricity included in the rent?"
-              icon={Zap}
               title="Electricity included"
             >
               <BooleanChoice
@@ -314,8 +384,9 @@ export function PropertyFilterModal({
             </ChoiceSection>
 
             <ChoiceSection
+              cardStyle={raisedCard}
+              contentStyle={FULL_WIDTH}
               description="Choose the bathroom arrangement"
-              icon={Bath}
               title="Bathroom type"
             >
               <ChoiceGrid
@@ -325,38 +396,14 @@ export function PropertyFilterModal({
                 onSelect={(value) => update({ bathroomType: value === "ANY" ? null : (value as BathroomType) })}
               />
             </ChoiceSection>
-
-            <ChoiceSection
-              description="Select one or more room occupancies"
-              icon={BedDouble}
-              title="Room sharing"
-            >
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                <ChoiceChip
-                  columns={2}
-                  label="Any sharing"
-                  onPress={() => update({ sharingTypes: [] })}
-                  selected={filters.sharingTypes.length === 0}
-                />
-                {ROOM_TYPES.map((sharingType) => (
-                  <ChoiceChip
-                    columns={2}
-                    key={sharingType}
-                    label={humanizeToken(sharingType)}
-                    onPress={() => toggleSharing(sharingType)}
-                    selected={filters.sharingTypes.includes(sharingType)}
-                  />
-                ))}
-              </View>
-            </ChoiceSection>
             </>)}
           </ScrollView>
 
+          {pageTab === "metro" ? null : (
           <View
             style={{
-              backgroundColor: colors.background,
-              borderTopColor: colors.border,
-              borderTopWidth: 1,
+              ...pinnedFooterEdge(colors),
+              backgroundColor: colors.surface,
               bottom: 0,
               flexDirection: "row",
               gap: spacing.sm,
@@ -380,13 +427,14 @@ export function PropertyFilterModal({
             <FilterFooterButton
               icon={Search}
               label="Search"
-              onPress={() => dismiss(() => onApply(filters))}
+              onPress={() => onApply(filters)}
               style={{ flex: 1.1 }}
             />
           </View>
-        </View>
-      </View>}
-    </BottomSheetModal>
+          )}
+        </>)}
+      </View>
+    </Modal>
   );
 }
 
@@ -463,9 +511,10 @@ function FilterFooterButton({
 const RENT_MIN = 0;
 const RENT_MAX = 100000;
 const RENT_STEP = 1000;
+const SLIDER_TOUCH = 44;
 
 /**
- * Budget: a slider for the ceiling, and two boxes for anyone who would rather
+ * Budget: a slider for the range, and two boxes for anyone who would rather
  * type it.
  *
  * <p>The slider drives the MAX only. A single thumb cannot express two ends, and
@@ -496,10 +545,7 @@ function RentRange({
 
   return (
     <View style={{ gap: spacing.md }}>
-      <RentSlider
-        onChange={(rupees) => onChange({ max: rupees, min: Math.min(minRupees, rupees || RENT_MAX) })}
-        value={maxRupees}
-      />
+      <RentSlider max={maxRupees} min={minRupees} onCommit={onChange} />
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <View
@@ -606,117 +652,161 @@ function RentRange({
   );
 }
 
-function RentSlider({ onChange, value }: { onChange: (rupees: number) => void; value: number }) {
+/**
+ * The budget as a range: two handles and the range in words (user, 2026-10-31).
+ *
+ * <p>A drag stays inside this component and reaches the filters only when the
+ * finger lifts. Sending every move up re-rendered the whole Discovery tab under
+ * the finger, which is what made it lag.
+ */
+function RentSlider({
+  max,
+  min,
+  onCommit,
+}: {
+  /** 0 is no ceiling. */
+  max: number;
+  /** 0 is no floor. */
+  min: number;
+  onCommit: (next: { max: number; min: number }) => void;
+}) {
   const { colors, fonts, type } = useTheme();
-  const trackRef = useRef<View>(null);
-  const trackLeftRef = useRef(0);
-  const trackWidthRef = useRef(0);
   const [trackWidth, setTrackWidth] = useState(0);
+  const [low, setLow] = useState(min);
+  const [high, setHigh] = useState(max || RENT_MAX);
+  const [dragging, setDragging] = useState(false);
+  // What a gesture reads: its handlers are made once, so they must not close over a render.
+  const live = useRef({ commit: onCommit, high, low, width: 0 });
+  live.current.commit = onCommit;
+  live.current.high = high;
+  live.current.low = low;
 
-  function measure() {
-    trackRef.current?.measureInWindow((x, _y, width) => {
-      trackLeftRef.current = x;
-      trackWidthRef.current = width;
-      setTrackWidth(width);
+  // Typed into the boxes, or reset: follow, unless a finger is on a handle.
+  useEffect(() => {
+    if (!dragging) {
+      setLow(min);
+      setHigh(max || RENT_MAX);
+    }
+  }, [dragging, max, min]);
+
+  function commit(nextLow: number, nextHigh: number) {
+    live.current.commit({ max: nextHigh >= RENT_MAX ? 0 : nextHigh, min: nextLow });
+  }
+
+  function handle(which: "high" | "low") {
+    let start = 0;
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        start = live.current[which];
+        setDragging(true);
+      },
+      onPanResponderMove: (_event, gesture) => {
+        const width = live.current.width;
+        if (width <= 0) {
+          return;
+        }
+        const raw = start + (gesture.dx / width) * RENT_MAX;
+        const stepped = Math.round(raw / RENT_STEP) * RENT_STEP;
+        if (which === "low") {
+          setLow(Math.min(Math.max(stepped, RENT_MIN), live.current.high - RENT_STEP));
+        } else {
+          setHigh(Math.max(Math.min(stepped, RENT_MAX), live.current.low + RENT_STEP));
+        }
+      },
+      onPanResponderRelease: () => {
+        setDragging(false);
+        commit(live.current.low, live.current.high);
+      },
+      onPanResponderTerminate: () => {
+        setDragging(false);
+        commit(live.current.low, live.current.high);
+      },
+      // The page scrolls too: a handle keeps the finger once it has it.
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onStartShouldSetPanResponder: () => true,
     });
   }
 
-  function setFromPageX(pageX: number) {
-    const width = trackWidthRef.current;
-    if (width <= 0) {
-      return;
-    }
-    const ratio = Math.min(Math.max((pageX - trackLeftRef.current) / width, 0), 1);
-    const stepped = Math.round((RENT_MIN + ratio * (RENT_MAX - RENT_MIN)) / RENT_STEP) * RENT_STEP;
-    onChange(Math.min(Math.max(stepped, RENT_MIN), RENT_MAX));
-  }
+  const lowHandle = useRef(handle("low")).current;
+  const highHandle = useRef(handle("high")).current;
 
-  const responder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (event) => setFromPageX(event.nativeEvent.pageX),
-      onPanResponderMove: (event) => setFromPageX(event.nativeEvent.pageX),
-    }),
-  ).current;
+  const rupees = (value: number) => `₹${value.toLocaleString("en-IN")}`;
+  const noCeiling = high >= RENT_MAX;
+  // Words light, numbers bold (user, 2026-10-31).
+  const words = (text: string) => <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 15 }}>{text}</Text>;
+  const number = (value: number) => <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>{rupees(value)}</Text>;
+  const range =
+    low === 0 && noCeiling
+      ? <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>Any budget</Text>
+      : low === 0
+        ? <>{words("Up to ")}{number(high)}</>
+        : noCeiling
+          ? <>{words("From ")}{number(low)}</>
+          : <>{number(low)}{words(" to ")}{number(high)}</>;
 
-  const ratio = (value - RENT_MIN) / (RENT_MAX - RENT_MIN);
-  const filledWidth = Math.max(ratio * trackWidth, 0);
-  const thumbSize = 24;
-  const thumbLeft = Math.min(
-    Math.max(ratio * trackWidth - thumbSize / 2, 0),
-    Math.max(trackWidth - thumbSize, 0),
+  const lowX = (low / RENT_MAX) * trackWidth;
+  const highX = (high / RENT_MAX) * trackWidth;
+
+  const thumb = (x: number, panHandlers: object, label: string) => (
+    <View
+      {...panHandlers}
+      accessibilityLabel={label}
+      style={{
+        alignItems: "center",
+        height: SLIDER_TOUCH,
+        justifyContent: "center",
+        left: x - SLIDER_TOUCH / 2,
+        position: "absolute",
+        top: 0,
+        width: SLIDER_TOUCH,
+      }}
+    >
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderColor: colors.primary,
+          borderRadius: 999,
+          borderWidth: 2,
+          height: 26,
+          width: 26,
+          ...softShadow(colors.shadow, 2, 6),
+        }}
+      />
+    </View>
   );
 
   return (
-    <View
-      style={{
-        backgroundColor: colors.primarySoft,
-        borderRadius: 14,
-        gap: spacing.sm,
-        padding: spacing.md,
-      }}
-    >
-      <View style={{ gap: 1 }}>
-        <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansMedium }]}>
-          Up to
-        </Text>
-        <Text style={{ color: colors.primaryDeep, fontFamily: fonts.display, fontSize: 29, letterSpacing: -0.65 }}>
-          {value === 0 ? "Any rent" : `₹${value.toLocaleString("en-IN")}`}
-        </Text>
-      </View>
-
-      <View ref={trackRef} {...responder.panHandlers} onLayout={measure} style={{ height: 36, justifyContent: "center" }}>
-        <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 6 }} />
+    <View style={{ gap: spacing.xs }}>
+      <Text>{range}</Text>
+      {/* Inset by half a handle, so both can reach the ends without leaving the card. */}
+      <View style={{ height: SLIDER_TOUCH, marginHorizontal: 13 }}>
         <View
-          style={{
-            backgroundColor: colors.ink,
-            borderRadius: 999,
-            height: 6,
-            left: 0,
-            position: "absolute",
-            width: filledWidth,
+          onLayout={(event) => {
+            live.current.width = event.nativeEvent.layout.width;
+            setTrackWidth(event.nativeEvent.layout.width);
           }}
+          style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 6, marginTop: (SLIDER_TOUCH - 6) / 2 }}
         />
         <View
+          pointerEvents="none"
           style={{
-            backgroundColor: colors.surface,
-            borderColor: colors.ink,
+            backgroundColor: colors.primary,
             borderRadius: 999,
-            borderWidth: 2,
-            elevation: 4,
-            height: thumbSize,
-            left: thumbLeft,
+            height: 6,
+            left: lowX,
             position: "absolute",
-            shadowColor: "#000000",
-            shadowOffset: { height: 3, width: 0 },
-            shadowOpacity: 0.22,
-            shadowRadius: 3,
-            width: thumbSize,
+            top: (SLIDER_TOUCH - 6) / 2,
+            width: Math.max(highX - lowX, 0),
           }}
-        >
-          <View
-            style={{
-              backgroundColor: colors.ink,
-              borderRadius: 999,
-              height: 8,
-              left: "50%",
-              marginLeft: -1,
-              position: "absolute",
-              top: 6,
-              width: 2,
-            }}
-          />
-        </View>
+        />
+        {thumb(lowX, lowHandle.panHandlers, "Lowest rent")}
+        {thumb(highX, highHandle.panHandlers, "Highest rent")}
       </View>
-
       <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: colors.kicker }]}>
-          ₹0
-        </Text>
-        <Text style={[type.caption, { color: colors.kicker }]}>
-          ₹{RENT_MAX.toLocaleString("en-IN")}
-        </Text>
+        <Text style={[type.caption, { color: colors.kicker }]}>₹0</Text>
+        <Text style={[type.caption, { color: colors.kicker }]}>{`${rupees(RENT_MAX)}+`}</Text>
       </View>
     </View>
   );

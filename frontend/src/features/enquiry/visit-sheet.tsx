@@ -3,6 +3,7 @@ import { ScrollView, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { CalendarDays } from "lucide-react-native";
 
+import { LoadFailedCard } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -290,7 +291,9 @@ export function VisitSheet({
         ) : null
       }
       onBack={cancelStep ? () => setCancelling(false) : onBack}
+      contentMaxSize="tall"
       onClose={onClose}
+      size="content"
       title={cancelStep ? "Cancel visit" : moving || loadingVisit ? "Manage visit" : "Schedule a visit"}
     >
       {cancelStep && visit ? (
@@ -362,26 +365,29 @@ export function VisitSheet({
 
           {/* No hours set: an empty state carrying the Visiting Hours card's own
               mark (user, 2026-10-02), so management recognises where to set them. */}
-          {picking && !loading && days.length === 0 ? (
+          {picking && !loading && (visit ? moveOptions : availability).isError ? (
+            <LoadFailedCard
+              error={(visit ? moveOptions : availability).error}
+              onReload={() => void (visit ? moveOptions : availability).refetch()}
+            />
+          ) : null}
+
+          {picking && !loading && days.length === 0 && !(visit ? moveOptions : availability).isError ? (
             <EmptyState
               artworkNode={<PropertyVisitsIcon size={64} />}
               compact
               description={
-                (visit ? moveOptions.isError : availability.isError)
-                  ? "Could not load the visit slots. Close this and try again."
-                  : visit
-                    ? // Moving, and the server offers nowhere to move it to right now.
-                      moveOptions.data?.refusal ?? "There is no slot to move this visit to right now."
-                    : viewer !== "ENQUIRER"
-                      ? "Set them in Property workspace, under Visiting Hours."
-                      : "Visits open up here once the property sets its hours."
+                visit
+                  ? // Moving, and the server offers nowhere to move it to right now.
+                    moveOptions.data?.refusal ?? "There is no slot to move this visit to right now."
+                  : viewer !== "ENQUIRER"
+                    ? "Set them in Property workspace, under Visiting Hours."
+                    : "Visits open up here once the property sets its hours."
               }
               title={
-                (visit ? moveOptions.isError : availability.isError)
-                  ? "Slots unavailable"
-                  : visit
-                    ? "No slot to move to"
-                    : "No visiting hours yet"
+                visit
+                  ? "No slot to move to"
+                  : "No visiting hours yet"
               }
             />
           ) : null}

@@ -1,3 +1,5 @@
+import { SheetShell } from "@/components/sheet-shell";
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { VisitSheet } from "@/features/enquiry/visit-sheet";
 import { useGetEnquiryChatActionsQuery } from "@/store/services/enquiry-chat-api";
 
@@ -24,6 +26,15 @@ export function ManageVisitSheet({
   propertyId: string;
 }) {
   const actions = useGetEnquiryChatActionsQuery(enquiryId, { refetchOnMountOrArgChange: true });
+
+  const loadFailed = loadFailure(actions);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title="Manage visit">
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
+  }
 
   return (
     <VisitSheet

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { AirVent, BedDouble, Building2, CalendarClock, Check, ChevronDown, Filter, IndianRupee, RotateCcw, Search } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -241,6 +242,11 @@ export default function OwnerVacancyFinderScreen() {
   const matchBeds = nowMatches.reduce((sum, room) => sum + room.availableVacancies, 0);
   const loadingUpcoming = showUpcoming && tenanciesQuery.isFetching && (tenanciesQuery.data ?? []).length === 0;
 
+  const loadFailed = loadFailure(propertiesQuery, roomsQuery, tenanciesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView
       contentContainerStyle={{ gap: spacing.md, paddingTop: spacing.xs }}
@@ -268,10 +274,11 @@ export default function OwnerVacancyFinderScreen() {
               {/* Three mutually exclusive peers — the shared segmented
                   control, not a wrapped row of pills. */}
               <View style={{ gap: spacing.xs }}>
-                <Text style={[type.caption, { color: colors.muted }]}>
+                <Text style={[type.label, { color: colors.muted }]}>
                   Conditioning
                 </Text>
                 <SegmentedChoice
+                  radius={8}
                   onChange={(value) => updateDraft("conditioning", value)}
                   options={["ANY", ...ROOM_CONDITIONINGS].map((option) => ({
                     label: option === "ANY" ? "Any" : humanizeToken(option),
@@ -285,6 +292,7 @@ export default function OwnerVacancyFinderScreen() {
                   pills, so this one collapses into a picker. */}
               <OptionPicker
                 label="Room type"
+                labelOutside
                 onChange={(value) => updateDraft("roomType", value)}
                 options={["ANY", ...ROOM_TYPES] as RoomTypeFilter[]}
                 value={draft.roomType}
@@ -529,7 +537,7 @@ function OptionPicker<T extends string>({
 
   const trigger = labelOutside ? (
     <View style={{ gap: 6 }}>
-      <Text style={[type.label, { color: colors.inkSoft }]}>
+      <Text style={[type.label, { color: colors.muted }]}>
         {label}
       </Text>
       <AnimatedPressable
@@ -589,7 +597,7 @@ function OptionPicker<T extends string>({
       {trigger}
 
       {open ? (
-        <SheetShell onClose={() => setOpen(false)} title={`Filter by ${label.toLowerCase()}`}>
+        <SheetShell onClose={() => setOpen(false)} size="content" title={`Filter by ${label.toLowerCase()}`}>
           <View style={{ gap: spacing.xs }}>
             {options.map((option) => {
               const active = option === value;
@@ -703,7 +711,7 @@ function UpcomingVacanciesToggle({ checked, onToggle }: { checked: boolean; onTo
       >
         {checked ? <Check color={colors.onPrimary} size={14} strokeWidth={3} /> : null}
       </View>
-      <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
+      <Text style={[type.label, { color: colors.muted, flexShrink: 1 }]}>
         Show upcoming future vacancies
       </Text>
     </Pressable>

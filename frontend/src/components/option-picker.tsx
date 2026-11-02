@@ -1,13 +1,14 @@
+import { HelpModalClose } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { ChevronDisc } from "@/components/chevron-disc";
 import { CenterModal } from "@/components/center-modal";
-import { useState, type ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { Modal, Text, View } from "react-native";
-import { ChevronDown, Filter, X } from "lucide-react-native";
+import { ChevronDown, Filter } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { FieldError } from "@/components/field-error";
-import { IconButton, RequiredMark } from "@/features/owner/owner-ui";
+import { RequiredMark } from "@/features/owner/owner-ui";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { SheetShell } from "@/components/sheet-shell";
 import { spacing } from "@/theme/spacing";
@@ -111,6 +112,7 @@ export function SingleOptionPicker<T extends string>({
   optionIcon,
   options,
   required,
+  sheetSize,
   showIcon = true,
   title,
   value,
@@ -133,6 +135,8 @@ export function SingleOptionPicker<T extends string>({
   onChange: (value: T) => void;
   options: PickerOption<T>[];
   required?: boolean;
+  /** Opt into content sizing for short option lists without changing other pickers. */
+  sheetSize?: ComponentProps<typeof SheetShell>["size"];
   title?: string;
   /** Null before a choice is made, which is where every one of these starts. */
   value: T | null;
@@ -183,6 +187,9 @@ export function SingleOptionPicker<T extends string>({
                   width: "100%",
                 }}
               >
+                {/* The app's centred modal, as the filter modals are: black title, corner
+                    cross and the same side padding (user, 2026-11-01). */}
+                <HelpModalClose corner onClose={() => setOpen(false)} />
                 <View
                   style={{
                     alignItems: "center",
@@ -193,13 +200,12 @@ export function SingleOptionPicker<T extends string>({
                     paddingVertical: spacing.sm,
                   }}
                 >
-                  <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+                  <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
                     {title ?? label}
                   </ModalTitle>
-                  <IconButton accessibilityLabel="Close" filled icon={X} onPress={() => setOpen(false)} />
                 </View>
 
-                <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.md }}>
+                <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}>
                   {options.map((option) => (
                     <PickerOptionRow
                       icon={optionIcon?.(option.value)}
@@ -217,7 +223,7 @@ export function SingleOptionPicker<T extends string>({
             </View>
           </CenterModal>
         ) : (
-          <SheetShell onClose={() => setOpen(false)} title={title ?? label}>
+          <SheetShell onClose={() => setOpen(false)} size={sheetSize} title={title ?? label}>
             <View>
               {options.map((option, index) => (
                 <PickerOptionRow

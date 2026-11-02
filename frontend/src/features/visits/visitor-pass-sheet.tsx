@@ -1,3 +1,4 @@
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -42,23 +43,6 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => (
         <View style={{ flex: 1, justifyContent: "flex-end", paddingTop: insets.top + spacing.md }}>
-          <AnimatedPressable
-            accessibilityLabel="Close visitor pass"
-            accessibilityRole="button"
-            onPress={() => dismiss()}
-            style={{
-              alignItems: "center",
-              alignSelf: "center",
-              backgroundColor: colors.surface,
-              borderRadius: 23,
-              height: 46,
-              justifyContent: "center",
-              marginBottom: spacing.md,
-              width: 46,
-            }}
-          >
-            <X color={colors.ink} size={23} />
-          </AnimatedPressable>
           <View
             style={{
               backgroundColor: colors.surface,
@@ -104,6 +88,7 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
                   >
                     {pass.data.propertyName}
                   </ModalTitle>
+                  <ModalTitleRule />
                   <View
                     style={{
                       alignItems: "center",

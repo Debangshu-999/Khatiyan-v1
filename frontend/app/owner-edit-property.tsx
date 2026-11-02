@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, CalendarDays, CircleHelp } from "lucide-react-native";
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 
 import { ChoiceCard, ChoiceGrid, ChoiceSection } from "@/components/choice-section";
@@ -87,6 +88,11 @@ export default function OwnerEditPropertyScreen() {
     : properties.length === 1
       ? properties[0]
       : null;
+
+  const loadFailed = loadFailure(propertiesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   if (propertiesQuery.isFetching && !propertiesQuery.data) {
     return (

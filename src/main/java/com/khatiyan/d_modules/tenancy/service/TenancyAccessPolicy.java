@@ -44,6 +44,25 @@ public class TenancyAccessPolicy {
         propertyModule.ensureCanView(actorUserId, propertyId, ManagerResource.TENANCIES);
     }
 
+    /**
+     * The current stays at a property, names and phones included. Wider than
+     * {@link #ensureCanViewStays} because rooms, billing, deposits, the vacancy
+     * finder and the tenancy queues all need to know who is staying. A manager
+     * with none of those, food or notices only say, has no reason to.
+     */
+    public void ensureCanViewCurrentStays(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanViewAny(actorUserId, propertyId,
+                ManagerResource.TENANCIES,
+                ManagerResource.TENANCY_CREATE,
+                ManagerResource.TENANCY_RULES,
+                ManagerResource.EXIT_REQUESTS,
+                ManagerResource.ROOM_CHANGES,
+                ManagerResource.ROOMS,
+                ManagerResource.BILLING_CYCLES,
+                ManagerResource.DEPOSITS,
+                ManagerResource.VACANCY_FINDER);
+    }
+
     /** Ending a stay, or changing its terms. */
     public void ensureCanManageStays(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.TENANCIES);

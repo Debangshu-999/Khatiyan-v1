@@ -1,3 +1,6 @@
+import { PriorityChip } from "@/features/notice/notice-ui";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -92,6 +95,11 @@ export default function OwnerUpcomingNoticesScreen() {
     }
     return true;
   });
+
+  const loadFailed = loadFailure(propertiesQuery, upcomingQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
@@ -225,34 +233,38 @@ function UpcomingNoticeCard({
 }) {
   const { colors, type } = useTheme();
   const isRecurring = notice.recurringNoticeId !== null;
+  const kind = (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surfaceSunken,
+        borderRadius: 999,
+        flexDirection: "row",
+        gap: 4,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 3,
+      }}
+    >
+      {isRecurring ? <Repeat2 color={colors.kicker} size={13} /> : <Clock color={colors.kicker} size={13} />}
+      <Text style={[type.caption, { color: colors.kicker, fontWeight: "700" }]}>
+        {isRecurring ? "RECURRING" : "SCHEDULED"}
+      </Text>
+    </View>
+  );
 
   return (
     <Card>
       <View style={{ gap: spacing.sm }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-          <Text style={[type.eyebrow, { color: priorityColor(notice.priority, colors) }]}>
-            {humanizeToken(notice.priority)}
-          </Text>
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.surfaceSunken,
-              borderRadius: 999,
-              flexDirection: "row",
-              gap: 4,
-              paddingHorizontal: spacing.sm,
-              paddingVertical: 3,
-            }}
-          >
-            {isRecurring ? <Repeat2 color={colors.kicker} size={13} /> : <Clock color={colors.kicker} size={13} />}
-            <Text style={[type.caption, { color: colors.kicker, fontWeight: "700" }]}>
-              {isRecurring ? "RECURRING" : "SCHEDULED"}
-            </Text>
+        {/* A normal notice has no chip, so its title takes the top row (user, 2026-10-31). */}
+        {notice.priority === "NORMAL" ? null : (
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <PriorityChip priority={notice.priority} />
+            {kind}
           </View>
-        </View>
+        )}
 
         {/* Tapping the notice itself opens its detail screen. */}
-        <NoticeCardBody attachmentCount={notice.attachments.length} body={notice.body} onPress={onOpen} title={notice.title} />
+        <NoticeCardBody attachmentCount={notice.attachments.length} body={notice.body} onPress={onOpen} title={notice.title} titleTrailing={notice.priority === "NORMAL" ? kind : undefined} />
 
         <Text style={[type.caption, { color: colors.kicker }]}>
           Goes live {countdownLabel(notice.visibleFrom)} · {formatTimeOfDay(notice.visibleFrom)}
@@ -308,14 +320,15 @@ function DelaySheet({
   }
 
   async function submit() {
-    const problem =
-      picked.getTime() <= Date.now()
+    // To the minute, as the field shows it: a picked time can differ from the original only in its seconds.
+    const sameTime = Math.floor(picked.getTime() / 60_000) === Math.floor(originalStart.getTime() / 60_000);
+    const problem = sameTime
+      ? "Pick a later time to postpone this notice."
+      : picked.getTime() <= Date.now()
         ? "Pick a time later than right now."
         : picked.getTime() < originalStart.getTime()
           ? "A notice can be postponed, not brought forward."
-          : picked.getTime() === originalStart.getTime()
-            ? "Pick a later time to postpone this notice."
-            : null;
+          : null;
     if (!form.validate(problem ? { time: problem } : {})) {
       return;
     }
@@ -364,8 +377,8 @@ function DelaySheet({
               >
                 Delay notice
               </ModalTitle>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
+            <ModalTitleRule />
 
             <ScrollView
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}
@@ -378,7 +391,7 @@ function DelaySheet({
             </FitText>
 
             <View style={{ gap: spacing.xs }}>
-              <Text style={[type.caption, { color: colors.kicker, fontWeight: "700" }]}>NEW START TIME</Text>
+              <Text style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 13 }}>New start time</Text>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setPickerOpen(true)}
@@ -420,13 +433,17 @@ function DelaySheet({
 
             <FieldError message={form.errors.time} />
 
-            <ActionButton
+            </ScrollView>
+
+            {/* Fixed under the scrolling fields (user, 2026-11-01). */}
+            <View style={{ flexDirection: "row", paddingTop: spacing.md }}>
+              <ActionButton
                 disabled={delayState.isLoading || form.blocked}
                 icon={Clock}
                 label={delayState.isLoading ? "Postponing…" : "Postpone"}
                 onPress={submit}
               />
-            </ScrollView>
+            </View>
 
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
           </View>
@@ -443,10 +460,6 @@ function DelaySheet({
 
 // Chips, not a switcher: these narrow one list rather than showing a different
 // thing. Same distinction as the notices Published/Visible/Archived filter.
-function priorityColor(priority: NoticePriority, colors: ReturnType<typeof useTheme>["colors"]) {
-  return priority === "EMERGENCY" || priority === "URGENT" ? colors.danger : colors.kicker;
-}
-
 function formatTimeOfDay(value: string) {
   if (!value) {
     return "—";

@@ -145,6 +145,31 @@ public class TenancyAnalytics {
                 (rs, i) -> new DayMoves(rs.getObject("day", LocalDate.class), rs.getInt("ins"), rs.getInt("outs")));
     }
 
+    /** Whether any stay was ever carried over from before Khatiyan. One waiting for acceptance has not been yet. */
+    public boolean hasTransitionedStay(UUID propertyId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM tenancy.tenancies
+                    WHERE property_id = :propertyId AND transitioned
+                      AND status NOT IN ('CANCELLED', 'PENDING_ACCEPTANCE', 'SCHEDULED'))
+                """, Map.of("propertyId", propertyId), Boolean.class));
+    }
+
+    /** Monthly stays that joined in a range: carried over, against new. {@code newStays} are {@link #monthlyMoves}'s move-ins. */
+    public record JoinCounts(int transitioned, int newStays) {}
+
+    public JoinCounts joinCounts(UUID propertyId, LocalDate from, LocalDate to) {
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) FILTER (WHERE transitioned) AS transitioned,
+                       COUNT(*) FILTER (WHERE NOT transitioned) AS new_stays
+                FROM tenancy.tenancies
+                WHERE property_id = :propertyId AND COALESCE(billing_type, 'MONTHLY') = 'MONTHLY'
+                  AND status NOT IN ('CANCELLED', 'PENDING_ACCEPTANCE', 'SCHEDULED')
+                  AND start_date BETWEEN :from AND :to
+                """, new MapSqlParameterSource().addValue("propertyId", propertyId).addValue("from", from).addValue("to", to),
+                (rs, i) -> new JoinCounts(rs.getInt("transitioned"), rs.getInt("new_stays")));
+    }
+
     /**
      * A stay's nights that touch a range, by type: the same nights
      * {@link #occupiedBedDays} counts. {@code end} is its last night: an ended

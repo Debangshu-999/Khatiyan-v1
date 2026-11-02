@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentProps, type ComponentType } from "react";
+import { dateOfIso, isoOfDate } from "@/components/calendar-month";
+import { CalendarPicker } from "@/components/calendar-picker";
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, BackHandler, Image, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, BackHandler, Image, Modal, Platform, ScrollView, Text, TextInput, View, type ViewStyle } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { deviceFingerprint, primeInstallId } from "@/auth/device-fingerprint";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { ArrowLeft, BadgeCheck, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardList, Clock3, DoorOpen, Expand, FileCheck, Hotel, Info, KeyRound, Lock, type LucideProps, MapPin, Phone, Plus, ScanFace, ShieldCheck, UserCheck, UserPlus, UserRound, Wallet, X } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
@@ -11,6 +14,8 @@ import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SegmentedChoice } from "@/components/segmented-choice";
 import { Card } from "@/components/card";
+import { useGetRoomItemConditionsQuery } from "@/store/services/damage-api";
+import { useSoftShadow } from "@/theme/shadows";
 import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { AlertModal } from "@/components/alert-modal";
@@ -106,7 +111,17 @@ type Step = "type" | "tenant" | "details" | "verify" | "handover" | "review" | "
  */
 type MoveInSection = "ROOM" | "AMENITY" | "BATHROOM";
 /** `fixed`: one of the room's own amenities, which stays on the list. */
-type MoveInItem = { name: string; damageLevel: DamageLevel; note: string; custom: boolean; photoUrls: string[]; section: MoveInSection; fixed: boolean };
+type MoveInItem = {
+  name: string;
+  damageLevel: DamageLevel;
+  note: string;
+  custom: boolean;
+  photoUrls: string[];
+  section: MoveInSection;
+  fixed: boolean;
+  /** Photos carried from the room's condition: kept, never removed (user, 2026-10-29). */
+  carried?: string[];
+};
 
 
 type IdDocumentType = "AADHAAR" | "PASSPORT" | "DRIVING_LICENCE" | "VOTER_ID" | "PAN" | "OTHER";
@@ -382,7 +397,6 @@ export default function OwnerOnboardTenantScreen() {
   const [moveInLightbox, setMoveInLightbox] = useState<{ images: string[]; index: number } | null>(null);
   // 1 by default (user, 2026-10-29): every tenant gets at least one key.
   const [keysHandedOver, setKeysHandedOver] = useState("1");
-  const [moveInSkipped, setMoveInSkipped] = useState(false);
   // What is being typed to add, per section: every section but Amenities takes its own (user, 2026-10-29).
   // The Add sheet: which section it adds to, and the name typed (user, 2026-10-29).
   const [addingTo, setAddingTo] = useState<MoveInSection | null>(null);
@@ -550,24 +564,42 @@ export default function OwnerOnboardTenantScreen() {
   // The move-in checklist starts from the room's amenities and the property's
   // damage list, without repeats, every item at NA (2026-10-29).
   const exitPoliciesQuery = useGetPropertyExitPoliciesQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  // The room's running condition, what a past checklist, a damage or a repair left (user, 2026-10-29).
+  const roomConditionsQuery = useGetRoomItemConditionsQuery(
+    { propertyId: selectedProperty?.id ?? "", roomId: roomId ?? "" },
+    { skip: !selectedProperty || !roomId || billingType === "DAILY" },
+  );
   useEffect(() => {
-    if (step !== "handover" || moveInItems !== null || exitPoliciesQuery.isLoading) return;
+    if (step !== "handover" || moveInItems !== null || exitPoliciesQuery.isLoading || roomConditionsQuery.isFetching) return;
     // Only what the room's type picked (user, 2026-10-29), sorted into Room and
     // Bathroom by the damage list, the one list of what a room can have. AC is
     // the variant; the toilet is never an item; a common toilet's things are
     // not one tenant's, so they stay off.
     const attached = selectedProperty?.bathroomType === "ATTACHED";
     const categoryOf = new Map((exitPoliciesQuery.data?.damageCharges ?? []).map((charge) => [charge.name.toLowerCase(), charge.category]));
+    const conditionOf = new Map((roomConditionsQuery.data ?? []).map((condition) => [condition.itemName.trim().toLowerCase(), condition]));
     const seen = new Set<string>();
     const items: MoveInItem[] = [];
-    const add = (name: string) => {
+    const add = (name: string, known?: "ROOM" | "BATHROOM") => {
       const key = name.trim().toLowerCase();
       if (!key || seen.has(key)) return;
-      const category = categoryOf.get(key) ?? (key === "geyser" ? (attached ? "BATHROOM" : "COMMON_TOILET") : "ROOM");
+      const category = categoryOf.get(key) ?? known ?? (key === "geyser" ? (attached ? "BATHROOM" : "COMMON_TOILET") : "ROOM");
       if (category === "COMMON_TOILET") return;
       if (category === "BATHROOM" && !attached) return;
       seen.add(key);
-      items.push({ custom: false, damageLevel: "NA", fixed: true, name: name.trim(), note: "", photoUrls: [], section: category === "BATHROOM" ? "BATHROOM" : "ROOM" });
+      // Its level and photos as the room has them now (user, 2026-10-29).
+      const condition = conditionOf.get(key);
+      const carried = (condition?.photoUrls ?? []).slice(0, 3);
+      items.push({
+        carried,
+        custom: false,
+        damageLevel: condition?.level ?? "NA",
+        fixed: true,
+        name: name.trim(),
+        note: "",
+        photoUrls: carried,
+        section: category === "BATHROOM" ? "BATHROOM" : "ROOM",
+      });
     };
     // The variant's own thing: AC, or a fan on a non-AC room (user, 2026-10-29).
     if (selectedRoom) add(selectedRoom.conditioning === "AC" ? "AC" : "Fan");
@@ -575,9 +607,11 @@ export default function OwnerOnboardTenantScreen() {
       if (amenity === "ATTACHED_TOILET" || amenity === "COMMON_TOILET") return;
       add(AMENITY_LABELS[amenity]);
     });
-    (selectedRoom?.customAmenities ?? []).forEach(add);
+    (selectedRoom?.customAmenities ?? []).forEach((name) => add(name));
+    // Anything else the room's condition knows, added at a past move-in.
+    (roomConditionsQuery.data ?? []).forEach((condition) => add(condition.itemName, condition.section));
     setMoveInItems(items);
-  }, [exitPoliciesQuery.data, exitPoliciesQuery.isLoading, moveInItems, selectedProperty, selectedRoom, step]);
+  }, [exitPoliciesQuery.data, exitPoliciesQuery.isLoading, moveInItems, roomConditionsQuery.data, roomConditionsQuery.isFetching, selectedProperty, selectedRoom, step]);
   // Sent only when filled in: skipped, or not yet complete, nothing is recorded.
   // Every item needs at least one photo before the step can go on (user, 2026-10-29).
   // Keys at least 1, every item a photo, every damage described (user, 2026-10-29).
@@ -586,7 +620,7 @@ export default function OwnerOnboardTenantScreen() {
       && moveInItems.every((item) => item.photoUrls.length > 0 && (item.damageLevel === "NA" || item.note.trim()))
       && Number(keysHandedOver) >= 1,
   );
-  const moveInPayload = billingType !== "DAILY" && !moveInSkipped && moveInItems && moveInReady
+  const moveInPayload = billingType !== "DAILY" && moveInItems && moveInReady
     ? {
         items: moveInItems.map((item) => ({
           custom: item.custom,
@@ -931,7 +965,6 @@ export default function OwnerOnboardTenantScreen() {
     setVerifiedBeforeConfirmed(false);
     setMoveInItems(null);
     setKeysHandedOver("1");
-    setMoveInSkipped(false);
     // Reset room-derived inputs so a switch between kinds starts clean.
     setRoomId(null);
     setRent("");
@@ -939,6 +972,8 @@ export default function OwnerOnboardTenantScreen() {
     setStartDate(startOfToday());
     setStep("tenant");
   }
+
+  useQuickActionIntent({ "existing-tenancy": () => chooseBilling("MONTHLY", true) }, Boolean(selectedProperty) && !fromBooking);
 
   function goToReview() {
     if (!tenantDetailsValid()) {
@@ -1364,6 +1399,11 @@ export default function OwnerOnboardTenantScreen() {
     setConfirmExit(true);
   }
 
+  const loadFailed = loadFailure(propertiesQuery, roomsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     // The footer is absolutely positioned, so it needs a filled parent that is
     // NOT the scroll view — inside one it scrolls away with the content, which
@@ -1713,28 +1753,21 @@ export default function OwnerOnboardTenantScreen() {
               </Field>
 
               {showPicker ? (
-                <DateTimePicker
-                  value={startDate}
-                  mode="date"
-                  display={Platform.OS === "ios" ? "inline" : "default"}
-                  minimumDate={minimumStartDate}
+                <CalendarPicker
                   // An existing tenant's first bill is their next rent day, within the month ahead.
-                  maximumDate={existingTenant ? addDays(startOfToday(), 31) : undefined}
-                  onChange={(event: DateTimePickerEvent, selected?: Date) => {
-                    if (Platform.OS !== "ios") {
-                      setShowPicker(false);
-                    }
-                    if (event.type === "set" && selected) {
-                      const next = dateToStr(selected) < dateToStr(minimumStartDate) ? minimumStartDate : selected;
-                      setStartDate(next);
-                      if (dateToStr(plannedEndDate) <= dateToStr(next)) {
-                        setPlannedEndDate(addDays(next, 1));
-                      }
+                  maximum={existingTenant ? isoOfDate(addDays(startOfToday(), 31)) : undefined}
+                  minimum={isoOfDate(minimumStartDate)}
+                  onClose={() => setShowPicker(false)}
+                  onPick={(iso) => {
+                    const next = dateOfIso(iso);
+                    setStartDate(next);
+                    if (dateToStr(plannedEndDate) <= dateToStr(next)) {
+                      setPlannedEndDate(addDays(next, 1));
                     }
                   }}
+                  value={isoOfDate(startDate)}
                 />
               ) : null}
-              {showPicker && Platform.OS === "ios" ? <PrimaryButton label="Done" muted onPress={() => setShowPicker(false)} /> : null}
 
               {isDaily ? (
                 <>
@@ -1761,23 +1794,12 @@ export default function OwnerOnboardTenantScreen() {
                   </Field>
 
                   {showEndPicker ? (
-                    <DateTimePicker
-                      value={plannedEndDate}
-                      mode="date"
-                      display={Platform.OS === "ios" ? "inline" : "default"}
-                      minimumDate={addDays(startDate, 1)}
-                      onChange={(event: DateTimePickerEvent, selected?: Date) => {
-                        if (Platform.OS !== "ios") {
-                          setShowEndPicker(false);
-                        }
-                        if (event.type === "set" && selected) {
-                          setPlannedEndDate(selected);
-                        }
-                      }}
+                    <CalendarPicker
+                      minimum={isoOfDate(addDays(startDate, 1))}
+                      onClose={() => setShowEndPicker(false)}
+                      onPick={(iso) => setPlannedEndDate(dateOfIso(iso))}
+                      value={isoOfDate(plannedEndDate)}
                     />
-                  ) : null}
-                  {showEndPicker && Platform.OS === "ios" ? (
-                    <PrimaryButton label="Done" muted onPress={() => setShowEndPicker(false)} />
                   ) : null}
 
                   <Text style={[type.description, { color: colors.muted }]}>
@@ -1820,24 +1842,16 @@ export default function OwnerOnboardTenantScreen() {
                 </AnimatedPressable>
               </Field>
               {showMovedInPicker ? (
-                <DateTimePicker
-                  value={movedInOn ?? addDays(startOfToday(), -30)}
-                  mode="date"
-                  display={Platform.OS === "ios" ? "inline" : "default"}
-                  maximumDate={addDays(startOfToday(), -1)}
-                  onChange={(event: DateTimePickerEvent, selected?: Date) => {
-                    if (Platform.OS !== "ios") {
-                      setShowMovedInPicker(false);
-                    }
-                    if (event.type === "set" && selected) {
-                      setMovedInOn(startOfDay(selected));
-                      form.clearField("movedInOn");
-                    }
+                <CalendarPicker
+                  initialMonth={isoOfDate(addDays(startOfToday(), -30)).slice(0, 7)}
+                  maximum={isoOfDate(addDays(startOfToday(), -1))}
+                  onClose={() => setShowMovedInPicker(false)}
+                  onPick={(iso) => {
+                    setMovedInOn(startOfDay(dateOfIso(iso)));
+                    form.clearField("movedInOn");
                   }}
+                  value={movedInOn ? isoOfDate(movedInOn) : null}
                 />
-              ) : null}
-              {showMovedInPicker && Platform.OS === "ios" ? (
-                <PrimaryButton label="Done" muted onPress={() => setShowMovedInPicker(false)} />
               ) : null}
               <Field error={form.errors.dues} label="Dues at the switch">
                 <Input
@@ -2091,7 +2105,8 @@ export default function OwnerOnboardTenantScreen() {
               eyebrow="Move-in checklist"
               onClose={() => setMoveInHelp(false)}
               steps={[
-                { title: "Optional", body: "Skip it and nothing is recorded. Fill it in and every item needs at least one photo, up to 3, and the keys handed over." },
+                { title: "Required", body: "Every item needs at least one photo, up to 3, and the keys handed over." },
+                { title: "Starts from the room", body: "Each item shows its level and photos as the room has them now. Carried photos stay, add new ones beside them." },
                 { title: "A damage level for each item", body: "NA is no damage, D3 the worst. Any damage needs a note of what exactly is damaged." },
                 { title: "The tenant answers", body: "They see it in their app and have 48 hours to accept it or note a difference. Unanswered, it counts as accepted." },
                 { title: "Used at move-out", body: "It is the record the room is compared against when the tenancy ends." },
@@ -2123,11 +2138,8 @@ export default function OwnerOnboardTenantScreen() {
             {moveOutItems.length === 0 ? (
               <Text style={[type.caption, { color: colors.muted }]}>Nothing to check at move-out. Use Add for anything.</Text>
             ) : null}
-            {moveOutItems.map((entry, index) => (
-              <View
-                key={entry}
-                style={{ alignItems: "center", borderTopColor: colors.border, borderTopWidth: index === 0 ? 0 : 1, flexDirection: "row", gap: spacing.sm, paddingTop: index === 0 ? 0 : spacing.sm }}
-              >
+            {moveOutItems.map((entry) => (
+              <ItemCard key={entry} style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
                 <Text style={[type.body, { color: colors.ink, flex: 1 }]}>{entry}</Text>
                 <AnimatedPressable
                   accessibilityLabel={`Remove ${entry}`}
@@ -2137,11 +2149,11 @@ export default function OwnerOnboardTenantScreen() {
                 >
                   <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
                 </AnimatedPressable>
-              </View>
+              </ItemCard>
             ))}
           </CollapsibleSection>
           {addingMoveOut ? (
-            <SheetShell onClose={() => setAddingMoveOut(false)} title="Add to the move-out checklist">
+            <SheetShell size="short" onClose={() => setAddingMoveOut(false)} title="Add to the move-out checklist">
               <View style={{ gap: spacing.md }}>
                 <Input maxLength={120} onChangeText={setNewMoveOutItem} placeholder="e.g. Wardrobe emptied" value={newMoveOutItem} />
                 <View style={{ flexDirection: "row" }}>
@@ -2187,14 +2199,29 @@ export default function OwnerOnboardTenantScreen() {
               collapses to a summary, and all but Amenities add from the header (user, 2026-10-29). */}
           {([
             ...(selectedProperty?.bathroomType === "ATTACHED"
-              ? [{ section: "BATHROOM", tail: "bathroom", title: "Attached" }]
-              : [{ section: "COMMON", tail: "toilet", title: "Common" }]),
+              ? [{ section: "BATHROOM", tail: "washroom", title: "Attached" }]
+              : [{ section: "COMMON", tail: "washroom", title: "Common" }]),
             { section: "ROOM", tail: "items", title: "Room" },
           ] as { section: MoveInSection | "COMMON"; tail: string; title: string }[]).map(({ section, tail, title }) => {
-            // A common toilet is shared, so it is never on one tenant's checklist.
+            // A common washroom is shared, so it is never on one tenant's checklist.
+            // Its things are listed from the item catalogue, above why (user, 2026-10-29).
             if (section === "COMMON") {
+              const shared = (exitPoliciesQuery.data?.damageCharges ?? []).filter((charge) => charge.category === "COMMON_TOILET");
               return (
-                <CollapsibleSection accentTail={tail} defaultOpen divided key={section} summary="Not on the checklist" title={title}>
+                <CollapsibleSection
+                  accentTail={tail}
+                  defaultOpen
+                  divided
+                  key={section}
+                  summary={`${shared.length} item${shared.length === 1 ? "" : "s"}, not on the checklist`}
+                  title={title}
+                >
+                  {shared.map((charge) => (
+                    <ItemCard key={charge.name} style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
+                      <ItemIcon color={colors.inkSoft} name={charge.name} size={20} />
+                      <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 16 }}>{charge.name}</Text>
+                    </ItemCard>
+                  ))}
                   <NoticeBar message="It is shared by everyone here, so it is not part of a tenant's move-in checklist." title="Not on the checklist" tone="info" />
                 </CollapsibleSection>
               );
@@ -2234,19 +2261,12 @@ export default function OwnerOnboardTenantScreen() {
                 {entries.length === 0 ? (
                   <Text style={[type.caption, { color: colors.muted }]}>Nothing here yet. Use Add for anything in it.</Text>
                 ) : null}
-                {entries.map(({ index, item }, position) => {
+                {entries.map(({ index, item }) => {
                   const update = (change: Partial<MoveInItem>) =>
                     setMoveInItems((items) => (items ?? []).map((entry, at) => (at === index ? { ...entry, ...change } : entry)));
                   return (
-                    <View
-                      key={`${item.name}-${index}`}
-                      style={{
-                        borderTopColor: colors.border,
-                        borderTopWidth: position === 0 ? 0 : 1,
-                        gap: spacing.md,
-                        paddingTop: position === 0 ? 0 : spacing.md,
-                      }}
-                    >
+                    // Each item its own card (user, 2026-10-29).
+                    <ItemCard key={`${item.name}-${index}`}>
                       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
                         <ItemIcon color={colors.inkSoft} name={item.name} size={20} />
                         <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 16 }}>{item.name}</Text>
@@ -2283,6 +2303,9 @@ export default function OwnerOnboardTenantScreen() {
                         target="MOVE_IN_PHOTO"
                         urls={item.photoUrls}
                       />
+                      {(item.carried ?? []).length > 0 ? (
+                        <Text style={[type.caption, { color: colors.muted }]}>Photos carried from the room cannot be removed.</Text>
+                      ) : null}
                       {item.photoUrls.length > 0 ? (
                         <View style={{ flexDirection: "row", gap: spacing.sm }}>
                           {item.photoUrls.map((url, photo) => (
@@ -2295,15 +2318,25 @@ export default function OwnerOnboardTenantScreen() {
                               >
                                 <Image resizeMode="cover" source={{ uri: url }} style={{ height: "100%", width: "100%" }} />
                               </AnimatedPressable>
-                              <AnimatedPressable
-                                accessibilityLabel={`Remove photo ${photo + 1} of ${item.name}`}
-                                accessibilityRole="button"
-                                hitSlop={8}
-                                onPress={() => update({ photoUrls: item.photoUrls.filter((kept) => kept !== url) })}
-                                style={{ alignItems: "center", backgroundColor: colors.surface, borderRadius: 11, height: 22, justifyContent: "center", position: "absolute", right: -6, top: -6, width: 22 }}
-                              >
-                                <X color={colors.ink} size={13} strokeWidth={2.6} />
-                              </AnimatedPressable>
+                              {(item.carried ?? []).includes(url) ? (
+                                // Carried from the room: it stays (user, 2026-10-29).
+                                <View
+                                  accessibilityLabel={`Photo ${photo + 1} of ${item.name}, carried from the room`}
+                                  style={{ alignItems: "center", backgroundColor: colors.surface, borderRadius: 11, height: 22, justifyContent: "center", position: "absolute", right: -6, top: -6, width: 22 }}
+                                >
+                                  <Lock color={colors.muted} size={12} strokeWidth={2.4} />
+                                </View>
+                              ) : (
+                                <AnimatedPressable
+                                  accessibilityLabel={`Remove photo ${photo + 1} of ${item.name}`}
+                                  accessibilityRole="button"
+                                  hitSlop={8}
+                                  onPress={() => update({ photoUrls: item.photoUrls.filter((kept) => kept !== url) })}
+                                  style={{ alignItems: "center", backgroundColor: colors.surface, borderRadius: 11, height: 22, justifyContent: "center", position: "absolute", right: -6, top: -6, width: 22 }}
+                                >
+                                  <X color={colors.ink} size={13} strokeWidth={2.6} />
+                                </AnimatedPressable>
+                              )}
                             </View>
                           ))}
                         </View>
@@ -2313,7 +2346,7 @@ export default function OwnerOnboardTenantScreen() {
                           <Text style={[type.caption, { color: colors.kicker }]}>At least one photo is needed.</Text>
                         </View>
                       )}
-                    </View>
+                    </ItemCard>
                   );
                 })}
               </CollapsibleSection>
@@ -2322,7 +2355,7 @@ export default function OwnerOnboardTenantScreen() {
 
           {/* Adding an item, in a bottom sheet over the step (user, 2026-10-29). */}
           {addingTo ? (
-            <SheetShell onClose={() => setAddingTo(null)} title={addingTo === "BATHROOM" ? "Add to the bathroom" : "Add to the room"}>
+            <SheetShell size="short" onClose={() => setAddingTo(null)} title={addingTo === "BATHROOM" ? "Add to the washroom" : "Add to the room"}>
               <View style={{ gap: spacing.md }}>
                 {/* No autofocus: the sheet opens without the keyboard (user, 2026-10-29). */}
                 <Input
@@ -2531,7 +2564,7 @@ export default function OwnerOnboardTenantScreen() {
                     { label: "Photos", value: String(moveInPayload.items.reduce((total, item) => total + item.photoUrls.length, 0)) },
                     ...(moveInPayload.keysHandedOver != null ? [{ label: "Keys handed over", value: String(moveInPayload.keysHandedOver) }] : []),
                   ]
-                : [{ label: "Checklist", value: "Skipped" }]}
+                : [{ label: "Checklist", value: "Not complete" }]}
               title="Move-in checklist"
             />
           )}
@@ -2925,28 +2958,16 @@ export default function OwnerOnboardTenantScreen() {
 
       {step === "handover" ? (
         <PinnedFooter>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton
-              label="Skip move-in"
-              onPress={() => {
-                setMoveInSkipped(true);
-                setMessage(null);
-                setStep("review");
-              }}
-              variant="neutral"
-            />
-            {/* Blocked until every item has a photo (user, 2026-10-29). */}
-            <ActionButton
-              disabled={!moveInReady}
-              label="Continue"
-              onPress={() => {
-                if (!moveInReady) return;
-                setMoveInSkipped(false);
-                setMessage(null);
-                setStep("review");
-              }}
-            />
-          </View>
+          {/* Required, no Skip, and blocked until every item has a photo (user, 2026-10-29). */}
+          <ActionButton
+            disabled={!moveInReady}
+            label="Continue"
+            onPress={() => {
+              if (!moveInReady) return;
+              setMessage(null);
+              setStep("review");
+            }}
+          />
         </PinnedFooter>
       ) : null}
 
@@ -3585,6 +3606,7 @@ function CollapsibleSection({
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  const softShadow = useSoftShadow();
   const [toggled, setOpen] = useState(Boolean(defaultOpen));
   const open = collapsible ? toggled : true;
 
@@ -3596,7 +3618,8 @@ function CollapsibleSection({
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
-        overflow: "hidden",
+        // The same lift as every Card, the keys card's (user, 2026-10-29).
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <AnimatedPressable
@@ -3631,6 +3654,21 @@ function CollapsibleSection({
           {children}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** An item inside a section card: its own bordered card, flat, only the outer card lifts (user, 2026-10-29). */
+function ItemCard({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={[
+        { backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.lg },
+        style,
+      ]}
+    >
+      {children}
     </View>
   );
 }

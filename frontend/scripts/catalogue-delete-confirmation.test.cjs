@@ -33,7 +33,7 @@ function harness({ charges = [charge("Mattress")], roomItems = [], attached = fa
     },
     View: "View", Text: "Text", CategoryCard: "CategoryCard", DamageItemRow: "DamageItemRow",
     ItemIcon: "ItemIcon", Info: "Info", AnimatedPressable: "Button", Trash2: "Trash", ConfirmDialog: "ConfirmDialog", PriceSheet: "PriceSheet",
-    spacing: {}, CATEGORY_HEADINGS: { ROOM: { title: "Room", tail: "items" }, BATHROOM: { title: "Attached", tail: "bathroom" }, COMMON_TOILET: { title: "Common", tail: "toilet" } },
+    spacing: {}, CATEGORY_HEADINGS: { ROOM: { title: "Room", tail: "items" }, BATHROOM: { title: "Attached", tail: "washroom" }, COMMON_TOILET: { title: "Common", tail: "washroom" } },
     require: (name) => { assert.equal(name, "react/jsx-runtime"); return { jsx, jsxs: jsx }; },
   });
   const render = () => { cursor = 0; return exports.Editor({ attached, charges: current, onChange: (next) => { changes.push(next); current = next; }, readOnly, roomItems }); };

@@ -1,5 +1,6 @@
 import { ModalTitle } from "@/components/modal-title";
 import { onKeyboardLeaving } from "@/components/keyboard-intent";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, View, type DimensionValue, type GestureResponderEvent, type PanResponderGestureState, type ViewStyle } from "react-native";
@@ -8,8 +9,16 @@ import { ArrowLeft, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useLeavableSurface } from "@/components/leave-on-stale";
+import { splitSheetFooter } from "@/components/sheet-footer-split";
+import { ActionButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+/** The fixed heights, as a share of the screen (user, 2026-10-29). */
+const SHEET_HEIGHTS = { medium: 0.7, picker: 0.65, short: 0.45, tall: 0.9 } as const;
+/** A little more for a fixed footer, so the body keeps its room (user, 2026-11-01). Never past this. */
+const FOOTER_EXTRA_HEIGHT = 0.06;
+const TALLEST_SHEET = 0.92;
 
 const RAISED_CLOSE_SHADOW = {
   boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 6, spreadDistance: 1, color: "rgba(15, 23, 42, 0.28)" }],
@@ -23,11 +32,17 @@ const RAISED_CLOSE_SHADOW = {
 export function SheetShell({
   animated = true,
   belowTitle,
+  besideTitle,
   children,
   closeButtonVariant = "raised",
+  contentMaxSize = "medium",
   dismissOnDrag = true,
+  footer: givenFooter,
+  footerSpacing = spacing.md,
+  headerRight,
   fullBleed = false,
-  showClose = true,
+  showClose = false,
+  size = "medium",
   onBack,
   onClose,
   onEndReached,
@@ -39,6 +54,19 @@ export function SheetShell({
    * clipped at the padding (user, 2026-10-29: the room type sheet).
    */
   fullBleed?: boolean;
+  /**
+   * Pinned under the scrolling body, never scrolled away: a sheet's own
+   * actions (2026-10-29: Save and Charge now on Record damage).
+   */
+  footer?: ReactNode;
+  /** Space before pinned actions; a compact detail sheet may need none. */
+  footerSpacing?: number;
+  /** Content-sized sheets can grow this far before their body scrolls. */
+  contentMaxSize?: "short" | "medium" | "tall";
+  /** An optional action beside the title, outside the scrolling body. */
+  headerRight?: ReactNode;
+  /** Sits right after the title's text, a ? for instance, rather than at the far end of the row. */
+  besideTitle?: ReactNode;
   /**
    * The hand-run entrance and the fading backdrop, shared by every sheet.
    *
@@ -69,10 +97,21 @@ export function SheetShell({
    */
   closeButtonVariant?: "circle" | "plain" | "raised";
   /**
-   * False for a sheet with no cross, closed by sliding it down or the device's
-   * back (user, 2026-10-19, on the enquiry sheet). Needs dismissOnDrag.
+   * The x, now only for a sheet guarding something sensitive, a PIN or a code
+   * (user, 2026-10-29: "remove the top right corner cross button for all modals
+   * except modals that are for PIN verification or other such sensitive
+   * actions"). Every other sheet closes by sliding down, the device's back, or
+   * its own action.
    */
   showClose?: boolean;
+  /**
+   * A fixed height by what the sheet is for (user, 2026-10-29): short (45% of
+   * the screen) for a confirm or a small picker, medium (70%) for a form, tall
+   * (90%) for a long list or a long form. The title stays put and the body
+   * scrolls under it. `content` is an opt-in for a compact picker: it hugs a
+   * short list and scrolls once the sheet reaches 70% of the available screen.
+   */
+  size?: "short" | "picker" | "medium" | "tall" | "content";
   /**
    * Dragging is on by default. The head is always draggable; the body only
    * starts a downward dismissal at its scroll top with the keyboard hidden.
@@ -88,7 +127,8 @@ export function SheetShell({
   onBack?: () => void;
   onClose: () => void;
   onEndReached?: () => void;
-  title: string;
+  /** Plain words, or text spans where a title has two weights. */
+  title: ReactNode;
 }) {
   const { colors, fonts } = useTheme();
   const insets = useSafeAreaInsets();
@@ -383,6 +423,14 @@ export function SheetShell({
    * the Confirm booking sheet: "reduce the gap above the tick icon"). The empty
    * title used to keep a 32pt row and its margin there for the cross alone.
    */
+  // The buttons ending the content become the fixed footer, unless a sheet gave its own.
+  const split = givenFooter ? { body: children, footer: [] } : splitSheetFooter(children, { ActionButton, View });
+  const body = split.body;
+  const footer = givenFooter ?? (split.footer.length > 0 ? <View style={{ gap: spacing.sm }}>{split.footer}</View> : null);
+  // "picker" is a height the user chose outright, so it stays at that.
+  const sheetShare = size === "content" || !footer || size === "picker"
+    ? SHEET_HEIGHTS[size === "content" ? contentMaxSize : size]
+    : Math.min(TALLEST_SHEET, SHEET_HEIGHTS[size] + FOOTER_EXTRA_HEIGHT);
   const untitled = title === "" && !onBack && !belowTitle;
   const closeInside = showClose;
   const closeButton = (
@@ -450,7 +498,14 @@ export function SheetShell({
             // Lifted clear of the keyboard rather than padded behind it, so the
             // sheet's rounded bottom edge stays visible sitting on top of it.
             marginBottom: Platform.OS === "android" ? keyboardLift : 0,
-            maxHeight: maxSheetHeight,
+            // Fixed by what the sheet is for, never taller than the room left
+            // with the keyboard up (user, 2026-10-29).
+            height: size === "content" ? undefined : typeof maxSheetHeight === "number"
+              ? Math.min(maxSheetHeight, travel * sheetShare)
+              : `${Math.round(sheetShare * 100)}%`,
+            maxHeight: size === "content"
+              ? typeof maxSheetHeight === "number" ? Math.min(maxSheetHeight, travel * SHEET_HEIGHTS[contentMaxSize]) : `${Math.round(SHEET_HEIGHTS[contentMaxSize] * 100)}%`
+              : maxSheetHeight,
             // The safe-area inset is the nav bar's. With the keyboard up the
             // keyboard covers it, so applying both leaves a dead strip.
             paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.md,
@@ -485,15 +540,19 @@ export function SheetShell({
                   <ArrowLeft color={colors.ink} size={16} strokeWidth={2.4} />
                 </AnimatedPressable>
               ) : null}
-              <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 22, }} >
+              <ModalTitle style={{ color: colors.ink, flex: besideTitle ? undefined : 1, flexShrink: 1, fontFamily: fonts.display, fontSize: 22, }} >
                 {title}
               </ModalTitle>
+              {headerRight}
+              {besideTitle ? <View style={{ flex: 1, flexDirection: "row", paddingLeft: spacing.xs }}>{besideTitle}</View> : null}
               {closeInside ? closeButton : null}
             </View>}
             {belowTitle ? <View style={{ marginBottom: spacing.md }}>{belowTitle}</View> : null}
+            {untitled ? null : <View style={{ marginBottom: spacing.md }}><ModalTitleRule flush /></View>}
           </View>
           <GestureDetector gesture={bodyGesture}>
             <GestureScrollView
+              style={[size === "content" ? { flexGrow: 0, flexShrink: 1 } : { flex: 1 }, fullBleed ? { marginHorizontal: -spacing.lg } : null]}
               ref={scrollRef}
               disallowInterruption={false}
               // No overscroll. Left on, the ScrollView swallows the first part
@@ -504,7 +563,6 @@ export function SheetShell({
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs, ...(fullBleed ? { paddingHorizontal: spacing.lg } : null) }}
               keyboardShouldPersistTaps="handled"
               overScrollMode="never"
-              style={fullBleed ? { marginHorizontal: -spacing.lg } : undefined}
               onLayout={(event) => {
                 historyViewportHeight.current = event.nativeEvent.layout.height;
                 if (historyContentHeight.current > 0 && historyContentHeight.current <= historyViewportHeight.current + 240) onEndReached?.();
@@ -521,9 +579,10 @@ export function SheetShell({
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
             >
-              {children}
+              {body}
             </GestureScrollView>
           </GestureDetector>
+          {footer ? <View style={{ paddingTop: footerSpacing }}>{footer}</View> : null}
           {/* A child of the sheet itself, not of its 16pt head: on Android a view
               hanging out of its parent's bounds is drawn but cannot be touched.
               Last, so it sits over the body. */}

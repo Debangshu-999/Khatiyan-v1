@@ -49,7 +49,9 @@ public record PropertyDiscoveryCardResponse(
          * The full gallery, cover first. {@code profileImageUrl} is the cover and
          * stays for older clients; new ones should read this.
          */
-        List<String> imageUrls
+        List<String> imageUrls,
+        /** While stations are ticked: the nearest ticked one, which {@code distanceKm} is measured from. */
+        String nearestMetroStationName
 ) {
 
     public static PropertyDiscoveryCardResponse from(
@@ -90,7 +92,17 @@ public record PropertyDiscoveryCardResponse(
                 property.dailyGuestAcRatePaise(),
                 property.dailyGuestNonAcRatePaise(),
                 profile.getProfileImageUrl(),
-                imageUrls == null ? List.of() : imageUrls);
+                imageUrls == null ? List.of() : imageUrls,
+                null);
+    }
+
+    public PropertyDiscoveryCardResponse withNearestMetroStation(String stationName) {
+        return new PropertyDiscoveryCardResponse(
+                propertyId, name, headline, description, address, area, city, state, pincode, latitude, longitude,
+                distanceKm, directionsUrl, type, pgFor, preferredFor, foodIncluded, includedMeals, electricityIncluded,
+                bathroomType, availableSharingTypes, facilities, customFacilities, standardDepositPaise,
+                startingRoomRentPaise, dailyRentingAvailable, dailyGuestAcRatePaise, dailyGuestNonAcRatePaise,
+                profileImageUrl, imageUrls, stationName);
     }
 
     private static boolean hasPositiveDailyRate(Long value) {

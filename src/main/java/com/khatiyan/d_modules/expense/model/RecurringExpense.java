@@ -45,10 +45,6 @@ public class RecurringExpense extends BaseEntity {
     @Column(length = 500)
     private String description;
 
-    /** Day of month (1..28) each generated expense is recorded for. */
-    @Column(name = "day_of_month", nullable = false)
-    private int dayOfMonth;
-
     @Column(name = "is_active", nullable = false)
     private boolean active;
 
@@ -59,7 +55,7 @@ public class RecurringExpense extends BaseEntity {
     private UUID createdByUserId;
 
     private RecurringExpense(UUID propertyId, UUID categoryId, String paidTo, long amountPaise,
-            String description, int dayOfMonth, UUID createdByUserId) {
+            String description, UUID createdByUserId) {
         requirePositive(amountPaise);
         requirePayee(paidTo);
         this.id = UUID.randomUUID();
@@ -68,24 +64,22 @@ public class RecurringExpense extends BaseEntity {
         this.paidTo = paidTo.trim();
         this.amountPaise = amountPaise;
         this.description = normalize(description);
-        this.dayOfMonth = clampDay(dayOfMonth);
         this.active = true;
         this.createdByUserId = createdByUserId;
     }
 
     public static RecurringExpense create(UUID propertyId, UUID categoryId, String paidTo, long amountPaise,
-            String description, int dayOfMonth, UUID createdByUserId) {
-        return new RecurringExpense(propertyId, categoryId, paidTo, amountPaise, description, dayOfMonth, createdByUserId);
+            String description, UUID createdByUserId) {
+        return new RecurringExpense(propertyId, categoryId, paidTo, amountPaise, description, createdByUserId);
     }
 
-    public void update(UUID categoryId, String paidTo, long amountPaise, String description, int dayOfMonth) {
+    public void update(UUID categoryId, String paidTo, long amountPaise, String description) {
         requirePositive(amountPaise);
         requirePayee(paidTo);
         this.categoryId = categoryId;
         this.paidTo = paidTo.trim();
         this.amountPaise = amountPaise;
         this.description = normalize(description);
-        this.dayOfMonth = clampDay(dayOfMonth);
     }
 
     /** True when this active template still needs an expense for the given month. */
@@ -100,13 +94,6 @@ public class RecurringExpense extends BaseEntity {
 
     public void deactivate() {
         this.active = false;
-    }
-
-    private static int clampDay(int dayOfMonth) {
-        if (dayOfMonth < 1 || dayOfMonth > 28) {
-            throw new ValidationException("Recurring expense day must be between 1 and 28");
-        }
-        return dayOfMonth;
     }
 
     private static void requirePositive(long amountPaise) {

@@ -50,6 +50,7 @@ export function MoldPicker({
   hideLabel = false,
   molds,
   onChange,
+  radius = 14,
   value,
 }: {
   error?: string;
@@ -58,6 +59,8 @@ export function MoldPicker({
   molds: RoomMold[];
   /** Null clears the choice — the cross on the field. */
   onChange: (moldId: string | null) => void;
+  /** Add room uses the same crisp corners as its text inputs. */
+  radius?: number;
   value: string | null;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -102,7 +105,7 @@ export function MoldPicker({
             backgroundColor: colors.surface,
             borderColor: error ? colors.danger : colors.borderStrong,
             borderCurve: "continuous",
-            borderRadius: 14,
+            borderRadius: radius,
             borderWidth: 1.5,
             flex: 1,
             flexDirection: "row",
@@ -152,7 +155,7 @@ export function MoldPicker({
       <FieldError message={error} />
 
       {open ? (
-        <SheetShell onClose={() => setOpen(false)} title="Room type">
+        <SheetShell onClose={() => setOpen(false)} size="content" title="Room type">
           <View>
             {ordered.length === 0 ? (
               // Keep the picker empty state title-only, like the screen empties.

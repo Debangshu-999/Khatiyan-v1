@@ -1,8 +1,8 @@
 package com.khatiyan.d_modules.reminder.service;
 
+import com.khatiyan.c_shared.money.Money;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.util.Locale;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -31,7 +31,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class ExpenseBudgetReminderScannerService {
 
-    private static final Locale INR = new Locale("en", "IN");
 
     private final ExpenseModule expenseModule;
     private final PropertyModule propertyModule;
@@ -93,6 +92,6 @@ public class ExpenseBudgetReminderScannerService {
     }
 
     private static String formatPaise(long paise) {
-        return String.format(INR, "₹%,d", paise / 100);
+        return "₹" + Money.indianGrouped(paise / 100);
     }
 }

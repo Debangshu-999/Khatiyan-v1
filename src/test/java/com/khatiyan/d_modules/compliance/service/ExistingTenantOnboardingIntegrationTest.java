@@ -50,6 +50,7 @@ class ExistingTenantOnboardingIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ComplianceModule compliance;
     @Autowired private TenancyModule tenancies;
+    @Autowired private com.khatiyan.d_modules.property.PropertyModule propertyModule;
     @Autowired private com.khatiyan.d_modules.tenancy.service.MoveInChecklistService moveInChecklists;
 
     private BookingFixtures fx;
@@ -78,6 +79,7 @@ class ExistingTenantOnboardingIntegrationTest {
                 DELETE FROM billing.deposit_movements WHERE deposit_account_id IN
                     (SELECT id FROM billing.deposit_accounts WHERE property_id = ?)""", property);
         jdbc.update("DELETE FROM billing.deposit_accounts WHERE property_id = ?", property);
+        jdbc.update("DELETE FROM billing.damage_records WHERE property_id = ?", property);
         fx.remove();
     }
 
@@ -125,6 +127,44 @@ class ExistingTenantOnboardingIntegrationTest {
         tenancies.acceptTermsAndActivate(stay.id(), tenant);
 
         assertCarriedOverBilling(stay.id(), today);
+    }
+
+    @Test
+    void aMonthlyMoveInWithoutItsChecklistIsRefused() {
+        OnboardExistingTenantRequest none = withChecklist(
+                request(AgreementKind.PAPER, today.minusMonths(5), today.plusDays(3), photo(), null), null);
+
+        assertThatThrownBy(() -> compliance.onboardExistingTenant(owner, none, "10.0.0.7", UUID.randomUUID()))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("move-in checklist");
+    }
+
+    @Test
+    void theChecklistBecomesTheRoomConditionAndWhatIsWorseIsRecorded() {
+        // The room's cupboard was D1 when the last tenant left.
+        propertyModule.raiseCondition(room, owner, "Cupboard", "ROOM",
+                com.khatiyan.d_modules.property.model.DamageLevel.D1, List.of("https://res.cloudinary.com/x/old.jpg"));
+        var checklist = new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput(List.of(
+                // No worse than it was: nothing recorded.
+                new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput.ItemInput(
+                        "cupboard", com.khatiyan.d_modules.property.model.DamageLevel.D1, "Door scratched", false,
+                        List.of("https://res.cloudinary.com/x/old.jpg"), null),
+                // Worse than the room knew: a record with nobody responsible.
+                new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput.ItemInput(
+                        "Geyser", com.khatiyan.d_modules.property.model.DamageLevel.D2, "Knob missing", false,
+                        List.of("https://res.cloudinary.com/x/geyser.jpg"),
+                        com.khatiyan.d_modules.tenancy.model.MoveInSection.BATHROOM)),
+                1);
+
+        compliance.onboardExistingTenant(owner, withChecklist(
+                request(AgreementKind.PAPER, today.minusMonths(5), today.plusDays(3), photo(), null), checklist),
+                "10.0.0.7", UUID.randomUUID());
+
+        assertThat(propertyModule.roomConditions(room))
+                .extracting(c -> c.itemName() + ":" + c.section() + ":" + c.level())
+                .containsExactlyInAnyOrder("cupboard:ROOM:D1", "Geyser:BATHROOM:D2");
+        assertThat(jdbc.queryForList(
+                "SELECT item_name || ':' || responsibility || ':' || source || ':' || cost_paise FROM billing.damage_records WHERE property_id = ?",
+                String.class, property)).containsExactly("Geyser:NONE:MOVE_IN:0");
     }
 
     @Test
@@ -305,8 +345,10 @@ class ExistingTenantOnboardingIntegrationTest {
                 new IdCheckDeclarationInput(true, IdDocumentType.AADHAAR, "4821", Gender.FEMALE, LocalDate.of(2000, 1, 1)),
                 LegalStatement.TENANT_ID_DECLARATION.text(), null, null, null, null,
                 details, kind, photos, null,
-                new AgreementTermInput(6, null));
+                new AgreementTermInput(6, null), com.khatiyan.d_modules.tenancy.MoveInChecklistFixtures.minimalChecklist(), null);
     }
+
+
 
     /** The same stay, its identity declared as verified before Khatiyan instead of checked now. */
     private OnboardExistingTenantRequest verifiedBefore(IdCheckDeclarationInput idCheck, String statement) {
@@ -319,7 +361,17 @@ class ExistingTenantOnboardingIntegrationTest {
                 idCheck, idCheck == null ? null : LegalStatement.TENANT_ID_DECLARATION.text(), null,
                 true, statement, null,
                 null, AgreementKind.PAPER, photo(), null,
-                new AgreementTermInput(6, null));
+                new AgreementTermInput(6, null), com.khatiyan.d_modules.tenancy.MoveInChecklistFixtures.minimalChecklist(), null);
+    }
+
+    private static OnboardExistingTenantRequest withChecklist(
+            OnboardExistingTenantRequest plain, com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput checklist) {
+        return new OnboardExistingTenantRequest(
+                plain.tenantPhone(), plain.tenantName(), plain.propertyId(), plain.roomId(), plain.rentAmountPaise(),
+                plain.depositHeldPaise(), plain.movedInOn(), plain.firstBillOn(), plain.openingDuesPaise(),
+                plain.openingDuesNote(), plain.idCheck(), plain.idCheckStatementText(), plain.verification(),
+                plain.verifiedBefore(), plain.verifiedBeforeStatementText(), plain.device(), plain.tenant(),
+                plain.agreement(), plain.paperAgreementPhotoUrls(), plain.template(), plain.term(), checklist, null);
     }
 
     private static TenantDetailsInput address() {

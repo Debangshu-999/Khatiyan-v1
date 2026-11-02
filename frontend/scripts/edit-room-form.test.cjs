@@ -24,7 +24,7 @@ function nodes(tree, type) {
 }
 const { RoomDraftRow, emptyDraft } = compile(read("src/features/property/room-draft-row.tsx"), {
   "react-native": { Text: "Text", View: "View" },
-  "lucide-react-native": { ChevronDown: "Down", ChevronUp: "Up" },
+  "lucide-react-native": { ChevronDown: "Down", ChevronUp: "Up", Info: "Info" },
   "@/components/delete-icon": { DeleteIcon: "Delete" },
   "@/components/animated-pressable": { AnimatedPressable: "Button" },
   "@/components/card": { Card: "Card" },
@@ -58,12 +58,50 @@ test("Edit room uses Room type and Amenities bands, without a duplicate type lab
   assert.match(read("app/owner-edit-room.tsx"), /<RoomDraftRow[\s\S]*?expanded\s+headingBands/);
 });
 
-test("Add room and bulk room forms retain their existing headings and layout", () => {
+test("Add room separates details and Amenities into two cards without changing the bulk list", () => {
   const tree = RoomDraftRow(props);
-  assert.equal(tree.type, "Card");
+  assert.equal(tree.type, "View");
+  const cards = nodes(tree, "Card");
+  assert.equal(cards.length, 2);
+  assert.equal(nodes(cards[0], "FormInput").length, 4);
+  assert.equal(nodes(cards[0], "AmenityPicker").length, 0);
+  assert.equal(nodes(cards[1], "AmenityPicker").length, 1);
+  for (const input of nodes(tree, "FormInput")) assert.equal(input.props.radius, 8);
+  assert.equal(nodes(tree, "MoldPicker")[0].props.radius, 8);
   assert.equal(nodes(tree, "SectionHeading").length, 0);
   assert.equal(nodes(tree, "MoldPicker")[0].props.hideLabel, false);
   assert.equal(nodes(tree, "AmenityPicker")[0].props.headingBand, false);
+  const bulk = RoomDraftRow({ ...props, standalone: false });
+  assert.equal(bulk.type, "Card");
+  for (const input of nodes(bulk, "FormInput")) assert.equal(input.props.radius, 14);
+});
+
+test("Add room always shows an empty Amenities card and info message before a type is chosen", () => {
+  const tree = RoomDraftRow({ ...props, draft: emptyDraft() });
+  const cards = nodes(tree, "Card");
+  assert.equal(cards.length, 2);
+  assert.equal(nodes(cards[1], "AmenityPicker").length, 0);
+  assert.ok(nodes(cards[1], "Text").some((node) => node.props.children === "Amenities"));
+  assert.ok(nodes(cards[1], "Text").some((node) => node.props.children === "Select a room type."));
+  assert.equal(nodes(cards[1], "Info").length, 1);
+  for (const input of nodes(cards[0], "FormInput")) assert.equal(input.props.disabled, true);
+});
+
+test("changing or clearing a room type still seeds or clears its rent and amenities", () => {
+  const changes = [];
+  const chosen = { id: "next", conditioning: "NON_AC", amenities: ["CUPBOARD"], customAmenities: ["Kettle"], baseRentPaise: 950000 };
+  const tree = RoomDraftRow({ ...props, molds: [...props.molds, chosen], onChange: (next) => changes.push(next) });
+  const picker = nodes(tree, "MoldPicker")[0];
+  picker.props.onChange("next");
+  assert.equal(changes[0].moldId, "next");
+  assert.equal(changes[0].rent, "9500");
+  assert.equal(changes[0].amenities, chosen.amenities);
+  assert.equal(changes[0].customAmenities, chosen.customAmenities);
+  picker.props.onChange(null);
+  assert.equal(changes[1].moldId, null);
+  assert.equal(changes[1].rent, "");
+  assert.equal(changes[1].amenities.length, 0);
+  assert.equal(changes[1].customAmenities.length, 0);
 });
 
 const screen = ts.createSourceFile("edit-room.tsx", read("app/owner-edit-room.tsx"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

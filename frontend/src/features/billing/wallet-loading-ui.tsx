@@ -1,8 +1,7 @@
-import { Text, View } from "react-native";
-import { ReceiptText } from "lucide-react-native";
+import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LoadFailedCard } from "@/components/load-failed";
 import { Skeleton } from "@/components/skeleton";
-import { AnimatedPressable } from "@/components/animated-pressable";
 import { useTheme } from "@/theme/use-theme";
 
 export function WalletTransactionSkeleton({ count = 5 }: { count?: number }) {
@@ -37,11 +36,5 @@ export function WalletTransactionsScreenSkeleton() {
 }
 
 export function WalletTransactionsErrorCard({ onRetry }: { onRetry: () => void }) {
-  const { colors, fonts, type } = useTheme();
-  return <View accessibilityRole="alert" style={{ marginVertical: 12, padding: 18, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", gap: 10 }}>
-    <View style={{ backgroundColor: colors.neutralSoft, padding: 10, borderRadius: 12 }}><ReceiptText size={24} color={colors.muted} /></View>
-    <Text style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 15 }}>Could not load transactions</Text>
-    <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>Your transaction history is temporarily unavailable</Text>
-    <AnimatedPressable accessibilityRole="button" onPress={onRetry} style={{ backgroundColor: colors.neutralSoft, paddingHorizontal: 22, paddingVertical: 9, borderRadius: 10 }}><Text style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 14 }}>Try again</Text></AnimatedPressable>
-  </View>;
+  return <LoadFailedCard onReload={onRetry} />;
 }

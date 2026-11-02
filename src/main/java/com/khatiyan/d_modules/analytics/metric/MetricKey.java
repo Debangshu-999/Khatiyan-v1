@@ -58,6 +58,8 @@ public enum MetricKey {
     TENANTS_AGREEMENT_TERMS("tenants.agreement_terms", AnalyticsDivision.TENANTS, MetricScope.NOW, false, ManagerResource.TENANCIES),
     TENANTS_TERMS_ENDING("tenants.terms_ending", AnalyticsDivision.TENANTS, MetricScope.NOW, false, ManagerResource.TENANCIES),
     TENANTS_MOVES("tenants.moves", AnalyticsDivision.TENANTS, MetricScope.PERIOD, false, ManagerResource.TENANCIES),
+    /** Left out of the response entirely until the property has a stay carried over from before Khatiyan. */
+    TENANTS_TRANSITIONED_VS_NEW("tenants.transitioned_vs_new", AnalyticsDivision.TENANTS, MetricScope.PERIOD, false, ManagerResource.TENANCIES),
     TENANTS_TIME_TO_SIGN("tenants.time_to_sign", AnalyticsDivision.TENANTS, MetricScope.PERIOD, false, ManagerResource.TENANCIES),
     /** Left out of the response entirely when food is off for the property. */
     TENANTS_FOOD_SUBSCRIPTIONS("tenants.food_subscriptions", AnalyticsDivision.TENANTS, MetricScope.PERIOD, false, ManagerResource.FOOD);

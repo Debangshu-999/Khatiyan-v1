@@ -94,7 +94,7 @@ test("room cards omit unallotted amenities, including faded no icons", () => {
   const Strip = amenityStrip();
   const tree = Strip({ amenities: ["TV", "CUPBOARD", "COMMON_TOILET"], custom: [], tiles: true });
   const glyphs = tree.props.children[0];
-  assert.deepEqual(Array.from(glyphs, (glyph) => glyph.props.label), ["Cupboard", "TV", "Common toilet"]);
+  assert.deepEqual(Array.from(glyphs, (glyph) => glyph.props.label), ["Cupboard", "TV", "Common washroom"]);
   for (const glyph of glyphs) {
     const trigger = glyph.type(glyph.props).props.children[0].props.children[0];
     assert.equal(trigger.props.accessibilityLabel, glyph.props.label);
@@ -128,7 +128,7 @@ test("+n expands every additional allotted item and can collapse again", () => {
   assert.equal(Strip(props).props.children[1], null);
 });
 
-for (const [x, y, label] of [[40, 200, "Geyser"], [330, 20, "Cupboard"], [150, 500, "Attached toilet"]]) {
+for (const [x, y, label] of [[40, 200, "Geyser"], [330, 20, "Cupboard"], [150, 500, "Attached washroom"]]) {
   test(`${label} has independent tooltip width and stays anchored at ${x},${y}`, () => {
     const source = read("src/features/property/room-amenity-strip.tsx");
     const parsed = ts.createSourceFile("strip.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

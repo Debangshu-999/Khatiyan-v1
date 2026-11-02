@@ -38,6 +38,24 @@ export function announceInputBlur() {
   }, 40);
 }
 
+let modalsHoldingKeyboard = 0;
+
+/**
+ * A modal with the keyboard for itself says so, and the page behind it leaves the keyboard
+ * alone (user, 2026-11-02). Keyboard events reach every screen, so the page behind the wallet
+ * PIN made room and scrolled to the PIN's input, a visible jump under the dim. Returns the release.
+ */
+export function holdKeyboardForModal() {
+  modalsHoldingKeyboard += 1;
+  return () => {
+    modalsHoldingKeyboard -= 1;
+  };
+}
+
+export function keyboardHeldByModal() {
+  return modalsHoldingKeyboard > 0;
+}
+
 /** Called when the keyboard starts to close. Returns the unsubscribe. */
 export function onKeyboardLeaving(listener: Listener) {
   listeners.add(listener);

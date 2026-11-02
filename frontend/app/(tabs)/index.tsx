@@ -1,3 +1,5 @@
+import { PriorityChip } from "@/features/notice/notice-ui";
+import { LoadFailed, loadFailure } from "@/components/load-failed";
 import { DigestPaymentsIcon, DigestConcernsIcon, DigestMoveInsIcon, DigestMoveOutsIcon } from "@/components/tenancy-line-icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ComponentType, ReactNode } from "react";
@@ -7,6 +9,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurTargetView, BlurView } from "expo-blur";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { attentionCount } from "@/features/owner/action-center";
+import { HomeQuickActions } from "@/features/quick-actions/home-quick-actions";
+import { MealScanHomeCard } from "@/features/food/meal-attendance-ui";
+import { MealPassCard } from "@/features/food/meal-pass";
+import { MealRatingHomeCard } from "@/features/food/meal-rating";
 import { useFocusEffect } from "expo-router";
 import { Activity, AlertCircle, ChartPie, AlertTriangle, Ban, Banknote, BedDouble, Bell, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Compass, FileText, Home, Info, KeyRound, LayoutGrid, LocateFixed, Lock, LogOut, type LucideProps, MapPin, Megaphone, MessageSquareWarning, Navigation, Pin, ReceiptText, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, UserMinus, UserPlus, UserRound, Users, Waves, Wrench, X } from "lucide-react-native";
 import { BookingsIcon } from "@/features/property/property-control-icons";
@@ -96,7 +102,7 @@ import {
 import { MealGlyph, MEAL_LABEL, foodIcon, formatMealTime } from "@/features/food/food-ui";
 import { DelayedChip } from "@/features/food/meal-schedule-ui";
 import { TenancyStartsSoonBubble } from "@/features/tenancy/starts-soon-bubble";
-import { tabShadow } from "@/theme/shadows";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 import { useTheme } from "@/theme/use-theme";
@@ -131,7 +137,7 @@ export default function HomeScreen() {
   const user = profileQuery.data ?? auth.user;
   const location = useAppSelector((state) => state.location);
 
-  const { loading: accountsLoading, managedProperties, ownedProperties } = useAvailableAccounts();
+  const { loading: accountsLoading, managedProperties, ownedProperties, propertiesKnown } = useAvailableAccounts();
   const activeAccount = useAppSelector((state) => state.account.activeAccount);
   const [ownerSelectorOpen, setOwnerSelectorOpen] = useState(false);
 
@@ -222,6 +228,9 @@ export default function HomeScreen() {
         strip is its sibling, outside it, so it never blurs itself. */}
     <BlurTargetView ref={statusGlassTarget} style={{ flex: 1 }}>
     <ScreenScrollView
+      // Home's banner scrolls with the page; it is not a docked ScreenHeader.
+      // Opt out explicitly so its component name cannot trigger auto-pinning.
+      stickyHeaderIndices={[]}
       // Flush to the safe area, unlike every other screen. Home opens on the
       // location bar and the greeting rather than a title, and the gap that
       // gives a heading room reads as a band of nothing above a greeting.
@@ -240,6 +249,20 @@ export default function HomeScreen() {
     >
       {/* Left column stacks the location bar and the greeting so the greeting
           hugs the location; the profile + live-events stay pinned top-right. */}
+      {isWorkspace ? (
+        <WorkspaceHomeHeader
+          firstName={firstName}
+          greeting={greeting}
+          location={location}
+          onRefreshLocation={() => void dispatch(fetchCurrentLocation())}
+          subtitle={subtitle}
+          topInset={safeAreaInsets.top}
+        >
+          <HomeAlertsButton disabled={awaitingPropertyChoice} inverse onPress={() => router.push("/notifications")} />
+          <LatestEventsButton activity={headerRecentActivity} disabled={awaitingPropertyChoice} inverse propertyName={selectedWorkspaceProperty?.name ?? null} />
+          <HomeAttentionButton count={headerAttentionCount} disabled={awaitingPropertyChoice} inverse onPress={() => router.push("/owner-action-center")} />
+        </WorkspaceHomeHeader>
+      ) : (
       <View
         style={{
           alignItems: "flex-start",
@@ -364,6 +387,7 @@ export default function HomeScreen() {
           ) : null}
         </View>
       </View>
+      )}
 
       {/* The greeting and other static chrome stay visible. Only the account or
           property content that is actually waiting on an API response ghosts. */}
@@ -375,6 +399,7 @@ export default function HomeScreen() {
           onNavigate={router.push}
           onSelectorOpenChange={setOwnerSelectorOpen}
           properties={isManagerAccount ? managedProperties : ownedProperties}
+          propertiesKnown={propertiesKnown}
         />
       ) : activeAccount === "tenant" ? (
         <TenantHome
@@ -423,6 +448,50 @@ export default function HomeScreen() {
           style={StyleSheet.absoluteFill}
           tint={isDark ? "dark" : "default"}
         />
+      </View>
+    </View>
+  );
+}
+
+/** Only the owner/manager banner changes; tenant and discovery Home keep their header. */
+function WorkspaceHomeHeader({
+  children,
+  firstName,
+  greeting,
+  location,
+  onRefreshLocation,
+  subtitle,
+  topInset,
+}: {
+  children: ReactNode;
+  firstName: string;
+  greeting: string;
+  location: DeviceLocationState;
+  onRefreshLocation: () => void;
+  subtitle: string;
+  topInset: number;
+}) {
+  const { colors, fonts, isDark, type } = useTheme();
+  const accent = isDark ? "rgba(5, 5, 5, 0.88)" : "#DCE8FF";
+  const secondary = isDark ? "rgba(5, 5, 5, 0.70)" : "rgba(255, 255, 255, 0.82)";
+
+  return (
+    <View style={{ alignItems: "flex-start", backgroundColor: colors.primary, flexDirection: "row", gap: spacing.sm, marginHorizontal: -spacing.lg, paddingBottom: spacing.lg, paddingHorizontal: spacing.lg, paddingTop: topInset + spacing.sm }}>
+      <View style={{ flex: 1, gap: spacing.sm, minWidth: 0 }}>
+        <HomeLocationBar compact inverse location={location} onRefresh={onRefreshLocation} />
+        <View style={{ gap: spacing.xs }}>
+          <Text style={{ color: colors.onPrimary, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.4, lineHeight: 28 }}>
+            {greeting},{" "}
+            <Text style={{ color: accent, fontStyle: "italic", fontWeight: "400" }}>{firstName}.</Text>
+          </Text>
+          <View style={{ flexDirection: "row", gap: spacing.sm, maxWidth: 430 }}>
+            <View style={{ alignSelf: "stretch", backgroundColor: accent, borderRadius: 2, width: 4 }} />
+            <FitText numberOfLines={2} style={[type.body, { color: secondary, flex: 1, fontSize: 11, lineHeight: 15 }]}>{subtitle}</FitText>
+          </View>
+        </View>
+      </View>
+      <View style={{ alignItems: "flex-end", flexDirection: "column", gap: spacing.sm }}>
+        {children}
       </View>
     </View>
   );
@@ -674,7 +743,7 @@ function ServiceBalanceCard({ onPress }: { onPress: () => void }) {
   const [pinOpen, setPinOpen] = useState(false);
 
   if (!balance && (balanceQuery.isLoading || balanceQuery.isFetching)) return (
-    <View accessibilityLabel="Loading wallet balance" style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.borderStrong, borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
+    <View accessibilityLabel="Loading wallet balance" style={{ ...softShadow(colors.shadow, 4, 12), alignItems: "center", backgroundColor: colors.surface, borderColor: colors.borderStrong, borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}>
       <Skeleton width={56} height={46} radius={12} />
       <View style={{ flex: 1, gap: 6 }}>
         <Skeleton width={110} height={18} />
@@ -699,6 +768,7 @@ function ServiceBalanceCard({ onPress }: { onPress: () => void }) {
           gap: spacing.md,
           paddingHorizontal: spacing.lg,
           paddingVertical: spacing.md,
+          ...softShadow(colors.shadow, 4, 12),
         }}
       >
         {/* Sized at 3x this display slot for high-density phones. */}
@@ -751,6 +821,7 @@ function PropertyLeadsCard({ onPress, propertyId }: { onPress: () => void; prope
           gap: spacing.md,
           paddingHorizontal: spacing.lg,
           paddingVertical: spacing.md,
+          ...softShadow(colors.shadow, 4, 12),
         }}
       >
         <Image
@@ -798,6 +869,7 @@ function MoveInsTodayCard({ count, onPress }: { count: number; onPress: () => vo
           // Smaller than the two cards above it (user, 2026-10-27): one line, a small mark.
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.sm,
+          ...softShadow(colors.shadow, 4, 12),
         }}
       >
         <BookingsIcon size={24} />
@@ -1277,6 +1349,11 @@ function TenantHome({
   const noticeCount = noticesQuery.data?.length ?? 0;
   const notices = [...(noticesQuery.data ?? [])].sort(compareNoticePriority).slice(0, 3);
 
+  const loadFailed = loadFailure(activeTenancyQuery);
+  if (loadFailed) {
+    return <LoadFailed error={loadFailed.error} onReload={loadFailed.reload} />;
+  }
+
   if (activeTenancyQuery.isFetching && !activeTenancy) {
     return (
       <SkeletonScreen cards={3} header={false} rows={0} tiles={0} />
@@ -1310,10 +1387,14 @@ function TenantHome({
             title="Food preference"
           />
         ) : (
-          <FoodPreferenceHomeCard
-            moduleEnabled={foodQuery.data.moduleEnabled}
-            onPress={() => onNavigate("/tenancy-food")}
-          />
+          <View style={{ gap: spacing.md }}>
+            <MealPassCard skip={!foodQuery.data.moduleEnabled} />
+            <MealRatingHomeCard skip={!foodQuery.data.moduleEnabled} />
+            <FoodPreferenceHomeCard
+              moduleEnabled={foodQuery.data.moduleEnabled}
+              onPress={() => onNavigate("/tenancy-food")}
+            />
+          </View>
         )
       ) : null}
 
@@ -1691,11 +1772,14 @@ function OwnerHome({
   onNavigate,
   onSelectorOpenChange,
   properties,
+  propertiesKnown,
 }: {
   account: "owner" | "manager";
   onNavigate: (href: OwnerRoute) => void;
   onSelectorOpenChange: (open: boolean) => void;
   properties: OwnerProperty[];
+  /** Whether the list has really arrived, rather than being fetched again or having failed. */
+  propertiesKnown: boolean;
 }) {
   const { colors } = useTheme();
   const dispatch = useAppDispatch();
@@ -1740,7 +1824,10 @@ function OwnerHome({
       return;
     }
 
-    if (selectedPropertyId && !properties.some((property) => property.id === selectedPropertyId)) {
+    // Only a list that has arrived can say a property is gone. Reloading drops the list
+    // for a moment, and clearing here left every screen that needs a property waiting
+    // forever (user, 2026-11-02).
+    if (propertiesKnown && selectedPropertyId && !properties.some((property) => property.id === selectedPropertyId)) {
       dispatch(setSelectedOwnerPropertyId(null));
       setSelectorOpen(properties.length > 1);
       return;
@@ -1749,7 +1836,12 @@ function OwnerHome({
     if (properties.length > 1 && !selectedPropertyId) {
       setSelectorOpen(true);
     }
-  }, [dispatch, properties, selectedPropertyId]);
+  }, [dispatch, properties, propertiesKnown, selectedPropertyId]);
+
+  const loadFailed = loadFailure(dashboardQuery);
+  if (loadFailed) {
+    return <LoadFailed error={loadFailed.error} onReload={loadFailed.reload} />;
+  }
 
   if (properties.length === 0) {
     return (
@@ -1792,8 +1884,7 @@ function OwnerHome({
           // expose a raster seam between two otherwise identical blue fills.
           marginTop: -1,
           overflow: selectorPanelOpen ? "hidden" : "visible",
-          // The closed tab bar draws its entire blue-to-page boundary itself.
-          // Extra header padding would leave a separate blue baseline beneath it.
+          // The curved tabs own the blue-to-page boundary.
           paddingBottom: selectorPanelOpen ? spacing.md : 0,
           paddingHorizontal: spacing.lg + 1,
         }}
@@ -1868,7 +1959,7 @@ function OwnerHome({
   );
 }
 
-/** A line graph for the Dashboard tab: a trend rather than the bar chart it was. */
+/** The original Home tab's line-chart icon. */
 function DashboardGlyph({ color, size }: LucideProps) {
   return <MaterialCommunityIcons color={color} name="chart-line" size={Number(size ?? 24)} />;
 }
@@ -1876,13 +1967,7 @@ function DashboardGlyph({ color, size }: LucideProps) {
 function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab: OwnerTab }) {
   const { colors, fonts } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
-  // The tab row has a fixed 56-point height and spans the screen minus the
-  // page gutters. Seed those dimensions so its SVG is present on the very
-  // first frame; onLayout still corrects them if the host is ever narrower.
-  const [tabBarSize, setTabBarSize] = useState(() => ({
-    height: 56,
-    width: Math.max(0, windowWidth - spacing.lg * 2),
-  }));
+  const [tabBarSize, setTabBarSize] = useState(() => ({ height: 56, width: Math.max(0, windowWidth - spacing.lg * 2) }));
   const options: { icon: ComponentType<LucideProps>; label: string; value: OwnerTab }[] = [
     { icon: LayoutGrid, label: "Workspace", value: "workspace" },
     { icon: DashboardGlyph, label: "Dashboard", value: "dashboard" },
@@ -1892,7 +1977,6 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
   const tabWidth = tabBarSize.width / options.length;
   const activeLeft = tab === "workspace" ? 0 : tabWidth;
   const curveSize = 28;
-  // Bleed past both viewport edges so SVG clipping cannot leave a blue hairline.
   const edgeBleed = 3;
   const canvasWidth = tabBarSize.width + spacing.lg * 2 + edgeBleed * 2;
   const shapeHeight = tabBarSize.height;
@@ -1901,9 +1985,7 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
   const leftShoulder = activeStart - curveSize;
   const rightShoulder = activeEnd + curveSize;
   const curveControl = curveSize * 0.55228475;
-  // Draw the entire header-to-page boundary on one full-width SVG surface.
-  // The blue field and page-coloured tab share this one contour rather than
-  // relying on an inset white overlay to line up with two separate Views.
+  // Restore the original single blue-to-page contour, with no underline or grey pill.
   const contourPath = [
     `M 0 ${shapeHeight}`,
     `L ${leftShoulder} ${shapeHeight}`,
@@ -1916,97 +1998,45 @@ function OwnerTabBar({ onChange, tab }: { onChange: (tab: OwnerTab) => void; tab
     `C ${activeEnd} ${shapeHeight - curveSize + curveControl} ${rightShoulder - curveControl} ${shapeHeight} ${rightShoulder} ${shapeHeight}`,
     `L ${canvasWidth} ${shapeHeight}`,
   ].join(" ");
-  // Close the fill at the page edge without drawing a visible vertical rule there.
   const pageShape = `${contourPath} L ${canvasWidth} ${shapeHeight} L 0 ${shapeHeight} Z`;
 
   return (
     <View
+      accessibilityRole="tablist"
       onLayout={(event) => {
         const { height, width } = event.nativeEvent.layout;
-        setTabBarSize((current) => (
-          Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5
-            ? current
-            : { height, width }
-        ));
+        setTabBarSize((current) => Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5 ? current : { height, width });
       }}
       style={{ alignItems: "stretch", flexDirection: "row", overflow: "visible" }}
     >
       {tabBarSize.width > 0 && tabBarSize.height > 0 ? (
-        <Svg
-          accessible={false}
-          height={shapeHeight}
-          pointerEvents="none"
-          style={{ left: -spacing.lg - edgeBleed, position: "absolute", top: 0, zIndex: 0 }}
-          width={canvasWidth}
-        >
+        <Svg accessible={false} height={shapeHeight} pointerEvents="none"
+          style={{ left: -spacing.lg - edgeBleed, position: "absolute", top: 0, zIndex: 0 }} width={canvasWidth}>
           <Rect fill={colors.primary} height={shapeHeight} width={canvasWidth} x={0} y={0} />
-          {/* Fills only, no outline. The two fills meet cleanly on their own. */}
           <Path d={pageShape} fill={colors.background} />
         </Svg>
       ) : null}
-      <View
-        pointerEvents="none"
-        style={{
-          backgroundColor: colors.background,
-          bottom: -1,
-          // Straddle the SVG/page boundary instead of ending on it. This
-          // covers both its final raster row and any half-pixel seam beneath
-          // the unselected tab on high-density Android screens.
-          height: 2,
-          left: -spacing.lg - edgeBleed,
-          position: "absolute",
-          right: -spacing.lg - edgeBleed,
-          zIndex: 1,
-        }}
-      />
-
+      {/* Cover the last raster row at the page boundary on high-density Android displays. */}
+      <View pointerEvents="none" style={{ backgroundColor: colors.background, bottom: -1, height: 2,
+        left: -spacing.lg - edgeBleed, position: "absolute", right: -spacing.lg - edgeBleed, zIndex: 1 }} />
       {options.map((option) => {
         const active = option.value === tab;
         const Icon = option.icon;
-
         return (
-          <View
-            key={option.value}
-            style={{
-              flex: 1,
-              position: "relative",
-              zIndex: 2,
-            }}
+          <View key={option.value} style={{ flex: 1, position: "relative", zIndex: 2 }}>
+          <AnimatedPressable
+            accessibilityLabel={option.label}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            onPress={() => onChange(option.value)}
+            style={{ alignItems: "center", backgroundColor: "transparent", flex: 1, justifyContent: "center", minHeight: 56, paddingHorizontal: spacing.md, zIndex: 2 }}
           >
-            <AnimatedPressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              onPress={() => onChange(option.value)}
-              style={{
-                alignItems: "center",
-                backgroundColor: "transparent",
-                flex: 1,
-                justifyContent: "center",
-                minHeight: 56,
-                paddingHorizontal: spacing.md,
-                zIndex: 2,
-              }}
-            >
-              <View
-                style={{
-                  alignItems: "center",
-                  flexDirection: "row",
-                  gap: iconGap,
-                  transform: [{ translateX: option.value === "workspace" && !active ? -(iconSize + iconGap) / 2 : 0 }],
-                }}
-              >
-                <Icon color={active ? colors.primary : colors.onPrimary} size={iconSize} strokeWidth={2.1} />
-                <Text
-                  style={{
-                    color: active ? colors.ink : colors.onPrimary,
-                    fontFamily: active ? fonts.sansBold : fonts.sans,
-                    fontSize: 15,
-                  }}
-                >
-                  {option.label}
-                </Text>
-              </View>
-            </AnimatedPressable>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: iconGap,
+              transform: [{ translateX: option.value === "workspace" && !active ? -(iconSize + iconGap) / 2 : 0 }] }}>
+              <Icon color={active ? colors.primary : colors.onPrimary} size={iconSize} strokeWidth={2.1} />
+              <Text style={{ color: active ? colors.ink : colors.onPrimary, fontFamily: active ? fonts.sansBold : fonts.sans, fontSize: 15 }}>{option.label}</Text>
+            </View>
+          </AnimatedPressable>
           </View>
         );
       })}
@@ -2154,6 +2184,7 @@ function AnalyticsRowCard({
         minHeight: 84,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <Icon color={tone === "danger" ? colors.danger : colors.primary} size={34} strokeWidth={2} />
@@ -2285,6 +2316,7 @@ function FrequentlyVisited({
         borderRadius: radii.card,
         borderWidth: PINNED_BOX_BORDER,
         overflow: "hidden",
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <AnimatedPressable
@@ -2484,7 +2516,9 @@ function WorkspaceTab({
       {/* No "Workspace" heading. The tab directly above already says it, and
           the pinned services dropdown carries its own header. */}
       <View style={{ gap: spacing.md }}>
+        {dashboard.property?.propertyId ? <MealScanHomeCard propertyId={dashboard.property.propertyId} /> : null}
         <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={dashboard.property?.propertyId ?? null} workspaceRole={workspaceRole} />
+        <HomeQuickActions key={dashboard.property.propertyId} dashboard={dashboard} />
         {workspaceRole === "Owner" ? (
           <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
         ) : null}
@@ -2625,7 +2659,9 @@ function WorkspaceTabLoading({
   return (
     <>
       <View style={{ gap: spacing.md }}>
+        <MealScanHomeCard propertyId={propertyId} />
         <FrequentlyVisited pinnedKeys={pinnedKeys} propertyId={propertyId} workspaceRole={workspaceRole} />
+        <HomeQuickActions key={propertyId} />
         {workspaceRole === "Owner" ? (
           <ServiceBalanceCard onPress={() => onNavigate("/owner-service-balance")} />
         ) : null}
@@ -2696,6 +2732,7 @@ function HomeToolBox({
         minHeight: 112,
         paddingHorizontal: spacing.xs,
         paddingVertical: spacing.md,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       {badge && badge > 0 ? (
@@ -2744,14 +2781,14 @@ function PaymentClaimsCard({ digest, onOpen }: { digest: PaymentIntentDigest; on
 
   return (
     <AnimatedPressable accessibilityRole="button" onPress={onOpen}>
-      <Card>
-        <View style={{ gap: spacing.md }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            {/* 30 in a 44 rail, matching Upcoming notices directly below —
+      <Card style={{ padding: spacing.sm }}>
+        <View style={{ gap: spacing.sm }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            {/* 30 in a compact 36 rail, matching Upcoming notices below —
                 the two digest cards are read as a pair. The 72px artwork, not
                 the 1254px one: half a megabyte is a lot to download for a mark
                 this small. */}
-            <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}>
+            <View style={{ alignItems: "center", height: 36, justifyContent: "center", width: 36 }}>
               <PaymentClaimsIcon size={30} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
@@ -2792,13 +2829,13 @@ function UpcomingNoticesCard({ onOpen, propertyId }: { onOpen: () => void; prope
 
   return (
     <AnimatedPressable accessibilityRole="button" onPress={onOpen}>
-      <Card>
-        <View style={{ gap: spacing.md }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            {/* 30 in a 44 rail, the same as Payment claims above it — the
+      <Card style={{ padding: spacing.sm }}>
+        <View style={{ gap: spacing.sm }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            {/* 30 in a compact 36 rail, the same as Payment claims above — the
                 two digest cards are read as a pair and a glyph a few points
                 out is visible straight away. */}
-            <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}>
+            <View style={{ alignItems: "center", height: 36, justifyContent: "center", width: 36 }}>
               <NoticeIcon size={30} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
@@ -2850,12 +2887,12 @@ function ExpenseTrackerCard({ onOpen, propertyId }: { onOpen: () => void; proper
 
   return (
     <AnimatedPressable accessibilityRole="button" onPress={onOpen}>
-      <Card>
-        <View style={{ gap: spacing.md }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+      <Card style={{ padding: spacing.sm }}>
+        <View style={{ gap: spacing.sm }}>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             {/* 30 in a 44 rail, the third of the digest cards to carry its
                 module's artwork rather than a line glyph. */}
-            <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}>
+            <View style={{ alignItems: "center", height: 36, justifyContent: "center", width: 36 }}>
               <ExpenseIcon size={30} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
@@ -3012,9 +3049,8 @@ function ActivityRow({ item }: { item: RecentActivityItem }) {
         borderCurve: "continuous",
         borderRadius: 16,
         borderWidth: 1,
-        elevation: 2,
         padding: spacing.md,
-        ...tabShadow(colors.shadow, 2, 6),
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -3152,14 +3188,13 @@ function DigestTile({
         borderCurve: "continuous",
         borderRadius: 12,
         borderWidth: 1,
-        elevation: 2,
         flex: 1,
         // Centred: a tile whose hint wraps to two lines is taller than the one
         // beside it, and top-aligned the shorter one's glyph sat against the
         // ceiling with the spare height below it.
         justifyContent: "center",
         padding: spacing.md,
-        ...tabShadow(colors.shadow, 2, 6),
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
@@ -3343,7 +3378,7 @@ function OwnerPropertyPicker({
           padding: spacing.md,
           // Lifted instead of outlined. A soft shadow separates it from the
           // page the way the ink border used to, without the weight.
-          ...tabShadow(colors.shadow, 2, 6),
+          ...softShadow(colors.shadow, 4, 12),
         }}
       >
         {/* Absolutely positioned so it takes no part in the row layout, and
@@ -3496,6 +3531,7 @@ function OwnerPropertyOptions({
         borderRadius: radii.card,
         borderWidth: 1,
         overflow: "hidden",
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       {properties.map((property, index) => {
@@ -3753,9 +3789,7 @@ function NoticePreviewCard({
                     padding: spacing.md,
                   }}
                 >
-                  <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker }]}>
-                    {humanizeToken(notice.priority)}
-                  </Text>
+                  <PriorityChip priority={notice.priority} />
                   <Text style={[type.display, { color: colors.ink, fontSize: 18, lineHeight: 23 }]}>
                     {notice.title}
                   </Text>

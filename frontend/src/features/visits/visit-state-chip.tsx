@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { Text, View } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
+import { cardText } from "@/components/card-name-row";
 import { useTheme } from "@/theme/use-theme";
 
 /** Where a visit stands, as the chip beside its name says it. */
@@ -39,7 +40,7 @@ export function VisitStateChip({ icon: Icon, label, pill = false, tone }: VisitS
       }}
     >
       <Icon color={color} size={13} strokeWidth={2.4} />
-      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 11 }}>{label}</Text>
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: cardText(11) }}>{label}</Text>
     </View>
   );
 }

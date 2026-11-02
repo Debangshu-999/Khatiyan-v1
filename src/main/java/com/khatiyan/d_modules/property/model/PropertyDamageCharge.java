@@ -91,7 +91,7 @@ public class PropertyDamageCharge {
             throw new ValidationException("Damage charge name must be at most 80 characters");
         }
         if (category == DamageCategory.COMMON_TOILET && d1Paise != null) {
-            throw new ValidationException("A common toilet's things are listed, not priced: " + normalized);
+            throw new ValidationException("A common washroom's things are listed, not priced: " + normalized);
         }
         if (d1Paise == null && (d2Paise != null || d3Paise != null)) {
             throw new ValidationException("Price D1 first for " + normalized);

@@ -24,6 +24,7 @@ function load(source, globals = {}) {
     exports: exported,
     require(name) {
       if (name === "react/jsx-runtime") return { jsx: element, jsxs: element };
+      if (name === "react") return { useRef: () => ({ current: null }), useState: (value) => [value, () => {}] };
       if (name === "react-native") return { Image: "Image", Text: "Text", View: "View", Dimensions: { get: () => ({ height: 800 }) } };
       if (name === "@/components/card") return { Card: "Card" };
       if (name === "@/theme/spacing") return { spacing };
@@ -147,7 +148,7 @@ test("custom empty states across the app have no supporting Text immediately bel
 });
 
 test("custom result empty states keep their clear-search and retry buttons", () => {
-  assert.ok(read("app/(tabs)/discovery.tsx").includes("onPress={clearSearch}"));
+  assert.ok(read("app/(tabs)/discovery.tsx").includes(": clearSearch}"));
   assert.ok(read("src/features/discovery/components/ai-results.tsx").includes("onPress={onTryAgain}"));
   assert.ok(read("src/features/discovery/components/nearby-places-view.tsx").includes('setQuery("");'));
 });

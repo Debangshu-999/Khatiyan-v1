@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context";
 
 import { loadSession } from "@/auth/session-storage";
+import { AppFailureOverlay, ScreenBoundary } from "@/components/load-failed";
 import { ScreenErrorFallback } from "@/components/screen-error-fallback";
 import { useBlurInputOnOutsideTap } from "@/components/blur-input-on-outside-tap";
 import { ToastProvider } from "@/components/toast";
@@ -103,6 +104,7 @@ function ThemedRootStack() {
       {/* Above the navigator so it can announce an expiry from any screen. */}
       <SessionExpiryGuard />
       <Stack
+        screenLayout={({ children }) => <ScreenBoundary>{children}</ScreenBoundary>}
         screenOptions={{
           // A short native fade for normal push/pop; explicit modal animations
           // below retain their own motion. Android's native fade is 150ms;
@@ -128,6 +130,7 @@ function ThemedRootStack() {
         <Stack.Screen name="my-visits" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-action-center" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-quick-actions" options={{ headerShown: false }} />
         <Stack.Screen name="owner-onboard-tenant" options={{ headerShown: false }} />
         <Stack.Screen name="owner-agreement-preview" options={{ headerShown: false }} />
         <Stack.Screen name="owner-active-tenancy-detail" options={{ headerShown: false }} />
@@ -151,6 +154,10 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-food" options={{ headerShown: false }} />
         <Stack.Screen name="owner-food-menu" options={{ headerShown: false }} />
         <Stack.Screen name="owner-food-forecast" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-meal-scan" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-meal-attendance" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-meal-attendance-history" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-meal-ratings" options={{ headerShown: false }} />
         <Stack.Screen name="owner-room-change-requests" options={{ headerShown: false }} />
         <Stack.Screen name="owner-edit-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property" options={{ headerShown: false }} />
@@ -181,6 +188,7 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-manager-permissions" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy-agreement" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-policies" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-damages" options={{ headerShown: false }} />
         <Stack.Screen name="owner-end-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-board" options={{ headerShown: false }} />
         <Stack.Screen name="owner-notices" options={{ headerShown: false }} />
@@ -331,6 +339,7 @@ function ThemedRootStack() {
           }}
         />
       </Stack>
+      <AppFailureOverlay />
     </View>
   );
 }

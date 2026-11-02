@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.khatiyan.d_modules.food.model.FoodItem;
+import com.khatiyan.d_modules.food.model.FoodDishType;
 import com.khatiyan.d_modules.food.model.FoodQuantityUnit;
 import com.khatiyan.d_modules.property.model.MealType;
 
@@ -17,6 +18,7 @@ public record FoodItemResponse(
         String imagePublicId,
         FoodQuantityUnit quantityUnit,
         Set<MealType> mealTags,
+        FoodDishType dishType,
         boolean active,
         boolean deleted,
         Instant createdAt,
@@ -32,6 +34,7 @@ public record FoodItemResponse(
                 item.getImagePublicId(),
                 item.getQuantityUnit(),
                 item.getMealTags(),
+                item.getDishType(),
                 item.isCurrentlyActive(),
                 item.isDeleted(),
                 item.getCreatedAt(),

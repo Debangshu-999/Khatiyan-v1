@@ -1,11 +1,13 @@
 import { Image, ScrollView, Text, View } from "react-native";
-import { Search, Sparkles } from "lucide-react-native";
+import { Search } from "lucide-react-native";
 
+import { AiGradient, aiGradientSpans } from "@/components/ai-style";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { MarqueeText } from "@/components/marquee-text";
 import type { ListingSort } from "@/store/services/discovery-api";
 import type { SmartSearchListing, SmartSearchResult } from "@/store/services/intelligence-api";
+import { softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -14,9 +16,6 @@ import { ListingSortButton, sortListings } from "./listing-sort";
 import { PropertyListingCard } from "./property-listing-card";
 
 const EMPTY_SEARCH_ILLUSTRATION = require("../../../../assets/empty-states/discovery-empty-search.png");
-
-/** The sparkle beside "Found n results". The chips under it indent by this. */
-const HEADER_ICON_SIZE = 16;
 
 /**
  * The answer to a sentence.
@@ -59,6 +58,8 @@ export function AiResults({
 }) {
   const { colors, fonts, type } = useTheme();
   const found = result.matching.length;
+  const foundLine =
+    found === 0 ? "No results match your search" : `Found ${found} result${found === 1 ? "" : "s"} matching your search`;
   // The matching section fills first: those are the answers, and the related
   // ones only start appearing once somebody has scrolled past them.
   const matching = sortListings(result.matching, sort).slice(0, visible);
@@ -70,14 +71,10 @@ export function AiResults({
     <>
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-          <Sparkles color={colors.primary} size={HEADER_ICON_SIZE} strokeWidth={2.2} />
-          {/* One line, always. On a phone the sentence wrapped beside the sort
-              button, and the sparkle centred itself between the two lines. */}
+          {/* One line, always. On a phone the sentence wrapped beside the sort button. */}
           <View style={{ flex: 1, minWidth: 0 }}>
-            <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
-              {found === 0
-                ? "No results match your search"
-                : `Found ${found} result${found === 1 ? "" : "s"} matching your search`}
+            <MarqueeText spans={aiGradientSpans(foundLine)} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+              {foundLine}
             </MarqueeText>
           </View>
           {found + result.related.length > 1 ? <ListingSortButton onPress={onOpenSort} sort={sort} /> : null}
@@ -89,26 +86,25 @@ export function AiResults({
             for every few requirements and pushed the first card down. */}
         {result.requirements.length > 0 ? (
           <ScrollView
-            // Starts under the word "Found", not under the sparkle: the icon
-            // plus the row's gap. They slide under the icon once scrolled.
-            contentContainerStyle={{ gap: spacing.xs, paddingLeft: HEADER_ICON_SIZE + spacing.xs }}
+            // The padding is room for the bubbles' shadow, which the scroller would clip.
+            contentContainerStyle={{ gap: spacing.xs, paddingBottom: 6, paddingHorizontal: 2, paddingTop: 2 }}
             horizontal
             showsHorizontalScrollIndicator={false}
           >
             {result.requirements.map((requirement) => (
+              // Two layers: the shadow on the outer, as the gradient edge needs overflow hidden.
               <View
                 key={requirement}
-                style={{
-                  backgroundColor: colors.primarySoft,
-                  borderCurve: "continuous",
-                  borderRadius: 999,
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: 5,
-                }}
+                style={{ backgroundColor: colors.surface, borderRadius: 999, ...softShadow(colors.shadow, 2, 6) }}
               >
-                <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansMedium, fontSize: 11.5 }}>
-                  {requirement}
-                </Text>
+                <View style={{ borderCurve: "continuous", borderRadius: 999, overflow: "hidden", padding: 1.5 }}>
+                  <AiGradient />
+                  <View style={{ backgroundColor: colors.surface, borderCurve: "continuous", borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
+                    <Text style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 11.5 }}>
+                      {requirement}
+                    </Text>
+                  </View>
+                </View>
               </View>
             ))}
           </ScrollView>

@@ -66,10 +66,15 @@ public class JwtService {
         this.accessTokenExpiry = Duration.ofMinutes(accessTokenExpiryMinutes);
     }
 
+    /** The first token of a new session. */
     public IssuedToken issue(User user) {
+        return issue(user, UUID.randomUUID());
+    }
+
+    /** A token for a session: every token of one device's sign-in carries the same jti, so revoking it ends them all. */
+    public IssuedToken issue(User user, UUID sessionId) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(accessTokenExpiry);
-        UUID sessionId = UUID.randomUUID();
 
         String token = Jwts.builder()
             .id(sessionId.toString())

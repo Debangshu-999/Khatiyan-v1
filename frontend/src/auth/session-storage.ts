@@ -5,7 +5,7 @@ import type { RootState } from "@/store/store";
 
 const SESSION_KEY = "khatiyan.session.v1";
 
-export type PersistedSession = Pick<RootState["auth"], "accessToken" | "user">;
+export type PersistedSession = Pick<RootState["auth"], "accessToken" | "user"> & { refreshToken?: string | null };
 
 export async function saveSession(session: PersistedSession) {
   const serializedSession = JSON.stringify(session);

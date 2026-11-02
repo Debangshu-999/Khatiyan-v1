@@ -107,6 +107,10 @@ public enum NotificationSubtype {
     BILLING_CYCLE_CANCELLED,
     BILLING_LATE_FEE_APPLIED,
     BILLING_LINE_ITEM_CHANGED,
+    // Damage records naming a tenant (2026-10-29).
+    DAMAGE_RECORDED,
+    DAMAGE_RECORD_UPDATED,
+    DAMAGE_RECORD_REMOVED,
     PAYMENT_SUCCEEDED,
     PAYMENT_FAILED,
     // Owner-facing: rent was collected but could not be deposited to their bank.

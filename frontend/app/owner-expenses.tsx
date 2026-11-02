@@ -1,10 +1,12 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from "react-native-svg";
-import { CalendarClock, Plus, Repeat2, Undo2, Wallet, X } from "lucide-react-native";
+import { CalendarClock, CircleHelp, Info, Pencil, Plus, Repeat2, Undo2, Wallet } from "lucide-react-native";
 
+import { CalendarPicker } from "@/components/calendar-picker";
+import { istToday } from "@/features/analytics/period";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -13,7 +15,8 @@ import { MetricTile } from "@/components/metric-tile";
 import { MoneyText } from "@/components/money-text";
 import { ProgressBar } from "@/components/progress-bar";
 import { SheetShell } from "@/components/sheet-shell";
-import { StatusPill } from "@/components/status-pill";
+import { DeleteIcon } from "@/components/delete-icon";
+import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -35,7 +38,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ModeRow } from "@/features/enquiry/handler-mode-sheet";
 import { ExpenseCategoryPicker } from "@/features/owner/expense-category-picker";
 import { ActionButton, ConfirmDialog, FormInput, IconButton, formatMoneyPaise, rupeesToPaise } from "@/features/owner/owner-ui";
-import { MonthSelector } from "@/components/month-selector";
+import { MonthSelector, currentMonth } from "@/components/month-selector";
 import { useAppSelector } from "@/store/hooks";
 import {
   useCreateExpenseMutation,
@@ -59,8 +62,10 @@ import {
   type RecurringExpense,
 } from "@/store/services/expense-api";
 import { radii, spacing } from "@/theme/spacing";
+import { useSoftShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 
 const NO_EXPENSE_ILLUSTRATION = require("../assets/empty-states/No-Expense_512x512.png");
 
@@ -77,6 +82,11 @@ export default function OwnerExpensesScreen() {
   const [page, setPage] = useState(0);
   const [sheet, setSheet] = useState<"add" | "recurring" | "set-budget" | "raise-budget" | null>(null);
   const [reverseTarget, setReverseTarget] = useState<Expense | null>(null);
+  useQuickActionIntent({
+    "add-expense": () => setSheet("add"),
+    "recurring-expense": () => setSheet("recurring"),
+    "raise-budget": () => setSheet("raise-budget"),
+  }, Boolean(property));
 
   const skip = !propertyId;
   const summaryQuery = useGetExpenseSummaryQuery({ propertyId, month }, { skip });
@@ -113,6 +123,11 @@ export default function OwnerExpensesScreen() {
       .filter((item) => !foldable(item))
       .map((expense) => ({ expense, reversal: reversalByOriginal.get(expense.id) }));
   }, [expensesPage?.items]);
+
+  const loadFailed = loadFailure(summaryQuery, budgetQuery, expensesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <>
@@ -245,7 +260,6 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
   const hasBudget = effective != null && effective > 0;
   const over = hasBudget && effective != null && budget.spentPaise > effective;
   const ratio = hasBudget && effective != null && effective > 0 ? Math.min(1, budget.spentPaise / effective) : 0;
-  const statusKey = budgetStatusKey(effective, budget.spentPaise);
 
   return (
     <Card>
@@ -269,7 +283,6 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
             ) : null}
           </View>
           <View style={{ alignItems: "flex-end", gap: 4 }}>
-            <StatusPill label={statusLabel(statusKey)} tone={budgetStatusTone(statusKey)} />
             <Text style={[type.eyebrow, { color: colors.kicker }]}>
               {over ? "Over by" : "Remaining"}
             </Text>
@@ -449,14 +462,11 @@ function statusLabel(key: BudgetStatusKey) {
   return key === "crossed" ? "Crossed" : key === "approaching" ? "Approaching" : key === "on-track" ? "On track" : "No budget";
 }
 
-function budgetStatusTone(key: BudgetStatusKey) {
-  return key === "crossed" ? ("danger" as const) : key === "approaching" ? ("warning" as const) : key === "on-track" ? ("success" as const) : ("neutral" as const);
-}
-
 function StatusValueTile({ color, hint, label, value }: { color: string; hint?: string; label: string; value: string }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md }}>
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, elevation: 2, flex: 1, gap: spacing.xs, padding: spacing.md, ...softShadow(colors.shadow, 2, 6) }}>
       <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
         {label}
       </FitText>
@@ -484,7 +494,7 @@ function BudgetTiles({ budget }: { budget: { effectiveBudgetPaise: number | null
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <StatusValueTile color={statusColor} hint={hasBudget && effective != null ? formatMoneyPaise(effective) : "Set a budget"} label="Budget status" value={statusLabel(key)} />
+        <StatusValueTile color={statusColor} hint={hasBudget && effective != null ? `${formatMoneyPaise(Math.max(0, effective - budget.spentPaise))} remaining` : "Set a budget"} label="Budget status" value={statusLabel(key)} />
         <MetricTile dense hint="This month" label="Raised" value={budget.raisedThisMonthPaise > 0 ? formatMoneyPaise(budget.raisedThisMonthPaise) : "None"} />
       </View>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -638,7 +648,8 @@ function ExpenseRow({
 }) {
   const { colors, fonts, type } = useTheme();
   const negative = expense.amountPaise < 0;
-  const canReverse = expense.entryType !== "REVERSAL" && !expense.reversed;
+  // Only this month's: an earlier month has been closed and reported on (user, 2026-11-01).
+  const canReverse = expense.entryType !== "REVERSAL" && !expense.reversed && expense.incurredDate.slice(0, 7) >= currentMonth();
 
   return (
     <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, opacity: expense.reversed ? 0.6 : 1, padding: spacing.md }}>
@@ -746,9 +757,9 @@ function ToolBox({ icon: Icon, label, onPress }: { icon: typeof Plus; label: str
 
 // ---------------------------------------------------------------- sheets
 
-function Sheet({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
+function Sheet({ children, onClose, size, title }: { children: ReactNode; onClose: () => void; size?: "content"; title: string }) {
   return (
-    <SheetShell onClose={onClose} title={title}>
+    <SheetShell onClose={onClose} size={size} title={title}>
       {children}
     </SheetShell>
   );
@@ -966,17 +977,21 @@ function RaiseBudgetSheet({ month, onClose, propertyId }: { month: string; onClo
   }
 
   return (
-    <Sheet onClose={onClose} title="Raise budget">
+    <Sheet onClose={onClose} size="content" title="Raise budget">
       <BodyNote>A raise adds to this month&apos;s budget only and is tracked separately from the recurring default.</BodyNote>
       <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Raise amount" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
       <FormInput label="Reason" onChangeText={setReason} placeholder="Optional reason" value={reason} />
-      <ActionButton disabled={state.isLoading || form.blocked} icon={Plus} label={state.isLoading ? "Saving" : "Raise budget"} onPress={() => void submit()} />
+      {/* In a row: ActionButton is flex 1 and would otherwise stretch the sheet. */}
+      <View style={{ flexDirection: "row" }}>
+        <ActionButton disabled={state.isLoading || form.blocked} icon={Plus} label={state.isLoading ? "Saving" : "Raise budget"} onPress={() => void submit()} />
+      </View>
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </Sheet>
   );
 }
 
 function ReverseSheet({ expense, onClose, propertyId }: { expense: Expense; onClose: () => void; propertyId: string }) {
+  const { colors } = useTheme();
   const toast = useToast();
   const [reason, setReason] = useState("");
   const form = useFormErrors<"reason">();
@@ -996,19 +1011,24 @@ function ReverseSheet({ expense, onClose, propertyId }: { expense: Expense; onCl
   }
 
   return (
-    <Sheet onClose={onClose} title="Reverse expense">
-      <BodyNote>
-        Reversing posts a correcting entry of {formatMoneyPaise(-expense.amountPaise)} against {expense.paidTo}. The original row is kept for the audit trail.
-      </BodyNote>
+    <Sheet onClose={onClose} size="content" title="Reverse expense">
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+        <Info color={colors.muted} size={16} strokeWidth={2.2} style={{ marginTop: 1 }} />
+        <View style={{ flex: 1 }}>
+          <BodyNote>
+            Reversing posts a correcting entry of {formatMoneyPaise(-expense.amountPaise)} against {expense.paidTo}. The original row is kept for the audit trail.
+          </BodyNote>
+        </View>
+      </View>
       <FormInput error={form.errors.reason} label="Reason" multiline onChangeText={(next) => { setReason(next); form.clearField("reason"); }} placeholder="Why is this being reversed?" value={reason} />
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
-      <ActionButton disabled={state.isLoading || form.blocked} icon={Undo2} label={state.isLoading ? "Reversing" : "Reverse expense"} onPress={() => void submit()} variant="danger" />
+      <ActionButton disabled={state.isLoading || form.blocked} icon={Undo2} label={state.isLoading ? "Reversing" : "Reverse expense"} onPress={() => void submit()} variant="dangerFilled" />
     </Sheet>
   );
 }
 
 function RecurringSheet({ categories, onClose, propertyId }: { categories: ExpenseCategory[]; onClose: () => void; propertyId: string }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const toast = useToast();
   // Removing a recurring expense is refused by the server, not by a field.
   const opErrors = useFormErrors<never>();
@@ -1016,6 +1036,7 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: Expen
   const items = recurringQuery.data ?? [];
   const [editing, setEditing] = useState<RecurringExpense | "new" | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RecurringExpense | null>(null);
+  const [explaining, setExplaining] = useState(false);
   const [deactivate] = useDeactivateRecurringExpenseMutation();
 
   async function confirmDelete() {
@@ -1043,8 +1064,13 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: Expen
 
   return (
     <>
-      <Sheet onClose={onClose} title="Recurring expenses">
-        <BodyNote>Templates are posted automatically each month on their day. Salary is projected from current staff and managed by the system.</BodyNote>
+      {/* As tall as its list, then scrolling (user, 2026-11-01). */}
+      <SheetShell
+        headerRight={<IconButton accessibilityLabel="How recurring expenses work" icon={CircleHelp} onPress={() => setExplaining(true)} />}
+        onClose={onClose}
+        size="content"
+        title="Recurring expenses"
+      >
         {recurringQuery.isLoading ? <OwnerDataListSkeleton bodyLines={1} rows={2} /> : null}
         {items.length === 0 && !recurringQuery.isLoading ? (
           <Text style={[type.body, { color: colors.muted }]}>
@@ -1061,21 +1087,25 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: Expen
                 {/* Three segments and a status pill competing for one row: the
                     last one ("projected monthly") was the one that got clipped.
                     Scrolls rather than ellipsises, per the app's overflow rule. */}
+                <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, lineHeight: 20 }}>
+                  {formatMoneyPaise(item.amountPaise)}
+                </Text>
                 <MarqueeText style={[type.caption, { color: colors.muted }]}>
-                  {`${item.categoryName} · ${formatMoneyPaise(item.amountPaise)} · ${item.system ? "projected monthly" : `day ${item.dayOfMonth}`}`}
+                  {`${item.categoryName} · ${item.system ? "Projected monthly" : "Monthly"}`}
                 </MarqueeText>
               </View>
-              {item.system ? (
-                <StatusPill label="System recurring" tone="accent" />
-              ) : (
+              {/* The system's own row, Staff payroll, can be neither edited nor removed. */}
+              {item.system ? null : (
                 <>
-                  <AnimatedPressable accessibilityLabel="Edit" onPress={() => setEditing(item)} style={{ paddingHorizontal: spacing.xs, paddingVertical: 4 }}>
-                    <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]}>
-                      Edit
-                    </Text>
+                  <AnimatedPressable accessibilityLabel={`Edit ${item.paidTo}`} accessibilityRole="button" hitSlop={4} onPress={() => setEditing(item)}>
+                    <View style={{ alignItems: "center", borderColor: colors.borderStrong, borderRadius: 999, borderWidth: 1, height: 34, justifyContent: "center", width: 34 }}>
+                      <Pencil color={colors.primary} size={16} strokeWidth={2.2} />
+                    </View>
                   </AnimatedPressable>
-                  <AnimatedPressable accessibilityLabel="Remove" onPress={() => setPendingDelete(item)} style={{ paddingHorizontal: spacing.xs, paddingVertical: 4 }}>
-                    <X color={colors.danger} size={18} strokeWidth={2.2} />
+                  <AnimatedPressable accessibilityLabel={`Remove ${item.paidTo}`} accessibilityRole="button" hitSlop={4} onPress={() => setPendingDelete(item)}>
+                    <View style={{ alignItems: "center", borderColor: colors.borderStrong, borderRadius: 999, borderWidth: 1, height: 34, justifyContent: "center", width: 34 }}>
+                      <DeleteIcon color={colors.danger} size={16} strokeWidth={2.2} />
+                    </View>
                   </AnimatedPressable>
                 </>
               )}
@@ -1083,7 +1113,18 @@ function RecurringSheet({ categories, onClose, propertyId }: { categories: Expen
           ))}
         </View>
         <ActionButton icon={Plus} label="Add recurring expense" onPress={() => setEditing("new")} />
-      </Sheet>
+      </SheetShell>
+      {explaining ? (
+        <HowItWorksSheet
+          eyebrow="Expenses"
+          onClose={() => setExplaining(false)}
+          steps={[
+            { body: "Expense templates are added automatically at the start of each month.", title: "Added each month" },
+            { body: "Salary is projected from current staff and managed by the system.", title: "Salary" },
+          ]}
+          title="How recurring expenses work"
+        />
+      ) : null}
       {pendingDelete ? (
         <ConfirmDialog
           confirmLabel="Remove"
@@ -1104,23 +1145,18 @@ function RecurringFormSheet({ categories, editing, onClose, propertyId }: { cate
   const [categoryId, setCategoryId] = useState(editing?.categoryId ?? categories[0]?.id ?? "");
   const [paidTo, setPaidTo] = useState(editing?.paidTo ?? "");
   const [amount, setAmount] = useState(editing ? String(Math.round(editing.amountPaise / 100)) : "");
-  const [dayOfMonth, setDayOfMonth] = useState(String(editing?.dayOfMonth ?? 1));
   const [description, setDescription] = useState(editing?.description ?? "");
-  const form = useFormErrors<"category" | "paidTo" | "amount" | "dayOfMonth">();
+  const form = useFormErrors<"category" | "paidTo" | "amount">();
   const [create, createState] = useCreateRecurringExpenseMutation();
   const [update, updateState] = useUpdateRecurringExpenseMutation();
   const saving = createState.isLoading || updateState.isLoading;
 
   async function submit() {
     const amountPaise = rupeesToPaise(amount);
-    const day = Number(dayOfMonth);
     const problems = {
       ...(categoryId ? {} : { category: "Pick a category." }),
       ...(paidTo.trim() ? {} : { paidTo: "Enter who this is paid to." }),
       ...(amountPaise ? {} : { amount: "Enter a valid amount." }),
-      ...(Number.isInteger(day) && day >= 1 && day <= 28
-        ? {}
-        : { dayOfMonth: "Day of month must be between 1 and 28." }),
     };
     if (!form.validate(problems) || !amountPaise) {
       return;
@@ -1128,13 +1164,13 @@ function RecurringFormSheet({ categories, editing, onClose, propertyId }: { cate
 
     // An edit that changed nothing should say so rather than report success.
     if (editing && isUnchanged(
-      { amountPaise: editing.amountPaise, categoryId: editing.categoryId, dayOfMonth: editing.dayOfMonth, description: editing.description, paidTo: editing.paidTo },
-      { amountPaise, categoryId, dayOfMonth: day, description, paidTo },
+      { amountPaise: editing.amountPaise, categoryId: editing.categoryId, description: editing.description, paidTo: editing.paidTo },
+      { amountPaise, categoryId, description, paidTo },
     )) {
       toast.warning("No changes have been made.");
       return;
     }
-    const payload = { amountPaise, categoryId, dayOfMonth: day, description: description.trim() || undefined, paidTo: paidTo.trim() };
+    const payload = { amountPaise, categoryId, description: description.trim() || undefined, paidTo: paidTo.trim() };
     try {
       if (editing) await update({ payload, propertyId, recurringExpenseId: editing.id, version: editing.version }).unwrap();
       else await create({ payload, propertyId }).unwrap();
@@ -1159,7 +1195,6 @@ function RecurringFormSheet({ categories, editing, onClose, propertyId }: { cate
       />
       <FormInput error={form.errors.paidTo} label="Paid to" onChangeText={(next) => { setPaidTo(next); form.clearField("paidTo"); }} placeholder="Payee or vendor" value={paidTo} />
       <FormInput error={form.errors.amount} keyboardType="decimal-pad" label="Amount" onChangeText={(next) => { setAmount(next); form.clearField("amount"); }} placeholder="0" prefix="₹" value={amount} />
-      <FormInput error={form.errors.dayOfMonth} keyboardType="number-pad" label="Day of month (1-28)" onChangeText={(next) => { setDayOfMonth(next); form.clearField("dayOfMonth"); }} placeholder="1" value={dayOfMonth} />
       <FormInput label="Note" multiline onChangeText={setDescription} placeholder="Optional description" value={description} />
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
       <ActionButton disabled={saving || form.blocked} label={saving ? "Saving" : editing ? "Save changes" : "Add recurring"} onPress={() => void submit()} />
@@ -1170,13 +1205,6 @@ function RecurringFormSheet({ categories, editing, onClose, propertyId }: { cate
 function ExpenseDateField({ label, onChange, value }: { label: string; onChange: (value: string) => void; value: string }) {
   const { colors, type } = useTheme();
   const [open, setOpen] = useState(false);
-  const selected = value ? new Date(`${value}T12:00:00`) : new Date();
-
-  function update(event: DateTimePickerEvent, picked?: Date) {
-    setOpen(false);
-    if (event.type === "dismissed" || !picked) return;
-    onChange(toLocalIso(picked));
-  }
 
   return (
     <View style={{ gap: spacing.xs }}>
@@ -1190,7 +1218,7 @@ function ExpenseDateField({ label, onChange, value }: { label: string; onChange:
           {value ? formatDate(value) : "Select date"}
         </Text>
       </AnimatedPressable>
-      {open ? <DateTimePicker display="default" maximumDate={new Date()} mode="date" onChange={update} value={selected} /> : null}
+      {open ? <CalendarPicker maximum={istToday()} onClose={() => setOpen(false)} onPick={onChange} value={value || null} /> : null}
     </View>
   );
 }

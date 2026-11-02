@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Modal, Pressable, Text, View, useWindowDimensions } from "react-native";
-import { Info } from "lucide-react-native";
+import { CircleHelp, Info } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ChevronDisc } from "@/components/chevron-disc";
@@ -46,12 +46,21 @@ function useAnchor(cardWidth?: number) {
  * beside its label for what each level means (user, 2026-10-29).
  */
 export function DamageLevelDropdown({
+  label = "Damage level",
   levels,
   onChange,
+  onHelp,
+  options = DAMAGE_LEVELS,
   value,
 }: {
+  /** A ? that opens the caller's How it works sheet, in place of the ⓘ card (user, 2026-10-29: Record damage). */
+  onHelp?: () => void;
+  /** The field's one label, with its ⓘ (2026-10-29: a record's "New damage level"). */
+  label?: string;
   levels: DamageLevelWords;
   onChange: (level: DamageLevel) => void;
+  /** The levels to offer: a damage is D1 to D3, a repair goes below the damage. */
+  options?: readonly DamageLevel[];
   value: DamageLevel;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -62,12 +71,18 @@ export function DamageLevelDropdown({
   return (
     <View style={{ gap: spacing.xs }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Text style={[type.label, { color: colors.muted }]}>Damage level</Text>
-        <DamageLevelInfo levels={levels} />
+        <Text style={[type.label, { color: colors.muted }]}>{label}</Text>
+        {onHelp ? (
+          <AnimatedPressable accessibilityLabel="What the damage levels mean" accessibilityRole="button" hitSlop={10} onPress={onHelp}>
+            <CircleHelp color={colors.muted} size={16} strokeWidth={2.2} />
+          </AnimatedPressable>
+        ) : (
+          <DamageLevelInfo levels={levels} />
+        )}
       </View>
       <View collapsable={false} ref={ref}>
         <AnimatedPressable
-          accessibilityLabel={`Damage level ${value}`}
+          accessibilityLabel={`${label} ${value}`}
           accessibilityRole="button"
           accessibilityState={{ expanded: Boolean(anchor) }}
           onPress={open}
@@ -104,7 +119,7 @@ export function DamageLevelDropdown({
               width: anchor.width,
             }}
           >
-            {DAMAGE_LEVELS.map((level) => (
+            {options.map((level) => (
               <AnimatedPressable
                 accessibilityRole="button"
                 accessibilityState={{ selected: level === value }}

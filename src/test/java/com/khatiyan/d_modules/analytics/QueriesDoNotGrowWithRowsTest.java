@@ -94,6 +94,10 @@ class QueriesDoNotGrowWithRowsTest {
     @Autowired private com.khatiyan.d_modules.enquiry.EnquiryModule enquiryModule;
     @Autowired private com.khatiyan.d_modules.lead.VisitModule visitModule;
     @Autowired private com.khatiyan.d_modules.booking.service.BookingTokenService bookingTokens;
+    @Autowired private com.khatiyan.d_modules.billing.damage.DamageRecordService damageRecords;
+    @Autowired private com.khatiyan.d_modules.discovery.metro.MetroService metroService;
+    @Autowired private com.khatiyan.d_modules.food.service.MealAttendanceService mealAttendance;
+    @Autowired private com.khatiyan.d_modules.food.service.MealRatingService mealRatings;
 
     private final LocalDate today = LocalDate.now(IST);
     private Seeded small;
@@ -106,6 +110,8 @@ class QueriesDoNotGrowWithRowsTest {
     void seed() {
         small = LargePropertySeeder.seed(jdbc, today, 12, 1, 21L);
         large = LargePropertySeeder.seed(jdbc, today, 48, 1, 22L);
+        seedMealAttendance(small);
+        seedMealAttendance(large);
         seedEnquiries(small);
         seedEnquiries(large);
         seedBookingRequests(small);
@@ -118,6 +124,31 @@ class QueriesDoNotGrowWithRowsTest {
         seedBookingForm(large);
         seedConcernsRaisedToday(small);
         seedConcernsRaisedToday(large);
+        seedDamageRecords(small);
+        seedDamageRecords(large);
+    }
+
+    /**
+     * A damage record on every live stay, charged on one of its bills
+     * (2026-10-29), so the list has records, rooms, people and bills that grow
+     * with the property.
+     */
+    private void seedDamageRecords(Seeded property) {
+        jdbc.update("""
+                INSERT INTO billing.damage_records (id, code, property_id, room_id, item_name, section, damage_level,
+                    cost_paise, note, photo_urls, responsibility, source, status, created_by, created_at, updated_at, version)
+                SELECT t.id, 'DMG-T-' || substring(t.id::text, 1, 12), t.property_id, t.room_id, 'Cupboard', 'ROOM', 'D2',
+                       50000, 'Door broken', '["c.jpg"]'::jsonb, 'TENANT', 'MANUAL', 'OPEN', ?, now(), now(), 0
+                FROM tenancy.tenancies t WHERE t.property_id = ? AND t.is_active AND t.room_id IS NOT NULL
+                """, property.ownerId(), property.propertyId());
+        jdbc.update("""
+                INSERT INTO billing.damage_record_shares (record_id, display_order, tenancy_id, tenant_user_id, tenant_name,
+                    amount_paise, bill_id)
+                SELECT r.id, 0, r.id, t.user_id, 'Seeded tenant', 50000,
+                       (SELECT c.id FROM billing.billing_cycles c WHERE c.tenancy_id = t.id LIMIT 1)
+                FROM billing.damage_records r JOIN tenancy.tenancies t ON t.id = r.id
+                WHERE r.property_id = ?
+                """, property.propertyId());
     }
 
     /**
@@ -156,6 +187,7 @@ class QueriesDoNotGrowWithRowsTest {
                 jdbc.update("DELETE FROM chat.chat_threads WHERE property_id = ?", seeded.propertyId());
                 jdbc.update("DELETE FROM booking.settings WHERE property_id = ?", seeded.propertyId());
                 jdbc.update("DELETE FROM property.room_molds WHERE property_id = ?", seeded.propertyId());
+                jdbc.update("DELETE FROM billing.damage_records WHERE property_id = ?", seeded.propertyId());
             }
         }
         LargePropertySeeder.remove(jdbc, small);
@@ -389,12 +421,55 @@ class QueriesDoNotGrowWithRowsTest {
     }
 
     /** Every read that must not grow with the rows, by the name a failure will print. */
+    /** Lunch is served and every live stay on a plan has a row for today and for yesterday, half of them scanned. */
+    private void seedMealAttendance(Seeded seeded) {
+        UUID property = seeded.propertyId();
+        jdbc.update("UPDATE property.properties SET food_included = true WHERE id = ?", property);
+        jdbc.update("INSERT INTO property.property_included_meals (property_id, meal_type) VALUES (?, 'LUNCH')", property);
+        jdbc.update("""
+                INSERT INTO food.food_module_settings (property_id, is_enabled, attendance_enabled, attendance_enabled_at,
+                    created_at, updated_at, version)
+                VALUES (?, true, true, now() - interval '30 days', now(), now(), 0)
+                """, property);
+        for (LocalDate date : List.of(today, today.minusDays(1))) {
+            jdbc.update("""
+                    INSERT INTO food.food_meal_attendance (id, property_id, meal_date, meal_type, tenancy_id,
+                        tenant_user_id, profile_id, pass_token, pass_code, attended_at, recorded_by_user_id, record_method)
+                    SELECT gen_random_uuid(), s.property_id, ?, 'LUNCH', s.tenancy_id, s.tenant_user_id,
+                        (SELECT id FROM food.food_profiles p WHERE p.property_id = s.property_id LIMIT 1),
+                        gen_random_uuid()::text, (100000 + row_number() OVER ())::text,
+                        CASE WHEN (row_number() OVER ()) % 2 = 0 THEN now() END,
+                        CASE WHEN (row_number() OVER ()) % 2 = 0 THEN ?::uuid END,
+                        CASE WHEN (row_number() OVER ()) % 2 = 0 THEN 'QR' END
+                    FROM food.food_subscriptions s
+                    WHERE s.property_id = ?
+                    """, date, seeded.ownerId().toString(), property);
+        }
+        jdbc.update("""
+                INSERT INTO food.food_meal_ratings (id, property_id, meal_date, meal_type, tenancy_id, user_id,
+                    profile_id, item_id, rating, review)
+                SELECT gen_random_uuid(), a.property_id, a.meal_date, a.meal_type, a.tenancy_id, a.tenant_user_id,
+                    a.profile_id, i.id, 4, 'Fine'
+                FROM food.food_meal_attendance a
+                CROSS JOIN LATERAL (SELECT id FROM food.food_items f WHERE f.property_id = a.property_id LIMIT 1) i
+                WHERE a.property_id = ?
+                """, property);
+    }
+
     private Map<String, Consumer<Seeded>> reads() {
         String thisMonth = YearMonth.from(today).toString();
         LocalDate monthStart = today.withDayOfMonth(1);
         Map<String, Consumer<Seeded>> reads = new LinkedHashMap<>();
 
         reads.put("Home summary", p -> ownerDashboard.getPropertyActionCenter(p.ownerId(), p.propertyId()));
+        reads.put("Meal attendance live", p -> mealAttendance.live(p.ownerId(), p.propertyId()));
+        reads.put("Meal attendance day", p -> mealAttendance.day(p.ownerId(), p.propertyId(), today));
+        reads.put("Meal attendance meal", p -> mealAttendance.meal(
+                p.ownerId(), p.propertyId(), today, com.khatiyan.d_modules.property.model.MealType.LUNCH));
+        reads.put("Meal attendance history", p -> mealAttendance.history(p.ownerId(), p.propertyId(), 0, 14));
+        reads.put("Meal attendance analytics", p -> mealAttendance.analytics(p.ownerId(), p.propertyId()));
+        reads.put("Meal ratings summary", p -> mealRatings.summary(p.ownerId(), p.propertyId()));
+        reads.put("Meal ratings analysis status", p -> mealRatings.analysisStatus(p.ownerId(), p.propertyId()));
         reads.put("Booking attention", p -> bookingModule.attentionForProperty(p.propertyId()));
         reads.put("Bookings chats", p -> chatService.listBookingSection(p.ownerId(), p.propertyId()));
         reads.put("Enquiry attention", p -> enquiryModule.attentionForProperty(p.propertyId()));
@@ -482,6 +557,11 @@ class QueriesDoNotGrowWithRowsTest {
                 throw new IllegalStateException("A room came without its type's photos, so their read was not measured");
             }
         });
+        // Damage records (2026-10-29): one charged record per live stay.
+        reads.put("Damage records, the open ones", p -> damageRecords.list(p.ownerId(), p.propertyId(), false));
+        // Search along metro (2026-10-31): the tab's lines, and the one read a ticked search adds.
+        reads.put("Metro systems", p -> metroService.systems());
+        reads.put("Properties near ticked stations", p -> metroService.nearestTicked(List.of("kol-esplanade")));
         reads.put("Another bed options",
                 p -> bookingRequests.anotherBedOptions(p.ownerId(), p.propertyId(), anOpenBooking.get(p.propertyId())));
         return reads;

@@ -1,3 +1,4 @@
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -7,7 +8,6 @@ import {
   Easing,
   Keyboard,
   ScrollView,
-  Switch,
   Text,
   View,
 } from "react-native";
@@ -18,18 +18,19 @@ import {
   ChevronDown,
   LocateFixed,
   MapPin,
-  Pencil,
   Search,
   Funnel,
   Sparkles,
   X,
 } from "lucide-react-native";
 
+import { AI_INK, AiGradient, AiModeToggle } from "@/components/ai-style";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { MarqueeText } from "@/components/marquee-text";
 import type { LocationArea, LocationCity } from "@/store/services/discovery-api";
 import type { GeoSuggestion } from "@/store/services/geo-api";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -51,6 +52,8 @@ type DiscoverySearchCardProps = {
   onAiOnChange: (on: boolean) => void;
   aiQuery: string;
   onAiQueryChange: (value: string) => void;
+  /** Clears the sentence and its answer. */
+  onAiClear: () => void;
   aiBusy: boolean;
   /**
    * Example sentences written from real listings nearby, at most three. Shown
@@ -98,6 +101,7 @@ export function DiscoverySearchCard({
   onAiOnChange,
   aiQuery,
   onAiQueryChange,
+  onAiClear,
   aiBusy,
   aiSuggestions,
   onAiSuggestionPress,
@@ -141,6 +145,7 @@ export function DiscoverySearchCard({
   // reader had just asked for.
   const showSuggestions =
     !aiLocked && focused && !pickedFromList && searchText.trim().length >= 2 && suggestions.length > 0;
+  const showAiClear = aiQuery.length > 0 && !aiBusy;
   const selectedCityOption = cityOptions.find((option) => option.city === selectedCity) ?? null;
 
   // A filled-in address (current location, a picked suggestion) reads from its
@@ -159,29 +164,36 @@ export function DiscoverySearchCard({
   const selectedAreaOption = areaOptions.find((option) => option.area === selectedArea) ?? null;
 
   return (
-    <Card>
+    // Direct, not the Card's own: a tab's card shadow is one phones do not draw.
+    <Card style={softShadow(colors.shadow, 4, 12)}>
       {aiAvailable ? (
+        // The AI's card, as on the meal reviews (user, 2026-11-02): a soft grey card edged in its
+        // gradient, on or off. The toggle says which.
         <View
           style={{
-            // The one place in the app that carries a pale blue fill, and only
-            // while it is switched on. This panel is a different KIND of input
-            // from the controls under it — a sentence rather than a set of
-            // choices — and the tint is what says so at a glance. Switched off
-            // it is an outline like anything else, because then it is just a
-            // control somebody has not turned on.
-            backgroundColor: aiOn ? colors.primarySoft : "transparent",
-            borderColor: aiOn ? colors.primarySoft : colors.border,
             borderCurve: "continuous",
             borderRadius: 14,
-            borderWidth: 1,
+            overflow: "hidden",
+            padding: 1.5,
+          }}
+        >
+        <AiGradient />
+        <View
+          style={{
+            backgroundColor: colors.surfaceRaised,
+            borderCurve: "continuous",
+            borderRadius: 12.5,
             gap: spacing.sm,
             padding: spacing.md,
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <Sparkles color={colors.primary} size={20} strokeWidth={2.2} />
+            <View style={{ alignItems: "center", borderRadius: 999, height: 26, justifyContent: "center", overflow: "hidden", width: 26 }}>
+              <AiGradient />
+              <View><Sparkles color="#FFFFFF" size={14} strokeWidth={2.4} /></View>
+            </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15 }}>
                 Smart search
               </Text>
               <FitText
@@ -191,13 +203,7 @@ export function DiscoverySearchCard({
                 Get smarter, more relevant results.
               </FitText>
             </View>
-            <Switch
-              disabled={aiBusy}
-              onValueChange={onAiOnChange}
-              thumbColor={colors.surface}
-              trackColor={{ false: colors.neutralSoft, true: colors.primary }}
-              value={aiOn}
-            />
+            <AiModeToggle accessibilityLabel="Smart search" disabled={aiBusy} enabled={aiOn} onChange={onAiOnChange} />
           </View>
 
           {aiOn ? (
@@ -209,14 +215,11 @@ export function DiscoverySearchCard({
                   borderCurve: "continuous",
                   borderRadius: 12,
                   borderWidth: 1,
-                  flexDirection: "row",
-                  gap: spacing.sm,
                   opacity: aiBusy ? 0.6 : 1,
                   paddingHorizontal: spacing.md,
                   paddingVertical: spacing.sm,
                 }}
               >
-                <Pencil color={colors.kicker} size={18} strokeWidth={2.2} style={{ marginTop: 2 }} />
                 <AppTextInput
                   accessibilityLabel="Describe what you are looking for"
                   editable={!aiBusy}
@@ -230,7 +233,6 @@ export function DiscoverySearchCard({
                   placeholderTextColor={colors.kicker}
                   style={{
                     color: colors.ink,
-                    flex: 1,
                     fontFamily: fonts.sansMedium,
                     fontSize: 12,
                     lineHeight: 17,
@@ -280,7 +282,7 @@ export function DiscoverySearchCard({
                         paddingVertical: 9,
                       }}
                     >
-                      <Search color={colors.primary} size={14} strokeWidth={2.4} />
+                      <Search color={AI_INK} size={14} strokeWidth={2.4} />
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <MarqueeText style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 12 }}>
                           {suggestion}
@@ -294,9 +296,11 @@ export function DiscoverySearchCard({
             </View>
           ) : null}
         </View>
+        </View>
       ) : null}
 
       {aiLocked ? null : (
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
       <View
         style={{
           alignItems: "center",
@@ -304,6 +308,7 @@ export function DiscoverySearchCard({
           borderColor: focused ? colors.primary : colors.border,
           borderRadius: 12,
           borderWidth: 1,
+          flex: 1,
           flexDirection: "row",
           gap: spacing.sm,
           minHeight: 50,
@@ -343,10 +348,6 @@ export function DiscoverySearchCard({
           value={searchText}
         />
         {loadingSuggestions ? <ActivityIndicator color={colors.primary} size="small" /> : null}
-        {/* Clear, divider and filter as one tight group (user, 2026-10-02):
-            no row gap between them, and 32pt boxes, so the two icons sit close
-            with the divider centred between them. */}
-        <View style={{ alignItems: "center", flexDirection: "row" }}>
         {searchText.length > 0 && !loadingSuggestions ? (
           <AnimatedPressable
             accessibilityLabel="Clear search"
@@ -355,25 +356,33 @@ export function DiscoverySearchCard({
               setPickedFromList(false);
               onClearSearch();
             }}
-            style={{ alignItems: "center", height: 36, justifyContent: "center", width: 32 }}
+            style={{ alignItems: "center", backgroundColor: colors.border, borderRadius: 999, height: 26, justifyContent: "center", width: 26 }}
           >
-            <X color={colors.muted} size={18} strokeWidth={2.2} />
+            <X color={colors.inkSoft} size={15} strokeWidth={2.5} />
           </AnimatedPressable>
         ) : null}
-        <View style={{ backgroundColor: colors.border, height: 24, width: 1 }} />
+      </View>
+      {/* Its own circle beside the box, which keeps only the cross (user, 2026-11-01). */}
         <AnimatedPressable
           accessibilityLabel="Open property filters"
           accessibilityRole="button"
           onPress={onOpenFilters}
           style={{
             alignItems: "center",
-            height: 36,
+            backgroundColor: colors.neutralSoft,
+            borderRadius: 999,
+            height: 50,
             justifyContent: "center",
             position: "relative",
-            width: 32,
+            width: 50,
           }}
         >
-          <Funnel color={activeFilterCount > 0 ? colors.primary : colors.muted} size={20} strokeWidth={2.3} />
+          <Funnel
+            color={activeFilterCount > 0 ? colors.primary : colors.inkSoft}
+            fill={activeFilterCount > 0 ? colors.primary : colors.inkSoft}
+            size={20}
+            strokeWidth={2.3}
+          />
           {activeFilterCount > 0 ? (
             <View
               style={{
@@ -383,7 +392,7 @@ export function DiscoverySearchCard({
                 height: 16,
                 justifyContent: "center",
                 position: "absolute",
-                right: -2,
+                right: 0,
                 top: 0,
                 width: 16,
               }}
@@ -394,7 +403,6 @@ export function DiscoverySearchCard({
             </View>
           ) : null}
         </AnimatedPressable>
-        </View>
       </View>
       )}
 
@@ -466,23 +474,29 @@ export function DiscoverySearchCard({
       </View>
       )}
 
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
       <DiscoveryButton
         disabled={aiBusy || (aiOn && aiQuery.trim().length === 0)}
-        icon={aiOn ? <AiSearchIcon color={colors.onPrimary} searching={aiBusy} /> : undefined}
-        label={aiOn ? "Search with AI" : "Search"}
+        aiGradient={aiOn}
+        icon={aiOn ? <AiSearchIcon color="#FFFFFF" searching={aiBusy} /> : undefined}
+        label="Search"
         onPress={onSearch}
         // Not dimmed while it works. The moving glass is the signal, and a
         // faded button reads as unavailable rather than busy.
-        style={aiBusy ? { opacity: 1 } : undefined}
+        style={aiBusy ? { borderRadius: 999, flex: 1, opacity: 1 } : { borderRadius: 999, flex: 1 }}
       />
+      {showAiClear && aiOn ? (
+        <DiscoveryButton aiGradient label="Clear" onPress={onAiClear} style={{ borderRadius: 999, paddingHorizontal: spacing.lg }} />
+      ) : null}
+      </View>
 
       {searchStatus !== "idle" ? (
         <View
           style={{
             alignItems: "center",
             alignSelf: "center",
-            backgroundColor: aiOn ? colors.primarySoft : colors.neutralSoft,
-            borderColor: aiOn ? colors.primarySoft : colors.border,
+            backgroundColor: aiOn ? colors.surfaceRaised : colors.neutralSoft,
+            borderColor: colors.border,
             borderRadius: 9,
             borderWidth: 1,
             flexDirection: "row",
@@ -493,13 +507,14 @@ export function DiscoverySearchCard({
           }}
         >
           {aiOn ? (
-            <Sparkles color={colors.primary} size={16} strokeWidth={2.2} />
+            <Sparkles color={AI_INK} size={16} strokeWidth={2.2} />
           ) : (
             <LocateFixed color={colors.kicker} size={16} strokeWidth={2.2} />
           )}
           <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
-            {searchStatus === "searching" ? (aiOn ? "AI searching" : "Searching") : "Searched"}
-            {searchLocationLabel ? ` around ${searchLocationLabel}` : ""}
+            {searchStatus === "searching"
+              ? "Searching"
+              : `Searched${searchLocationLabel ? ` around ${searchLocationLabel}` : ""}`}
           </FitText>
         </View>
       ) : null}
@@ -751,10 +766,8 @@ function LocationFilterModal<T>({
             >
               {title}
             </ModalTitle>
-            <AnimatedPressable accessibilityLabel="Close" onPress={() => dismiss()}>
-              <X color={colors.muted} size={22} strokeWidth={2.4} />
-            </AnimatedPressable>
           </View>
+          <ModalTitleRule />
 
           <View
             style={{

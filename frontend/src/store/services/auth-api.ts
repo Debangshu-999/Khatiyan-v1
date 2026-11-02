@@ -53,6 +53,7 @@ export type UpdateIdentityBody = {
 
 export type TokenResponse = {
   accessToken: string;
+  refreshToken: string;
   tokenType: "Bearer";
   expiresInSeconds: number;
   user: AuthUser;

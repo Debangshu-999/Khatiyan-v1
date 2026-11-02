@@ -86,6 +86,8 @@ export function RoomTypeSheet({
   takenBedCounts: number[];
 }) {
   const { colors, fonts, type } = useTheme();
+  // The heading's required mark, matched to its size like the Amenities heading's (2026-10-29).
+  const requiredStar = <Text style={{ color: colors.danger, fontSize: 18 }}>*</Text>;
   const form = useFormErrors<Field>();
 
   const fixedBeds = FIXED_BEDS[sharingType];
@@ -197,7 +199,21 @@ export function RoomTypeSheet({
   }
 
   return (
-    <SheetShell fullBleed onClose={onClose} title={title}>
+    <SheetShell
+      footer={
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton
+            disabled={saving || form.blocked}
+            label={saving ? "Saving…" : entry ? "Save changes" : `Create ${variantLabel.toLowerCase()} type`}
+            onPress={submit}
+          />
+        </View>
+      }
+      fullBleed
+      onClose={onClose}
+      size="tall"
+      title={title}
+    >
       {/* Out to the sheet's edges, the padding put back inside, so the subheading
           bands reach the edge instead of being clipped short of it (user, 2026-10-29). */}
       <ScrollView
@@ -273,7 +289,7 @@ export function RoomTypeSheet({
         <View style={{ gap: spacing.sm }}>
           <SectionHeading
             title="Room photos"
-            trailing={<Text style={{ color: colors.danger, fontSize: 18 }}>*</Text>}
+            trailing={requiredStar}
             trailingInline
           />
           {/* Required now, at least one (user, 2026-10-29). Why more is worth it is a tip, not a rule. */}
@@ -306,12 +322,6 @@ export function RoomTypeSheet({
             />
           ))}
         </View>
-
-        <ActionButton
-          disabled={saving || form.blocked}
-          label={saving ? "Saving…" : entry ? "Save changes" : `Create ${variantLabel.toLowerCase()} type`}
-          onPress={submit}
-        />
 
       </ScrollView>
 

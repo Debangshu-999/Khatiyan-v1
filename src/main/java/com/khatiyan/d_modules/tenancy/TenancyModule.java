@@ -133,6 +133,11 @@ public class TenancyModule {
         return tenancyService.findIdCheckedParticulars(tenancyId);
     }
 
+    /** The manual ID check on this stay. Empty when nobody declared one. */
+    public Optional<com.khatiyan.d_modules.tenancy.api.dto.IdCheckRecord> findIdCheckRecord(UUID tenancyId) {
+        return tenancyService.findIdCheckRecord(tenancyId);
+    }
+
     /** Booked stays that cannot start because their bed is not free yet, for the action center. */
     public List<BlockedBookingResponse> findBlockedBookings(UUID propertyId) {
         return tenancyService.findBlockedBookings(propertyId);

@@ -1,7 +1,7 @@
 import { ModalTitle } from "@/components/modal-title";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react-native";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
@@ -29,6 +29,15 @@ const LABELS: Record<ListingSort, string> = {
   RELEVANCE: "Best match",
   RENT_HIGH: "Rent high to low",
   RENT_LOW: "Rent low to high",
+};
+
+/** On a button under its group's heading, which already says rent or deposit (user, 2026-11-02). */
+const BUTTON_LABELS: Record<ListingSort, string> = {
+  ...LABELS,
+  DEPOSIT_HIGH: "High to low",
+  DEPOSIT_LOW: "Low to high",
+  RENT_HIGH: "High to low",
+  RENT_LOW: "Low to high",
 };
 
 /** What the pill beside a results header says once an order is chosen. */
@@ -113,7 +122,7 @@ export function ListingSortModal({
   sort: ListingSort;
   visible: boolean;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
   const insets = useSafeAreaInsets();
 
   // Tapping the order already in force undoes it. The AI sheet has no "Best
@@ -143,55 +152,12 @@ export function ListingSortModal({
             paddingBottom: spacing.lg + insets.bottom,
           }}
         >
-          <View
-            style={{
-              alignSelf: "center",
-              backgroundColor: colors.borderStrong,
-              borderRadius: 999,
-              height: 5,
-              marginTop: spacing.sm,
-              width: 42,
-            }}
-          />
-          <View
-            style={{
-              alignItems: "center",
-              flexDirection: "row",
-              justifyContent: "space-between",
-              paddingBottom: spacing.md,
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.md,
-            }}
-          >
-            <View style={{ flex: 1, gap: 2 }}>
+          {/* No top padding of its own: the sheet already clears its grabber. Closes
+              by the dim, a drag or the back button (user, 2026-11-01). */}
+          <View style={{ gap: 2, paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}>
             <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.45 }}>
               Sort listings
             </ModalTitle>
-            <Text style={[type.caption, { color: colors.muted, fontSize: 13 }]}>
-              {context === "ai"
-                ? "Closest to what you asked for comes first by default."
-                : "Best matches come first by default."}
-            </Text>
-            </View>
-            <AnimatedPressable
-              accessibilityLabel="Close sort"
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => dismiss()}
-              style={{
-                alignItems: "center",
-                // Level with the title rather than centred on title and
-                // description together, which sat it low beside the heading.
-                alignSelf: "flex-start",
-                backgroundColor: colors.neutralSoft,
-                borderRadius: 999,
-                height: 34,
-                justifyContent: "center",
-                width: 34,
-              }}
-            >
-              <X color={colors.muted} size={17} strokeWidth={2.4} />
-            </AnimatedPressable>
           </View>
 
           <View style={{ gap: spacing.md, paddingHorizontal: spacing.md }}>
@@ -236,16 +202,17 @@ function SortGroup({
   sort: ListingSort;
   title: string;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
 
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.eyebrow, { color: colors.kicker, paddingHorizontal: spacing.xs }]}>{title}</Text>
+      <Text style={{ color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 13, paddingHorizontal: spacing.xs }}>{title}</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
         {options.map((option) => {
           const selected = option === sort;
           return (
             <AnimatedPressable
+              accessibilityLabel={LABELS[option]}
               accessibilityRole="button"
               accessibilityState={{ selected }}
               key={option}
@@ -274,7 +241,7 @@ function SortGroup({
                   fontSize: 12.5,
                 }}
               >
-                {LABELS[option]}
+                {BUTTON_LABELS[option]}
               </FitText>
             </AnimatedPressable>
           );

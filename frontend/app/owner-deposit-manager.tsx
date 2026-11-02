@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, BackHandler, Text, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import Svg, { Path } from "react-native-svg";
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { AlertTriangle, CalendarDays, ChevronRight, ChevronUp, Clock, History, Landmark, Minus, Plus, UserRound, Wallet } from "lucide-react-native";
 
@@ -46,6 +47,7 @@ import { DepositHistoryArtwork } from "@/features/billing/deposit-account-ui";
 import { DepositCorrectionModal as CorrectionModal, type CorrectionMode } from "@/features/billing/deposit-correction-modal";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 
 // Pending exit still holds its deposit: it settles when the stay is ended.
 const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_NOTICE", "PENDING_EXIT"];
@@ -84,7 +86,8 @@ export default function OwnerDepositManagerScreen() {
   const selectedTenancy = selectedTenancyId ? tenancyById.get(selectedTenancyId) ?? null : null;
 
   const depositQuery = useGetManagedTenancyDepositQuery(selectedTenancyId ?? "", { skip: !selectedTenancyId });
-  const deposit = depositQuery.data;
+  // A new tenant selection must not open a correction with the previous account's version.
+  const deposit = depositQuery.currentData;
 
   // Deposits waiting to be settled. The action centre already counts these; the
   // screen that settles them showed no sign they existed, so the badge sent you
@@ -97,6 +100,15 @@ export default function OwnerDepositManagerScreen() {
   const pendingTotalPaise = pendingDeposits.reduce((sum, account) => sum + account.currentBalancePaise, 0);
 
   const [correctionMode, setCorrectionMode] = useState<CorrectionMode | null>(null);
+  useQuickActionIntent({
+    "add-deposit": () => setCorrectionMode("add"),
+    "deduct-deposit": () => setCorrectionMode("deduct"),
+  }, Boolean(selectedTenancy && deposit && canManageDeposits && deposit.status === "ACTIVE"), deposit?.id);
+  // Settling or closing lands on the first deposit that needs settlement (user, 2026-10-29).
+  useQuickActionIntent({
+    "settle-deposit": () => chooseTenancy(pendingDeposits[0].tenancyId),
+    "close-deposit": () => chooseTenancy(pendingDeposits[0].tenancyId),
+  }, Boolean(!selectedTenancy && pendingDeposits.length > 0), "settle");
   const [addCorrection, addState] = useAddDepositCorrectionMutation();
   const [deductCorrection, deductState] = useDeductDepositCorrectionMutation();
   const [settleDeposit, settleState] = useSettleManagedDepositMutation();
@@ -168,6 +180,10 @@ export default function OwnerDepositManagerScreen() {
   // of the two actions is even offered is chosen by payableAtExit, so there is
   // no path here that can contradict what was agreed at move-out.
   const payable = deposit?.payableAtExit ?? null;
+  useQuickActionIntent({
+    "settle-deposit": () => setSettleModalOpen(true),
+    "close-deposit": () => setSettleModalOpen(true),
+  }, Boolean(canManageDeposits && deposit?.status === "PENDING_SETTLEMENT" && payable != null), deposit?.id);
 
   async function submitSettlement() {
     if (!selectedTenancyId || payable == null || !deposit) {
@@ -187,6 +203,11 @@ export default function OwnerDepositManagerScreen() {
     }
   }
 
+  const loadFailed = loadFailure(tenanciesQuery, pendingQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView
       contentContainerStyle={{ paddingTop: spacing.xs }}
@@ -195,6 +216,7 @@ export default function OwnerDepositManagerScreen() {
       {selectedTenancy ? (
         <DepositAccountHeader
           canManage={canManageDeposits}
+          onBack={goBack}
           tenantName={selectedTenancy?.tenantName ?? null}
         />
       ) : (

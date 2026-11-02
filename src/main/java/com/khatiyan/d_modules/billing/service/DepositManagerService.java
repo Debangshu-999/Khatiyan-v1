@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.billing.service;
 
+import com.khatiyan.c_shared.money.Money;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -378,6 +379,34 @@ public class DepositManagerService {
     }
 
     /**
+     * Removes a line's deduction outright, for a line that is being deleted with
+     * it: the part of a Damage bill that goes back into the line it came from.
+     */
+    @Transactional
+    public void removeBillingLineMovement(UUID actorUserId, UUID tenancyId, UUID billingCycleLineItemId) {
+        TenancyResponse tenancy = getTenancy(tenancyId);
+        billingAccessPolicy.ensureCanManageDeposits(actorUserId, tenancy.propertyId());
+
+        DepositAccount account = getAccountByTenancyId(tenancyId);
+        ensureActive(account);
+        depositMovementRepository.findByBillingCycleLineItemId(billingCycleLineItemId).ifPresent(movement -> {
+            ensureMovementBelongsToAccount(account, movement);
+            depositMovementRepository.delete(movement);
+            depositMovementRepository.flush();
+            account.recordLedgerActivity();
+        });
+    }
+
+    /** What the stay's deposit can still pay: nothing with no account, or one no longer active. */
+    @Transactional(readOnly = true)
+    public long availableBalance(UUID tenancyId) {
+        return depositAccountRepository.findByTenancyId(tenancyId)
+                .filter(account -> account.getStatus() == DepositAccountStatus.ACTIVE)
+                .map(account -> calculateBalance(depositMovementRepository.findByDepositAccountId(account.getId())))
+                .orElse(0L);
+    }
+
+    /**
      * Adds a correction amount directly to the deposit ledger.
      */
     @Transactional
@@ -689,32 +718,7 @@ public class DepositManagerService {
     }
 
     private static String rupees(long paise) {
-        return "₹" + java.text.NumberFormat.getIntegerInstance(java.util.Locale.forLanguageTag("en-IN"))
-                .format(paise / 100);
-    }
-
-    // Sums the property's authoritative charge for each selected damaged item;
-    // unknown names are ignored so a stale client selection can't invent charges.
-    // Package-private so ExitSettlementService prices damage the same way this
-    // service does, rather than growing a second copy of the pricing rule.
-    long resolveDamageTotal(UUID propertyId, List<String> damageItemNames) {
-        if (damageItemNames == null || damageItemNames.isEmpty()) {
-            return 0L;
-        }
-        Map<String, Long> chargeByName = propertyModule.getExitPolicy(propertyId).damageCharges().stream()
-                .collect(Collectors.toMap(
-                        PropertyExitPolicyResponse.DamageChargeView::name,
-                        PropertyExitPolicyResponse.DamageChargeView::chargePaise,
-                        (first, second) -> first));
-
-        long total = 0L;
-        for (String name : damageItemNames) {
-            Long charge = chargeByName.get(name);
-            if (charge != null) {
-                total += charge;
-            }
-        }
-        return total;
+        return "₹" + Money.indianGrouped(paise / 100);
     }
 
     // The refund is the property's actual cash outflow; the expense module

@@ -450,7 +450,7 @@ export function CustomClauseSheet({
   };
 
   return (
-    <SheetShell onClose={onClose} title="Your clause">
+    <SheetShell size="tall" onClose={onClose} title="Your clause">
       <View style={{ gap: spacing.md }}>
         {/* No placeholders. An example sentence in the wording field reads as a
             suggestion of what to write, and these are the owner's own legal

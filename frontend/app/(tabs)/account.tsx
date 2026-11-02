@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { ActivityIndicator, Image, Text, View, type ViewStyle } from "react-native";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { PropertyIcon } from "@/components/property-icon";
 import { AppTextInput } from "@/components/app-text-input";
 import { emailProblem } from "@/features/forms/email-validation";
@@ -207,7 +208,7 @@ export default function AccountScreen() {
     // The avatar is read from the session on other screens, so this is what
     // makes the change show up everywhere rather than only after a sign-in.
     if (auth.accessToken) {
-      const session = { accessToken: auth.accessToken, user: updated };
+      const session = { accessToken: auth.accessToken, refreshToken: auth.refreshToken, user: updated };
       dispatch(setSession(session));
       await saveSession(session);
     }
@@ -312,6 +313,11 @@ export default function AccountScreen() {
     } finally {
       setUploadingPhoto(false);
     }
+  }
+
+  const loadFailed = loadFailure(profileQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (
@@ -735,7 +741,7 @@ export default function AccountScreen() {
           // Keep the cached session in step so the name changes everywhere
           // immediately rather than only after the next sign-in.
           if (auth.accessToken) {
-            const session = { accessToken: auth.accessToken, user: updated };
+            const session = { accessToken: auth.accessToken, refreshToken: auth.refreshToken, user: updated };
             dispatch(setSession(session));
             await saveSession(session);
           }
@@ -749,7 +755,7 @@ export default function AccountScreen() {
           second affordance on a single round button — and the account screen
           was the only picker in the app with no camera option. */}
       {photoSheetOpen ? (
-        <SheetShell onClose={() => setPhotoSheetOpen(false)} title="Profile photo">
+        <SheetShell size="short" onClose={() => setPhotoSheetOpen(false)} title="Profile photo">
           <View style={{ gap: spacing.xs }}>
             <PhotoAction
               icon={ImageIcon}

@@ -55,7 +55,7 @@ export function BedPickerSheet({
   const [openFloor, setOpenFloor] = useState<string | null>(selectedFloor ?? (floors.length === 1 ? floors[0].floor : null));
 
   return (
-    <SheetShell onClose={onClose} title="Choose a bed">
+    <SheetShell size="tall" onClose={onClose} title="Choose a bed">
       <View style={{ gap: spacing.sm }}>
         {floors.map(({ floor, rooms: inFloor }) => {
           const open = openFloor === floor;

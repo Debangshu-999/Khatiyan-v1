@@ -3,7 +3,9 @@ import { useState } from "react";
 import { useToast } from "@/components/toast";
 import { BillReceiptSheet, type ReceiptProperty } from "@/features/billing/bill-receipt-sheet";
 import { downloadBillReceipt } from "@/features/billing/download-bill-receipt";
+import { freshAccessToken } from "@/auth/session-refresh";
 import { useAppSelector } from "@/store/hooks";
+import { store } from "@/store/store";
 import type { BillingCycle } from "@/store/services/billing-api";
 
 /**
@@ -33,7 +35,6 @@ export function TenantBillReceiptSheet({
   property: ReceiptProperty | null;
 }) {
   const toast = useToast();
-  const accessToken = useAppSelector((state) => state.auth.accessToken);
   const apiBaseUrl = useAppSelector((state) => state.appConfig.apiBaseUrl);
   const [downloading, setDownloading] = useState(false);
 
@@ -54,7 +55,8 @@ export function TenantBillReceiptSheet({
         apiBaseUrl,
         billingCycleId: cycle.id,
         fileName: cycle.referenceCode,
-        token: accessToken,
+        // By hand, so it does not get the renewal every other request does.
+        token: await freshAccessToken(store),
       });
       // "Prepared", not "saved". On a phone the file is written to the cache and
       // handed to the system share sheet, and whether it ever reaches storage is

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { EmptyState } from "@/components/empty-state";
 import { SheetShell } from "@/components/sheet-shell";
@@ -110,9 +111,18 @@ export function ChatAccessListSheet({ onClose, propertyId }: { onClose: () => vo
     }
   }
 
+  const loadFailed = loadFailure(managersQuery);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title="Access list">
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
+  }
+
   return (
     <>
-      <SheetShell onClose={onClose} title="Access list">
+      <SheetShell size="tall" onClose={onClose} title="Access list">
         {/* One line, said once. Which managers can read tenant messages is the
             question, and the sentence a reader needs is what it does NOT
             touch — their own conversations are not the owner's to hand out. */}
@@ -125,6 +135,7 @@ export function ChatAccessListSheet({ onClose, propertyId }: { onClose: () => vo
         {!managersQuery.isLoading && managers.length === 0 ? (
           <EmptyState
             artwork={NO_PERSON_ILLUSTRATION}
+            compact
             description="Add a manager to this property from Staff, then come back to give them the tenant conversations."
             title="No managers yet"
           />

@@ -15,6 +15,7 @@ import {
   type FoodProfileCategory,
   type FoodQuantityUnit,
 } from "@/store/services/food-api";
+import { FilterBubble } from "@/components/filter-bubbles";
 import { FitText } from "@/components/fit-text";
 
 /**
@@ -456,12 +457,41 @@ export function DayStrip({
   selected: DayOfWeek;
   /** Forecasts are date-specific; repeating weekly menus leave this off. */
   showDates?: boolean;
-  /** Keep the owner day slider inside the screen gutters with equal-width cards. */
-  variant?: "bleed" | "contained";
+  /**
+   * Keep the owner day slider inside the screen gutters with equal-width cards.
+   * "bubbles" is the owner's forecast and weekly menu: the notification filter's own
+   * bubble, the day as its label and any date in its inner bubble (user, 2026-11-01).
+   */
+  variant?: "bleed" | "bubbles" | "contained";
   week: Date[];
 }) {
   const { colors, fonts } = useTheme();
   const contained = variant === "contained";
+  if (variant === "bubbles") {
+    const edge = spacing.lg - spacing.xs;
+    return (
+      <ScrollView
+        contentContainerStyle={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: edge }}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0, flexShrink: 0, marginHorizontal: -edge }}
+      >
+        {week.map((date) => {
+          const day = weekdayOf(date);
+          return (
+            <FilterBubble
+              active={day === selected}
+              // A weekly menu repeats, so it has no date to show.
+              count={showDates ? shortDate(date) : undefined}
+              key={day}
+              label={DAY_LABEL[day].slice(0, 3)}
+              onPress={() => onSelect(day)}
+            />
+          );
+        })}
+      </ScrollView>
+    );
+  }
   return (
     /* Scrolls rather than dividing the screen width by seven. At seven equal
        columns a phone gives each day about 44pt, which is under the touch

@@ -3,7 +3,7 @@ import { buildActionItems, type ActionSource } from "@/features/owner/action-cen
 import type { OwnerDashboard } from "@/store/services/dashboard-api";
 
 /**
- * How the Manage tab orders its module cards (user, 2026-10-04):
+ * How the Manage tab orders module cards within each category:
  *
  * <ul>
  * <li>A to Z and Z to A, by name.</li>
@@ -13,6 +13,25 @@ import type { OwnerDashboard } from "@/store/services/dashboard-api";
  * </ul>
  */
 export type WorkspaceSortMode = "AZ" | "ZA" | "DYNAMIC" | "CUSTOM";
+export type WorkspaceViewMode = "list" | "grid";
+
+type WorkspaceCategoryKey = "operations" | "propertyPeople";
+export type WorkspaceCategory = { key: WorkspaceCategoryKey; title: string; modules: OwnerModule[] };
+
+const WORKSPACE_CATEGORIES: { key: WorkspaceCategoryKey; title: string }[] = [
+  { key: "operations", title: "Daily operations" },
+  { key: "propertyPeople", title: "Property & people" },
+];
+
+const MODULE_CATEGORY: Record<OwnerModuleKey, WorkspaceCategoryKey> = {
+  billing: "operations",
+  concern: "operations",
+  food: "operations",
+  notice: "operations",
+  property: "propertyPeople",
+  staff: "propertyPeople",
+  tenancy: "propertyPeople",
+};
 
 export const WORKSPACE_SORT_OPTIONS: { label: string; value: WorkspaceSortMode }[] = [
   { label: "A to Z", value: "AZ" },
@@ -142,4 +161,32 @@ export function sortWorkspaceModules(
     });
   }
   return sorted;
+}
+
+/** Category positions are fixed; only their permission-filtered contents are sorted. */
+export function groupWorkspaceModules(
+  modules: OwnerModule[],
+  mode: WorkspaceSortMode,
+  customOrder: string[],
+  marks: PendingMarks,
+  propertyId: string | null,
+): WorkspaceCategory[] {
+  return WORKSPACE_CATEGORIES.map((category) => ({
+    ...category,
+    modules: sortWorkspaceModules(
+      modules.filter((module) => MODULE_CATEGORY[module.key] === category.key),
+      mode,
+      customOrder,
+      marks,
+      propertyId,
+    ),
+  })).filter((category) => category.modules.length > 0);
+}
+
+/** Replace one category's visible ranks without losing other categories or hidden modules. */
+export function mergeWorkspaceCategoryOrder(customOrder: string[], shownOrder: string[], reorderedKeys: string[]): string[] {
+  const completeOrder = Array.from(new Set([...customOrder, ...shownOrder]));
+  const moved = new Set(reorderedKeys);
+  let position = 0;
+  return completeOrder.map((key) => moved.has(key) ? reorderedKeys[position++] : key);
 }

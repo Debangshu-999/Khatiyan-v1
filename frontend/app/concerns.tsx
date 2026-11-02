@@ -1,3 +1,5 @@
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ScrollView, Text, View } from "react-native";
@@ -68,6 +70,11 @@ export default function ConcernsScreen() {
   function openClosedConcern(concern: ConcernSummary) {
     setHistoryOpen(false);
     openConcern(concern);
+  }
+
+  const loadFailed = loadFailure(currentQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (
@@ -268,8 +275,8 @@ function ClosedConcernsModal({
                 Closed concerns
               </ModalTitle>
             </View>
-            <IconButton accessibilityLabel="Close concern history" filled icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
 
           {loading ? (
             <SkeletonCard />

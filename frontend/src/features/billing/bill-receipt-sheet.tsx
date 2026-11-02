@@ -1,3 +1,4 @@
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -52,6 +53,12 @@ function receiptLineItems(cycle: BillingCycle) {
   return cycle.lineItems.filter((item) => item.settlementAction !== "WAIVED");
 }
 
+/** Damage records encode their reference in the charge label; keep it on a separate line. */
+function receiptChargeLabel(label: string): { label: string; reference?: string } {
+  const damage = /^Damage (DMG-\d{4}-\d+): (.+) \((D[123])\)(, split \d+)?$/.exec(label);
+  return damage ? { label: `Damage: ${damage[2]} - ${damage[3]}${damage[4] ?? ""}`, reference: `(${damage[1]})` } : { label };
+}
+
 /**
  * The bill, as a document.
  *
@@ -90,9 +97,10 @@ export function BillReceiptDocument({
   const subtotal = cycle.baseAmountPaise + depositTotal + cycle.extraChargePaise + cycle.lateFeeAmountPaise;
   // Money received, not a discount, so its own row under it (2026-10-28), as the PDF prints it.
   const token = bookingTokenPaise(cycle);
+  const title = receiptChargeLabel(billTitle(cycle));
   const billDetails: ReceiptDetail[] = [
     { code: true, label: "Bill Number", value: cycle.referenceCode },
-    { label: "Bill Cycle", value: billTitle(cycle) },
+    { label: cycle.category === "ONE_OFF" ? "Bill name" : "Bill Cycle", value: cycle.category === "ONE_OFF" && title.reference ? "Damage bill" : title.label },
     { label: "Bill Date", value: formatDate(cycle.createdAt) },
     { label: "Due Date", value: formatDate(cycle.rentDueDate) },
     { label: "Bill Status", value: humanizeToken(cycle.status) },
@@ -107,9 +115,9 @@ export function BillReceiptDocument({
   ];
 
   return (
-    <View style={{ backgroundColor: colors.surface, gap: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.lg }}>
+    <View style={{ backgroundColor: colors.surface, gap: spacing.lg, paddingHorizontal: spacing.md, paddingTop: spacing.xs, paddingBottom: spacing.lg }}>
       {/* The property's details on the left, the logo on the right (user, 2026-10-28). */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 17, lineHeight: 21 }}>
             {property?.name ?? "Tenancy bill"}
@@ -127,20 +135,20 @@ export function BillReceiptDocument({
           Tenancy Bill Receipt
       </Text>
 
-      <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
+      <View style={{ alignItems: "stretch", flexDirection: "column", gap: spacing.sm }}>
         <ReceiptDetailTable rows={billDetails} title="Bill Details" />
         <ReceiptDetailTable rows={billedTo} title="Bill To" />
       </View>
 
       <View style={{ borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, overflow: "hidden" }}>
         <DocRow head amount="Amount" label="Charges (Incl. Taxes)" />
-        <DocRow amount={formatReceiptMoney(cycle.baseAmountPaise)} label="Base Rent" />
+        {cycle.category !== "ONE_OFF" ? <DocRow amount={formatReceiptMoney(cycle.baseAmountPaise)} label="Base Rent" /> : null}
         {/* Under rent, where the bill itself orders it. */}
         {deposits.map((item) => (
           <DocRow amount={formatReceiptMoney(item.amountPaise)} key={item.id} label={item.label} />
         ))}
         {extras.map((item) => (
-          <DocRow amount={formatReceiptMoney(item.amountPaise)} key={item.id} label={item.label} />
+          <DocRow amount={formatReceiptMoney(item.amountPaise)} key={item.id} {...receiptChargeLabel(item.label)} />
         ))}
         {unitemised > 0 ? <DocRow amount={formatReceiptMoney(unitemised)} label="Extra charges" /> : null}
         <DocRow amount={formatReceiptMoney(cycle.lateFeeAmountPaise)} label="Late Fee" />
@@ -168,7 +176,7 @@ type ReceiptDetail = { code?: boolean; label: string; value: string };
 function ReceiptDetailTable({ rows, title }: { rows: ReceiptDetail[]; title: string }) {
   const { fonts } = useTheme();
   return (
-    <View style={{ borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, flex: 1, minWidth: 0, overflow: "hidden" }}>
+    <View style={{ alignSelf: "stretch", borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, minWidth: 0, overflow: "hidden" }}>
       <ReceiptTableHeader title={title} />
       {rows.map((row) => (
         <View key={row.label} style={{ borderTopColor: RECEIPT_BORDER, borderTopWidth: 1, flexDirection: "row", minHeight: 34 }}>
@@ -180,7 +188,7 @@ function ReceiptDetailTable({ rows, title }: { rows: ReceiptDetail[]; title: str
           <View style={{ borderLeftColor: RECEIPT_BORDER, borderLeftWidth: 1, flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: 7, paddingVertical: 6 }}>
             <FitText
               minimumFontScale={0.65}
-              numberOfLines={row.label === "Email" ? 2 : 1}
+              numberOfLines={row.label === "Email" || row.label === "Bill name" ? 2 : 1}
               style={{ color: RECEIPT_NAVY, fontFamily: row.code ? fonts.mono : fonts.sansSemiBold, fontSize: row.code ? 8 : 9, lineHeight: 12 }}
             >
               {row.value}
@@ -208,12 +216,14 @@ function DocRow({
   amountRight,
   head,
   label,
+  reference,
   strong,
 }: {
   amount: string;
   amountRight?: boolean;
   head?: boolean;
   label: string;
+  reference?: string;
   strong?: boolean;
 }) {
   const { fonts } = useTheme();
@@ -223,6 +233,7 @@ function DocRow({
         <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 14 : head ? 13 : 11, lineHeight: strong ? 19 : 16 }}>
           {label}
         </FitText>
+        {reference ? <FitText numberOfLines={1} style={{ color: RECEIPT_NAVY, fontFamily: fonts.mono, fontSize: 9, lineHeight: 13, marginTop: 2 }}>{reference}</FitText> : null}
       </View>
       <View style={{ flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
         <FitText
@@ -350,8 +361,8 @@ export function BillReceiptSheet({
             {/* Filled, like every other close in the app. A bare glyph beside
                 the reference code read as punctuation after it rather than as
                 something to aim at. */}
-            <IconButton accessibilityLabel="Close receipt" filled icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule flush inset={0} />
 
           {/* flexShrink, which React Native does NOT default to 1 the way the
               web does. Without it the ScrollView claims its full content height

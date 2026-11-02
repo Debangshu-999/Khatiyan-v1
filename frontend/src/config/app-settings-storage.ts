@@ -2,7 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 import type { AccountType } from "@/features/account/accounts";
-import type { PendingMarks, WorkspaceSortMode } from "@/features/owner/workspace-sort";
+import type { PendingMarks, WorkspaceSortMode, WorkspaceViewMode } from "@/features/owner/workspace-sort";
 import type { ThemeMode } from "@/theme/colors";
 
 const APP_SETTINGS_KEY = "khatiyan.appSettings.v1";
@@ -23,8 +23,8 @@ type StoredAppSettings = {
   workspaceSortByUserId?: Record<string, StoredWorkspaceSort>;
 };
 
-/** The Manage tab's sort: the mode, the dragged order, and when each module last got something waiting. */
-export type StoredWorkspaceSort = { customOrder: string[]; marks: PendingMarks; mode: WorkspaceSortMode };
+/** The Manage tab's sort and layout; older saves without a view still open as a list. */
+export type StoredWorkspaceSort = { customOrder: string[]; marks: PendingMarks; mode: WorkspaceSortMode; view?: WorkspaceViewMode };
 
 /**
  * Every setting lives in ONE stored blob, and every save used to read it,

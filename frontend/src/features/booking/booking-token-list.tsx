@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { CalendarCheck, Clock3, IndianRupee, RotateCcw, Undo2 } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { BookingTokenAmountIcon } from "@/components/booking-vector-icons";
@@ -19,7 +21,7 @@ import { BOOKING_TOKEN_STATUS, bookingDateLabel } from "@/features/booking/booki
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { InitialsAvatar } from "@/features/enquiry/enquiry-tags";
 import { errorMessage } from "@/features/forms/server-error";
-import { ActionButton, ConfirmDialog, NoticeBar, formatMoneyPaise } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { useAccumulatedPages } from "@/hooks/use-accumulated-pages";
 import {
   RECEIVED_TOKEN_STATUSES,
@@ -107,10 +109,7 @@ export function BookingTokenList({ propertyId, loadMoreRef, onOpenBooking, initi
       options={[{ value: "ALL", label: "All" }, ...RECEIVED_TOKEN_STATUSES.map((value) => ({ value, label: BOOKING_TOKEN_STATUS[value].label }))]}
     >
       {!pages && !list.isError ? <SkeletonList rows={3} body={2} action /> : null}
-      {list.isError && !pages ? <>
-        <NoticeBar title="Could not load tokens" message={errorMessage(list.error)} tone="danger" />
-        <View style={{ flexDirection: "row" }}><ActionButton label="Try again" icon={RotateCcw} onPress={() => void list.refetch()} variant="secondary" /></View>
-      </> : null}
+      {list.isError && !pages ? <LoadFailed error={list.error} onReload={() => void list.refetch()} /> : null}
       {pages && pages.totalElements === 0 ? <EmptyState
         artworkNode={<BookingTokenAmountIcon color={colors.primary} size={64} />}
         title={narrowed ? "No matching tokens" : "No tokens collected yet"}
@@ -160,15 +159,15 @@ export function BookingTokenCard({ token, onDecide, onOpenBooking }: { token: Bo
   const { colors, fonts, type } = useTheme();
   const refund = tokenRefundLine(token);
   return <Card style={{ gap: spacing.sm, padding: spacing.md }}>
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginBottom: 4 }}>
+    <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginBottom: 4 }}>
       <InitialsAvatar name={token.tenantName} />
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-        <FitText numberOfLines={1} minimumFontScale={0.8} style={[type.display, { color: colors.ink, fontSize: 18 }]}>{cardName(token.tenantName)}</FitText>
+        <FitText numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(18) }]}>{cardName(token.tenantName)}</FitText>
         {/* The code alone, as a booking's card shows its own (user, 2026-10-11: "remove Token id from before the id"). */}
-        <FitText selectable numberOfLines={1} minimumFontScale={0.8} style={[type.description, { color: colors.muted }]}>{token.receiptCode}</FitText>
+        <FitText selectable numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.description), { color: colors.muted }]}>{token.receiptCode}</FitText>
       </View>
-      <OwnerTokenStatus status={token.status} />
-    </View>
+      <CardStatus><OwnerTokenStatus status={token.status} /></CardStatus>
+    </CardNameRow>
     {/* Amount, date and mode as the tenancy cards show their facts (user, 2026-10-27): a small label
         over each value, three columns with a thin rule between them. */}
     <View style={{ alignItems: "stretch", flexDirection: "row" }}>
@@ -181,14 +180,14 @@ export function BookingTokenCard({ token, onDecide, onOpenBooking }: { token: Bo
     <BookingInfoBand icon={CalendarCheck}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <Text style={[type.description, { color: colors.muted, fontFamily: fonts.sansMedium }]}>Booking ID</Text>
-          <FitText selectable numberOfLines={1} minimumFontScale={0.8} style={[type.body, { color: colors.ink, fontFamily: fonts.sansMedium }]}>{token.bookingReferenceCode}</FitText>
+          <Text style={[smallerCardText(type.description), { color: colors.muted, fontFamily: fonts.sansMedium }]}>Booking ID</Text>
+          <FitText selectable numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.body), { color: colors.ink, fontFamily: fonts.sansMedium }]}>{token.bookingReferenceCode}</FitText>
         </View>
         <OwnerBookingStatus short status={token.bookingStatus} />
       </View>
     </BookingInfoBand>
     {refund ? <BookingInfoBand icon={token.status === "DECISION_PENDING" ? Clock3 : Undo2} tone={token.status === "DECISION_PENDING" ? "warning" : "neutral"}>
-      <Text style={[type.description, { color: token.status === "DECISION_PENDING" ? colors.warningText : colors.muted, fontFamily: fonts.sansMedium }]}>{refund}</Text>
+      <Text style={[smallerCardText(type.description), { color: token.status === "DECISION_PENDING" ? colors.warningText : colors.muted, fontFamily: fonts.sansMedium }]}>{refund}</Text>
     </BookingInfoBand> : null}
     {/* A no-show's token: the handler's two choices side by side (user, 2026-10-28). */}
     {token.canDecide ? <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: 4 }}>
@@ -206,8 +205,8 @@ function TokenFact({ flex, label, value }: { flex: number; label: string; value:
   const { colors, fonts, type } = useTheme();
   return (
     <View style={{ flex, gap: 3, minWidth: 0, paddingHorizontal: spacing.xs }}>
-      <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 10 }]}>{label}</FitText>
-      <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 16 }}>{value}</FitText>
+      <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: colors.muted, fontSize: cardText(10) }]}>{label}</FitText>
+      <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(12), lineHeight: 16 }}>{value}</FitText>
     </View>
   );
 }

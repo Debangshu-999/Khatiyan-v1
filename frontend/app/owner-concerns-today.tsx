@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { View } from "react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
 import { DigestConcernsEmptyIcon } from "@/components/tenancy-line-icons";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
@@ -30,7 +31,8 @@ export default function OwnerConcernsTodayScreen() {
   const router = useGuardedRouter();
   const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
-  const properties = useListMyPropertiesQuery().data ?? [];
+  const propertiesQuery = useListMyPropertiesQuery();
+  const properties = propertiesQuery.data ?? [];
   const property =
     properties.find((candidate) => candidate.id === selectedPropertyId) ??
     (properties.length === 1 ? properties[0] : null);
@@ -47,6 +49,11 @@ export default function OwnerConcernsTodayScreen() {
       ? "property"
       : !finished && concern.assignedToUserId === currentUserId ? "taken" : "history";
     router.push({ pathname: "/owner-concern-detail", params: { concernId: concern.id, mode, propertyId: concern.propertyId } });
+  }
+
+  const loadFailed = loadFailure(propertiesQuery, concernsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (

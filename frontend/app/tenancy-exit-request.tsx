@@ -1,8 +1,10 @@
+import { dateOfIso } from "@/components/calendar-month";
+import { CalendarPicker } from "@/components/calendar-picker";
+import { LoadFailed } from "@/components/load-failed";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { useState, type ReactNode } from "react";
-import { Platform, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { BedDouble, CalendarClock, CalendarDays, ChevronRight, FileText, MessageSquare, TriangleAlert } from "lucide-react-native";
 
@@ -63,7 +65,7 @@ export default function TenancyExitRequestScreen() {
       {activeTenancyQuery.isFetching && !tenancy ? (
         <TenantExitRequestSkeleton />
       ) : activeTenancyQuery.error && !tenancy ? (
-        <LoadError message={errorMessage(activeTenancyQuery.error)} onRetry={() => void activeTenancyQuery.refetch()} />
+        <LoadFailed error={activeTenancyQuery.error} onReload={() => void activeTenancyQuery.refetch()} />
       ) : !tenancy ? (
         <EmptyState
           icon={ExitTenancyIcon}
@@ -105,15 +107,6 @@ function ExitRequestPage({ children, footer }: { children: ReactNode; footer?: R
   );
 }
 
-function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <View style={{ gap: spacing.md }}>
-      <EmptyState icon={ExitTenancyIcon} title="Could not load exit details" description={message} />
-      <ActionButton label="Try again" onPress={onRetry} variant="secondary" />
-    </View>
-  );
-}
-
 /**
  * Last-line safety for a direct link or request-state race. Normal taps are
  * gated on the Tenancy tab before this screen is opened.
@@ -149,9 +142,9 @@ function ExitRequestGate({
   if (requestsQuery.error || roomRequestsQuery.error) {
     return (
       <ExitRequestPage>
-        <LoadError
-          message={errorMessage(requestsQuery.error ?? roomRequestsQuery.error)}
-          onRetry={() => { void requestsQuery.refetch(); void roomRequestsQuery.refetch(); }}
+        <LoadFailed
+          error={requestsQuery.error ?? roomRequestsQuery.error}
+          onReload={() => { void requestsQuery.refetch(); void roomRequestsQuery.refetch(); }}
         />
       </ExitRequestPage>
     );
@@ -234,10 +227,7 @@ function ServeNoticeForm({
   if (!windowQuery.data) {
     return (
       <ExitRequestPage>
-        <LoadError
-          message={windowQuery.error ? errorMessage(windowQuery.error) : "We could not load your notice period right now. Please try again shortly."}
-          onRetry={() => void windowQuery.refetch()}
-        />
+        <LoadFailed error={windowQuery.error} onReload={() => void windowQuery.refetch()} />
       </ExitRequestPage>
     );
   }
@@ -586,68 +576,13 @@ function CheckoutDatePicker({
   onPick: (date: Date) => void;
   value: Date;
 }) {
-  const { colors, fonts, type } = useTheme();
-  const [draft, setDraft] = useState(value);
-
-  // The native picker has no web implementation, so dev-web gets a plain
-  // YYYY-MM-DD field and keeps the flow testable in a browser.
-  if (Platform.OS === "web") {
-    return (
-      <SheetShell onClose={onClose} title="Choose your last day">
-        <View style={{ gap: spacing.md }}>
-          <AppTextInput
-            defaultValue={toISODate(value)}
-            onChangeText={(text) => {
-              const trimmed = text.trim();
-              const parsed = new Date(`${trimmed}T00:00:00`);
-              if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed) && !Number.isNaN(parsed.getTime())) {
-                setDraft(parsed);
-              }
-            }}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.kicker}
-            style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: 14,
-              borderWidth: 1,
-              color: colors.ink,
-              fontFamily: fonts.sans,
-              fontSize: 15,
-              minHeight: 54,
-              paddingHorizontal: spacing.md,
-            }}
-          />
-          <Text style={[type.caption, { color: colors.muted }]}>
-            Between {formatDate(toISODate(minimumDate))} and {formatDate(toISODate(maximumDate))}.
-          </Text>
-          <ActionButton
-            label="Use this date"
-            onPress={() => {
-              onPick(clamp(draft, minimumDate, maximumDate));
-              onClose();
-            }}
-          />
-        </View>
-      </SheetShell>
-    );
-  }
-
   return (
-    <DateTimePicker
-      display={Platform.OS === "ios" ? "inline" : "default"}
-      maximumDate={maximumDate}
-      minimumDate={minimumDate}
-      mode="date"
-      onChange={(event: DateTimePickerEvent, selected?: Date) => {
-        // Android dismisses itself on any outcome; iOS keeps the wheel up, so
-        // committing on "set" is what closes it there too.
-        if (event.type === "set" && selected) {
-          onPick(clamp(selected, minimumDate, maximumDate));
-        }
-        onClose();
-      }}
-      value={value}
+    <CalendarPicker
+      maximum={toISODate(maximumDate)}
+      minimum={toISODate(minimumDate)}
+      onClose={onClose}
+      onPick={(iso) => onPick(clamp(dateOfIso(iso), minimumDate, maximumDate))}
+      value={toISODate(value)}
     />
   );
 }

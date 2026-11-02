@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.api.PageResponse;
-import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.property.api.dto.RoomResponse;
 import com.khatiyan.d_modules.tenancy.api.dto.CreateExitRequest;
@@ -149,10 +148,10 @@ public class TenancyController {
     }
 
     @GetMapping("/{id}")
-    public TenancyResponse getTenancyById(@PathVariable UUID id) {
-        return tenancyService.findById(id)
-            .map(tenancyService::toResponse)
-            .orElseThrow(() -> new NotFoundException("Tenancy", id));
+    public TenancyResponse getTenancyById(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID id) {
+        return tenancyService.toResponse(tenancyService.findByIdForViewer(user.userId(), id));
     }
 
     @GetMapping
@@ -162,7 +161,7 @@ public class TenancyController {
             @RequestParam(defaultValue = "false") boolean includePast) {
         List<Tenancy> tenancies = includePast
             ? tenancyService.findByPropertyId(user.userId(), propertyId)
-            : tenancyService.findActiveByPropertyId(propertyId);
+            : tenancyService.findActiveByPropertyId(user.userId(), propertyId);
 
         return tenancies.stream()
             .map(tenancyService::toResponse)
@@ -191,6 +190,7 @@ public class TenancyController {
         return tenancyService.listPastForManagedProperty(user.userId(), propertyId, query, page, size);
     }
     @PatchMapping("/{id}")
+    @RequiresVersion
     public TenancyResponse updateTenancy(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID id,

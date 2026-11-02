@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { Switch, Text, View } from "react-native";
 import { LockKeyhole } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -39,10 +40,7 @@ export default function OwnerBookingPaymentSetupScreen() {
   const loading = scope.loading || Boolean(scope.property && scope.owner && !details && !query.isError);
   return <ScreenScrollView safeAreaEdges={["top", "bottom"]} surface={colors.surface}>
     <ScreenHeader title="Payment" italicTail="setup." subtitle="Where booking token payments are sent." />
-    {loading ? <OwnerPaymentDetailsSkeleton /> : failed ? <>
-      <NoticeBar title="Could not load payment setup" message={errorMessage(failed)} tone="danger" />
-      <ActionButton label="Try again" onPress={() => { if (scope.error) scope.retry(); else void query.refetch(); }} />
-    </> : <EmptyState icon={LockKeyhole} title={scope.property ? "Owner only" : "Select a property"}
+    {loading ? <OwnerPaymentDetailsSkeleton /> : failed ? <LoadFailed error={failed} onReload={() => { if (scope.error) scope.retry(); else void query.refetch(); }} /> : <EmptyState icon={LockKeyhole} title={scope.property ? "Owner only" : "Select a property"}
       description={scope.property ? "Only the property owner can view or change payment details." : "Choose an active property on Home before setting up booking payments."} />}
   </ScreenScrollView>;
 }

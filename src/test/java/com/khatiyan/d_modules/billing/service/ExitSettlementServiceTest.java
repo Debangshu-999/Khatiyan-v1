@@ -32,6 +32,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.ExitChargeInstrument;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
+import com.khatiyan.d_modules.billing.damage.DamageBillService;
 import com.khatiyan.d_modules.billing.model.BillingCycleCategory;
 import com.khatiyan.d_modules.billing.model.BillingCycleStatus;
 import com.khatiyan.d_modules.billing.model.DepositAccount;
@@ -58,6 +59,8 @@ class ExitSettlementServiceTest {
     private BillingCycleService billingCycleService;
     @Mock
     private DepositAccountRepository depositAccountRepository;
+    @Mock
+    private DamageBillService damageBillService;
 
     @InjectMocks
     private ExitSettlementService service;
@@ -100,33 +103,65 @@ class ExitSettlementServiceTest {
     @Test
     void appliesTheEarlyExitChargeBeforeDamages() {
         withDepositAccount();
-        when(depositManagerService.resolveDamageTotal(PROPERTY, List.of("Broken chair"))).thenReturn(2_000_00L);
+        DamageCharge damages = new DamageCharge(List.of(UUID.randomUUID()), List.of());
+        when(damageBillService.settleAtExit(TENANCY, damages))
+                .thenReturn(List.of(new ExitDeduction("Damage DMG-2026-000001: AC (D2)", 2_000_00L)));
 
         service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
                 List.of(new ExitCharge(3_000_00L, ExitChargeInstrument.DEPOSIT, "One month's rent", null)),
-                new DamageCharge(List.of("Broken chair"), null, ExitChargeInstrument.DEPOSIT, null),
+                damages,
                 true, null));
 
         assertThat(capturedDeductions())
                 .extracting(ExitDeduction::reason)
-                .containsExactly("One month's rent", "Damage charges");
+                .containsExactly("One month's rent", "Damage DMG-2026-000001: AC (D2)");
     }
 
-    /** Damage is priced from the property's schedule, never from the client. */
+    /** A daily stay has no deposit; a charge aimed at one would silently vanish. */
     @Test
-    void pricesDamageFromThePropertySchedule() {
+    void refusesADepositChargeOnAStayWithNoDeposit() {
+        withoutDepositAccount();
+        DamageCharge damages = new DamageCharge(List.of(UUID.randomUUID()), List.of());
+        when(damageBillService.settleAtExit(TENANCY, damages))
+                .thenReturn(List.of(new ExitDeduction("Damage DMG-2026-000001: AC (D2)", 2_000_00L)));
+
+        assertThatThrownBy(() -> service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
+                null, damages, null, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("no deposit");
+
+        verify(depositManagerService, never()).applyExitDeductions(any(), any(), any(), any(Boolean.class));
+    }
+
+    /**
+     * Other charges never touch the deposit (2026-10-31), and the tenant hands
+     * over one sum at move-out, so they share ONE bill with a billed early-exit
+     * charge, recorded paid once.
+     */
+    @Test
+    void otherChargesJoinTheOneRecordedPaidBill() {
         withDepositAccount();
-        when(depositManagerService.resolveDamageTotal(PROPERTY, List.of("Broken chair"))).thenReturn(2_000_00L);
+        stubBill();
 
         service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
+                List.of(new ExitCharge(3_000_00L, ExitChargeInstrument.ONE_OFF_BILL, "Early exit charge", null)),
                 null,
-                new DamageCharge(List.of("Broken chair"), null, ExitChargeInstrument.DEPOSIT, null),
-                true, null));
+                List.of(new CustomCharge("Lost room key", 300_00L)),
+                ManualPaymentMethod.UPI,
+                false, null));
 
-        assertThat(capturedDeductions())
-                .singleElement()
-                .extracting(ExitDeduction::amountPaise)
-                .isEqualTo(2_000_00L);
+        ArgumentCaptor<CreateOneOffBillRequest> first = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CreateOneOffBillRequest>> more = ArgumentCaptor.forClass(List.class);
+        verify(billingCycleService, org.mockito.Mockito.times(1))
+                .createOneOffBill(eq(ACTOR), eq(TENANCY), first.capture(), more.capture());
+        assertThat(first.getValue().reason()).isEqualTo("Early exit charge");
+        assertThat(more.getValue())
+                .extracting(CreateOneOffBillRequest::reason, CreateOneOffBillRequest::amountPaise)
+                .containsExactly(org.assertj.core.api.Assertions.tuple("Lost room key", 300_00L));
+        verify(billingCycleService, org.mockito.Mockito.times(1))
+                .recordManualPayment(eq(ACTOR), any(), any(RecordManualPaymentRequest.class));
+        assertThat(capturedDeductions()).isEmpty();
     }
 
     @Test
@@ -148,23 +183,6 @@ class ExitSettlementServiceTest {
         verify(billingCycleService).recordManualPayment(eq(ACTOR), any(), any(RecordManualPaymentRequest.class));
 
         assertThat(capturedDeductions()).isEmpty();
-    }
-
-    @Test
-    void splitsEarlyExitAndDamagesAcrossDifferentInstruments() {
-        withDepositAccount();
-        stubBill();
-        when(depositManagerService.resolveDamageTotal(PROPERTY, List.of("Broken chair"))).thenReturn(2_000_00L);
-
-        service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
-                List.of(new ExitCharge(3_000_00L, ExitChargeInstrument.DEPOSIT, "One month's rent", null)),
-                new DamageCharge(List.of("Broken chair"), null, ExitChargeInstrument.ONE_OFF_BILL, null),
-                true, null));
-
-        assertThat(capturedDeductions())
-                .extracting(ExitDeduction::reason)
-                .containsExactly("One month's rent");
-        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), any(), any());
     }
 
     /**
@@ -192,57 +210,6 @@ class ExitSettlementServiceTest {
         ArgumentCaptor<CreateOneOffBillRequest> billed = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
         verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture(), any());
         assertThat(billed.getValue().amountPaise()).isEqualTo(3_000_00L);
-    }
-
-    /**
-     * A Rs 12,000 damage charge against the Rs 7,000 the deposit still holds: the
-     * deposit takes Rs 7,000 and the Rs 5,000 balance joins the move-out bill,
-     * the same split the early-exit charge gets.
-     */
-    @Test
-    void splitsDamageChargesAcrossDepositAndBillWhenTheyOutgrowTheDeposit() {
-        withDepositAccount();
-        stubBill();
-
-        service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
-                null,
-                new DamageCharge(null, List.of(new CustomCharge("Test charge", 12_000_00L)),
-                        ExitChargeInstrument.DEPOSIT, ManualPaymentMethod.UPI, 7_000_00L),
-                true, null));
-
-        assertThat(capturedDeductions())
-                .extracting(ExitDeduction::reason, ExitDeduction::amountPaise)
-                .containsExactly(org.assertj.core.api.Assertions.tuple("Test charge", 7_000_00L));
-
-        ArgumentCaptor<CreateOneOffBillRequest> billed = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
-        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture(), any());
-        assertThat(billed.getValue().reason()).isEqualTo("Test charge (balance)");
-        assertThat(billed.getValue().amountPaise()).isEqualTo(5_000_00L);
-    }
-
-    /** The deposit's share is used up line by line, in the order they arrive. */
-    @Test
-    void aDamageSplitFillsTheDepositLineByLine() {
-        withDepositAccount();
-        stubBill();
-        when(depositManagerService.resolveDamageTotal(PROPERTY, List.of("Broken chair"))).thenReturn(2_000_00L);
-
-        service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
-                null,
-                new DamageCharge(List.of("Broken chair"), List.of(new CustomCharge("Repainting", 12_000_00L)),
-                        ExitChargeInstrument.DEPOSIT, null, 7_000_00L),
-                true, null));
-
-        assertThat(capturedDeductions())
-                .extracting(ExitDeduction::reason, ExitDeduction::amountPaise)
-                .containsExactly(
-                        org.assertj.core.api.Assertions.tuple("Damage charges", 2_000_00L),
-                        org.assertj.core.api.Assertions.tuple("Repainting", 5_000_00L));
-
-        ArgumentCaptor<CreateOneOffBillRequest> billed = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
-        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), billed.capture(), any());
-        assertThat(billed.getValue().reason()).isEqualTo("Repainting (balance)");
-        assertThat(billed.getValue().amountPaise()).isEqualTo(7_000_00L);
     }
 
     /** The method is the actor's; a wrong one files a wrong payment record. */
@@ -302,89 +269,6 @@ class ExitSettlementServiceTest {
         ArgumentCaptor<RecordManualPaymentRequest> paid = ArgumentCaptor.forClass(RecordManualPaymentRequest.class);
         verify(billingCycleService).recordManualPayment(eq(ACTOR), any(), paid.capture());
         assertThat(paid.getValue().method()).isEqualTo(ManualPaymentMethod.CASH);
-    }
-
-    @Test
-    void includesCustomChargesAlongsideScheduledDamage() {
-        withDepositAccount();
-        when(depositManagerService.resolveDamageTotal(PROPERTY, List.of("Broken chair"))).thenReturn(2_000_00L);
-
-        service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
-                null,
-                new DamageCharge(
-                        List.of("Broken chair"),
-                        List.of(new CustomCharge("Repainting", 1_500_00L)),
-                        ExitChargeInstrument.DEPOSIT, null),
-                true, null));
-
-        assertThat(capturedDeductions())
-                .extracting(ExitDeduction::reason, ExitDeduction::amountPaise)
-                .containsExactly(
-                        org.assertj.core.api.Assertions.tuple("Damage charges", 2_000_00L),
-                        org.assertj.core.api.Assertions.tuple("Repainting", 1_500_00L));
-    }
-
-    /**
-     * The tenant hands over one sum at move-out, so the early-exit balance and
-     * the damage charge land on ONE bill rather than two.
-     */
-    @Test
-    void mergesEveryBilledChargeIntoASingleBill() {
-        withDepositAccount();
-        stubBill();
-        when(depositManagerService.resolveDamageTotal(PROPERTY, List.of("Broken chair"))).thenReturn(2_000_00L);
-
-        service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
-                List.of(new ExitCharge(3_000_00L, ExitChargeInstrument.ONE_OFF_BILL, "Early exit charge", null)),
-                new DamageCharge(List.of("Broken chair"), null, ExitChargeInstrument.ONE_OFF_BILL, null),
-                true, null));
-
-        // One bill, raised with every charge as its own line (2026-09-28). None
-        // is added afterwards, so none shows in the bill's Action history.
-        ArgumentCaptor<CreateOneOffBillRequest> first = ArgumentCaptor.forClass(CreateOneOffBillRequest.class);
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<CreateOneOffBillRequest>> more = ArgumentCaptor.forClass(List.class);
-        verify(billingCycleService, org.mockito.Mockito.times(1))
-                .createOneOffBill(eq(ACTOR), eq(TENANCY), first.capture(), more.capture());
-        assertThat(first.getValue().reason()).isEqualTo("Early exit charge");
-        assertThat(more.getValue())
-                .extracting(CreateOneOffBillRequest::reason, CreateOneOffBillRequest::amountPaise)
-                .containsExactly(org.assertj.core.api.Assertions.tuple("Damage charges", 2_000_00L));
-
-        // Paid once, for the whole bill.
-        verify(billingCycleService, org.mockito.Mockito.times(1))
-                .recordManualPayment(eq(ACTOR), any(), any(RecordManualPaymentRequest.class));
-    }
-
-    /** A daily stay has no deposit; a charge aimed at one would silently vanish. */
-    @Test
-    void refusesADepositChargeOnAStayWithNoDeposit() {
-        withoutDepositAccount();
-
-        assertThatThrownBy(() -> service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
-                null,
-                new DamageCharge(null, List.of(new CustomCharge("Repainting", 1_500_00L)),
-                        ExitChargeInstrument.DEPOSIT, null),
-                null, null)))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("no deposit");
-
-        verify(depositManagerService, never()).applyExitDeductions(any(), any(), any(), any(Boolean.class));
-    }
-
-    @Test
-    void billsAgainstAStayWithNoDepositWithoutTouchingTheDepositPath() {
-        withoutDepositAccount();
-        stubBill();
-
-        service.applyExitPolicy(ACTOR, TENANCY, PROPERTY, new ApplyExitPolicyRequest(
-                null,
-                new DamageCharge(null, List.of(new CustomCharge("Repainting", 1_500_00L)),
-                        ExitChargeInstrument.ONE_OFF_BILL, null),
-                null, null));
-
-        verify(billingCycleService).createOneOffBill(eq(ACTOR), eq(TENANCY), any(), any());
-        verify(depositManagerService, never()).applyExitDeductions(any(), any(), any(), any(Boolean.class));
     }
 
     @Test

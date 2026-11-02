@@ -29,6 +29,7 @@ import com.khatiyan.d_modules.tenancy.api.dto.IdCheckedParticulars;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.api.PageResponse;
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
@@ -151,6 +152,20 @@ public class TenancyService {
                 .map(tenancy -> new IdCheckedParticulars(
                         tenancy.getIdCheckedGender(), tenancy.getIdCheckedDateOfBirth()))
                 .orElse(IdCheckedParticulars.NONE);
+    }
+
+    /** The manual ID check on this stay. Empty when nobody declared one. */
+    @Transactional(readOnly = true)
+    public Optional<com.khatiyan.d_modules.tenancy.api.dto.IdCheckRecord> findIdCheckRecord(UUID tenancyId) {
+        return tenancyRepository.findById(tenancyId)
+                .filter(tenancy -> Boolean.TRUE.equals(tenancy.getIdCheckConfirmed()))
+                .map(tenancy -> new com.khatiyan.d_modules.tenancy.api.dto.IdCheckRecord(
+                        tenancy.getIdDocumentType() == null ? null : tenancy.getIdDocumentType().name(),
+                        tenancy.getIdLastFour(),
+                        tenancy.getIdCheckedGender(),
+                        tenancy.getIdCheckedDateOfBirth() != null,
+                        tenancy.getIdCheckedAt(),
+                        tenancy.getIdCheckedByUserId()));
     }
 
     /** Full-room beds the owner can book ahead, for the onboarding room picker. */
@@ -979,11 +994,14 @@ public class TenancyService {
         Tenancy tenancy = getActiveTenancy(tenancyId);
         tenancyAccessPolicy.ensureCanManageStays(actorUserId, tenancy.getPropertyId());
 
+        VersionGuard.claim(tenancy);
         try {
             tenancy.updateSetupTerms(rentAmountPaise, depositAmountPaise);
         } catch (IllegalArgumentException | IllegalStateException e) {
             throw new ValidationException(e.getMessage());
         }
+        // Saved now, so the reply carries the version after this edit.
+        tenancyRepository.saveAndFlush(tenancy);
 
         log.info(
                 "Tenancy setup terms updated tenancyId={} userId={} actorUserId={} propertyId={} roomId={}",
@@ -1201,6 +1219,24 @@ public class TenancyService {
     @Transactional(readOnly = true)
     public List<Tenancy> findActiveByPropertyId(UUID propertyId) {
         return tenancyRepository.findByPropertyIdAndActiveTrue(propertyId);
+    }
+
+    /** {@link #findActiveByPropertyId(UUID)} for a request: the caller must have a reason to see these stays. */
+    @Transactional(readOnly = true)
+    public List<Tenancy> findActiveByPropertyId(UUID actorUserId, UUID propertyId) {
+        tenancyAccessPolicy.ensureCanViewCurrentStays(actorUserId, propertyId);
+        return tenancyRepository.findByPropertyIdAndActiveTrue(propertyId);
+    }
+
+    /** One stay for a request: its own tenant, or someone who can view stays at that property. */
+    @Transactional(readOnly = true)
+    public Tenancy findByIdForViewer(UUID actorUserId, UUID tenancyId) {
+        Tenancy tenancy = tenancyRepository.findById(tenancyId)
+                .orElseThrow(() -> new NotFoundException("Tenancy", tenancyId));
+        if (!actorUserId.equals(tenancy.getUserId())) {
+            tenancyAccessPolicy.ensureCanViewStays(actorUserId, tenancy.getPropertyId());
+        }
+        return tenancy;
     }
 
     public TenancyResponse toResponse(Tenancy tenancy) {

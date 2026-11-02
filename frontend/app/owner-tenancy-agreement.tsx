@@ -1,3 +1,5 @@
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useState } from "react";
 import { Modal, Text, View } from "react-native";
@@ -144,6 +146,11 @@ export default function OwnerTenancyAgreementScreen() {
       saveErrors.failFromServer(errorMessage(error));
     }
   };
+
+  const loadFailed = loadFailure(settingsQuery, policiesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
@@ -374,23 +381,8 @@ export default function OwnerTenancyAgreementScreen() {
               <ModalTitle style={{ color: colors.text, flex: 1, fontFamily: fonts.display, fontSize: 18 }}>
                 Agreement preview
               </ModalTitle>
-              <AnimatedPressable
-                accessibilityLabel="Close preview"
-                accessibilityRole="button"
-                hitSlop={8}
-                onPress={() => setPreviewOpen(false)}
-                style={{
-                  alignItems: "center",
-                  backgroundColor: colors.surfaceSunken,
-                  borderRadius: 999,
-                  height: 32,
-                  justifyContent: "center",
-                  width: 32,
-                }}
-              >
-                <X color={colors.inkSoft} size={17} strokeWidth={2.6} />
-              </AnimatedPressable>
             </View>
+            <ModalTitleRule inset={0} />
 
             <ScreenScrollView>
               <AgreementDocument

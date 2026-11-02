@@ -6,11 +6,6 @@ import { spacing } from "@/theme/spacing";
 export function PropertyProfileSkeleton() {
   return (
     <View style={{ gap: spacing.lg }}>
-      <View style={{ alignItems: "flex-end", flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end" }}>
-        <Skeleton height={42} radius={999} width={42} />
-        <Skeleton height={42} radius={999} width={42} />
-      </View>
-
       <Skeleton height={224} radius={18} />
       <View style={{ flexDirection: "row", gap: 7 }}>
         {Array.from({ length: 5 }, (_, index) => (

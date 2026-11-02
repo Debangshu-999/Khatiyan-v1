@@ -3,6 +3,7 @@ import { Image, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { ClipboardList } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -54,6 +55,11 @@ export default function MoveInChecklistScreen() {
     } catch (caught) {
       setRefusal(errorMessage(caught));
     }
+  }
+
+  const loadFailed = loadFailure(query);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (
@@ -150,7 +156,7 @@ export default function MoveInChecklistScreen() {
       ) : null}
 
       {noting ? (
-        <SheetShell onClose={() => setNoting(false)} title="What is different?">
+        <SheetShell size="short" onClose={() => setNoting(false)} title="What is different?">
           <View style={{ gap: spacing.md }}>
             <FormInput
               error={noteError}

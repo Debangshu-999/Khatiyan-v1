@@ -75,7 +75,7 @@ test("Visit first centers the Home VMS artwork, title and copy with no duplicate
   assert.equal(h.writes.length, 0);
 });
 
-test("the shared Visit and Enquiry consent sheet uses the communication permissions title", () => {
+test("the shared Visit and Enquiry consent sheet uses the contact permission title", () => {
   const consentSource = fs.readFileSync(path.join(__dirname, "../src/features/discovery/components/enquiry-consent-modal.tsx"), "utf8");
   const consentCompiled = ts.transpileModule(consentSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exported = {};
@@ -90,6 +90,7 @@ test("the shared Visit and Enquiry consent sheet uses the communication permissi
     "@/components/animated-pressable": { AnimatedPressable: "AnimatedPressable" },
     "@/features/compliance/clickwrap-consent": { ConsentTick: "ConsentTick" },
     "@/features/owner/owner-ui": { ActionButton: "ActionButton" },
+    "@/features/owner/phone-display": { formatIndianPhone: (phone) => phone },
     "@/store/services/enquiry-api": { describeEmailChannelGapShort: () => null, useUpdateEnquiryChannelConsentsMutation: () => [() => { assert.fail("Opening permissions must not save consent"); }, { isLoading: false }] },
     "@/theme/spacing": { radii: { card: 12 }, spacing: { sm: 10 } },
     "@/theme/use-theme": { useTheme: () => theme },
@@ -98,7 +99,7 @@ test("the shared Visit and Enquiry consent sheet uses the communication permissi
   const onClose = () => {};
   const tree = exported.EnquiryConsentModal({ consents: { channels: [], emailChannelState: "AVAILABLE" }, onClose, onGranted() {} });
   assert.equal(tree.type, "SheetShell");
-  assert.equal(tree.props.title, "Communication permissions");
+  assert.equal(tree.props.title, "Contact permission");
   assert.equal(tree.props.onClose, onClose);
   assert.equal(one(tree, "ConsentTick").props.checked, false);
   assert.equal(button(tree, "Save and continue").props.disabled, true);
@@ -106,6 +107,14 @@ test("the shared Visit and Enquiry consent sheet uses the communication permissi
   assert.match(enquirySource, /<EnquiryConsentModal\b/);
   assert.match(source, /<EnquiryConsentModal\b/);
   assert.doesNotMatch(consentSource, /How should they reply\?/);
+  // One tick: no box on the phone row, its number written as the app writes numbers, and in the app's font.
+  assert.doesNotMatch(consentSource, /fonts\.mono|AnimatedPressable|toggle\(/);
+  assert.match(consentSource, /channels: shareable/);
+  assert.match(consentSource, /formatIndianPhone\(option\.target\)/);
+  const settings = fs.readFileSync(path.join(__dirname, "../src/features/account/enquiry-reply-settings.tsx"), "utf8");
+  assert.doesNotMatch(settings, /<Switch|setDrafted/);
+  assert.match(settings, /formatIndianPhone\(option\.target\)/);
+  assert.match(settings, /setTicked\(!agreed\)/);
 });
 
 test("both choices retain their order and choosing a visit does not open a booking", () => {

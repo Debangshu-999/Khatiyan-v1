@@ -1,3 +1,6 @@
+import { smallerCardText } from "@/components/card-name-row";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { type ComponentType, useMemo, useState } from "react";
@@ -170,6 +173,11 @@ export default function OwnerExitRequestsScreen() {
   function closeReview() {
     setSelected(null);
     setMode(null);
+  }
+
+  const loadFailed = loadFailure(propertiesQuery, requestsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (
@@ -404,8 +412,8 @@ function PastExitRequestsModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
               <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Exit request history</ModalTitle>
             </View>
-            <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
           {requests.length === 0 ? (
             <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Requests appear here once they expire and can no longer be acted on." />
           ) : (
@@ -720,8 +728,8 @@ function ExitReviewModal({
                   {title}
                 </ModalTitle>
               </View>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
+            <ModalTitleRule inset={0} />
 
             <ScrollView
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.lg, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}
@@ -1108,7 +1116,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xxs }}>
-      <Text style={[type.caption, { color: tone, fontWeight: "900" }]}>
+      <Text style={[smallerCardText(type.caption), { color: tone, fontWeight: "900" }]}>
         {status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
       </Text>
     </View>

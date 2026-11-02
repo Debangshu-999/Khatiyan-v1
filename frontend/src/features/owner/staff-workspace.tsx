@@ -1,10 +1,12 @@
+import { CalendarPicker } from "@/components/calendar-picker";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { Children, Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { ArrowLeft, ArrowLeftRight, Banknote, BriefcaseBusiness, Building2, CalendarCheck, ChevronDown, ChevronRight, ChevronUp, CirclePlus, Clock3, Filter, Pencil, Plus, ReceiptText, Search, ShieldCheck, UsersRound, X } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
@@ -258,6 +260,11 @@ export function StaffWorkspace() {
   const property = resolveSelectedProperty(properties, selectedPropertyId);
   const isOwner = Boolean(property && currentUserId === property.ownerId);
   const [tab, setTab] = useState<WorkspaceTab>("TEAM");
+  useQuickActionIntent({
+    "salary-month": () => setTab("SALARY"),
+    "pay-salary": () => setTab("SALARY"),
+    "salary-adjustment": () => setTab("SALARY"),
+  }, isOwner);
 
   if (!property) {
     return (
@@ -294,12 +301,12 @@ export function StaffWorkspace() {
 
       {tab === "TEAM" ? (
         <>
-          <TeamDirectory property={property} />
+          <TeamDirectory key={property.id} property={property} />
           <TeamHistoryCard property={property} />
         </>
       ) : (
         <>
-          <SalaryTracker property={property} />
+          <SalaryTracker key={property.id} property={property} />
           <SalaryHistoryCard property={property} />
         </>
       )}
@@ -423,6 +430,7 @@ function TeamDirectory({ property }: { property: OwnerProperty }) {
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
   const [pendingAccess, setPendingAccess] = useState<{ managerUserId: string; name: string } | null>(null);
   const [memberEditor, setMemberEditor] = useState<StaffMember | null | "NEW">(null);
+  useQuickActionIntent({ "add-staff": () => setMemberEditor("NEW") }, Boolean(currentUserId === property.ownerId && !membersLoading));
   const [managerEditor, setManagerEditor] = useState<ManagerEmployment | null>(null);
   const [managerDetail, setManagerDetail] = useState<ManagerDirectoryEntry | null>(null);
   const [endTarget, setEndTarget] = useState<EndTarget | null>(null);
@@ -640,6 +648,11 @@ function SalaryTracker({ property }: { property: OwnerProperty }) {
   const [monthOpen, setMonthOpen] = useState(false);
   const [adjustmentTarget, setAdjustmentTarget] = useState<AdjustmentTarget | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  useQuickActionIntent({
+    "salary-month": () => setMonthOpen(true),
+    "pay-salary": () => setPaymentOpen(true),
+    "salary-adjustment": () => setAdjustmentTarget("NEW"),
+  }, Boolean(selected), selected?.account.referenceCode);
   const [pendingDeleteAdjustment, setPendingDeleteAdjustment] = useState<{ payrollMonth: string; adjustmentId: string } | null>(null);
   const loading = staffAccountState.isLoading || managerAccountState.isLoading;
   /**
@@ -917,7 +930,7 @@ function SalaryAccountDetailCard({
           <ChevronRight color={colors.inkSoft} size={18} strokeWidth={2.2} />
         </AnimatedPressable>
     </Card>
-    {payHistoryOpen ? <SheetShell onClose={() => setPayHistoryOpen(false)} title="Pay history" onEndReached={() => setPayHistoryShown((current) => Math.min(historyMonths.length, current + 6))}>
+    {payHistoryOpen ? <SheetShell size="tall" onClose={() => setPayHistoryOpen(false)} title="Pay history" onEndReached={() => setPayHistoryShown((current) => Math.min(historyMonths.length, current + 6))}>
       <SalaryPayslips months={visibleMonths} readOnly={readOnly} onEditAdjustment={onEditAdjustment} onDeleteAdjustment={onDeleteAdjustment} />
       {historyMonths.length > payHistoryShown ? <ActivityIndicator color={colors.muted} /> : historyMonths.length > 6 ? <ListEnd /> : null}
       {!historyMonths.length ? <EmptyState description="Payslips will appear here once a payroll month is opened." artwork={NO_SALARY_ILLUSTRATION} title="No pay history yet" /> : null}
@@ -1112,7 +1125,7 @@ function TeamHistoryCard({ property }: { property: OwnerProperty }) {
       </Card>
 
       {open ? (
-        <SheetShell onClose={() => setOpen(false)} title="Team history">
+        <SheetShell size="tall" onClose={() => setOpen(false)} title="Team history">
           <EmployeeHistory property={property} />
         </SheetShell>
       ) : null}
@@ -1178,7 +1191,7 @@ function SalaryHistoryCard({ property }: { property: OwnerProperty }) {
       </Card>
 
       {open ? (
-        <SheetShell onClose={() => setOpen(false)} title="Payment history">
+        <SheetShell size="tall" onClose={() => setOpen(false)} title="Payment history">
           <PayslipList
             emptyDescription="Salary payments recorded at this property will appear here."
             payslips={query.data ?? []}
@@ -1207,7 +1220,7 @@ function PayslipsSheet({
   const query = useListEmployeePayslipsQuery({ accountReferenceCode, propertyId });
 
   return (
-    <SheetShell onClose={onClose} title={`Payslips — ${holderName}`}>
+    <SheetShell size="tall" onClose={onClose} title={`Payslips — ${holderName}`}>
       <PayslipList
         emptyDescription={`${holderName} has not been paid any salary yet.`}
         loading={query.isFetching && !query.data?.length}
@@ -1553,7 +1566,7 @@ function HistoryCard({ item, propertyId }: { item: EmployeeHistoryItem; property
           />
         ) : (
           // No salary account was ever opened, so there is nothing to query.
-          <SheetShell onClose={() => setPayslipsOpen(false)} title={`Payslips — ${item.fullName}`}>
+          <SheetShell size="tall" onClose={() => setPayslipsOpen(false)} title={`Payslips — ${item.fullName}`}>
             <EmptyState
               description={`${item.fullName} never had a salary account opened, so no payslips exist.`}
               artwork={NO_BILL_ILLUSTRATION}
@@ -1627,7 +1640,7 @@ function CategoryFilterBar({
       </AnimatedPressable>
 
       {open ? (
-        <SheetShell onClose={() => setOpen(false)} title="Filter by category">
+        <SheetShell size="short" onClose={() => setOpen(false)} title="Filter by category">
           <View style={{ gap: spacing.xs }}>
             <CategoryRow
               active={!selected}
@@ -2816,13 +2829,6 @@ function EndEmploymentSheet({
 export function DatePickerField({ clearable = false, label, onChange, value }: { clearable?: boolean; label: string; onChange: (value: string) => void; value: string }) {
   const { colors, type } = useTheme();
   const [open, setOpen] = useState(false);
-  const selectedDate = value ? new Date(`${value}T12:00:00`) : new Date();
-
-  function update(event: DateTimePickerEvent, selected?: Date) {
-    setOpen(false);
-    if (event.type === "dismissed" || !selected) return;
-    onChange(toLocalIso(selected));
-  }
 
   return (
     <View style={{ gap: spacing.xs }}>
@@ -2833,7 +2839,7 @@ export function DatePickerField({ clearable = false, label, onChange, value }: {
         </AnimatedPressable>
         {clearable && value ? <IconButton accessibilityLabel={`Clear ${label}`} filled icon={X} onPress={() => onChange("")} /> : null}
       </View>
-      {open ? <DateTimePicker display="default" maximumDate={label === "Date of birth" ? new Date() : undefined} mode="date" onChange={update} value={selectedDate} /> : null}
+      {open ? <CalendarPicker maximum={label === "Date of birth" ? istToday() : undefined} onClose={() => setOpen(false)} onPick={onChange} value={value || null} /> : null}
     </View>
   );
 }
@@ -2907,8 +2913,8 @@ function Sheet({
                   </FitText>
                 ) : null}
               </View>
-              <IconButton accessibilityLabel="Close" filled={filledClose} icon={X} onPress={() => dismiss()} />
             </View>
+            <ModalTitleRule />
             <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {children}
             </ScrollView>

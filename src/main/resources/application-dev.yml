@@ -8,3 +8,8 @@ app:
       # every 36 minutes made the feature impractical to try. Groq's own limits
       # still apply. Production keeps the default (true).
       enforce-limits: false
+  food:
+    ratings:
+      # The AI analysis can run as often as needed while developing, each run replacing
+      # the last. Groq's own limits still apply. Production keeps the default (true).
+      weekly-analysis-limit: false

@@ -400,13 +400,11 @@ export function ProfileCard({ metric, onRetry }: CardProps) {
         "Gender and age of the monthly tenants living here, from their profiles.",
         "Age is worked out from each tenant's date of birth.",
         "Not given: left blank, or they chose not to say.",
-        "Counts only, and only from 5 tenants, so no one can be picked out.",
       ]}
       onRetry={onRetry}
       sampleSize={metric.sampleSize}
       status={metric.status}
       title="Who your tenants are"
-      tooFewText={`${tenants(metric.sampleSize)} so far. It shows from 5, so no one can be picked out`}
       trailing={
         <ChartDropdown
           accessibilityLabel="Shown by"
@@ -516,6 +514,30 @@ export function AgreementTermsCard({ metric, onRetry }: CardProps) {
       sampleSize={metric.sampleSize}
       status={metric.status}
       title="Fixed and indefinite terms"
+    >
+      <SegmentedBar accessibilityLabel={segments.map((segment) => `${segment.label} ${segment.value}`).join(", ")} segments={segments} />
+    </ChartCard>
+  );
+}
+
+export function TransitionedVsNewCard({ metric, onRetry }: CardProps) {
+  const palette = useChartPalette();
+  const segments = slicesOf(metric, [
+    { color: palette.series[0], key: "TRANSITIONED", label: "Transitioned" },
+    { color: palette.series[1], key: "NEW", label: "New" },
+  ], true);
+  return (
+    <ChartCard
+      emptyText="Nobody joined in this period"
+      info={[
+        "Transitioned: already living here, and brought onto Khatiyan with their first bill. They count from that bill.",
+        "New: moved in through Khatiyan. These are the move-ins in Move-ins and move-outs.",
+        "Stays the tenant has not accepted yet are left out.",
+      ]}
+      onRetry={onRetry}
+      sampleSize={metric.sampleSize}
+      status={metric.status}
+      title="Transitioned and new tenants"
     >
       <SegmentedBar accessibilityLabel={segments.map((segment) => `${segment.label} ${segment.value}`).join(", ")} segments={segments} />
     </ChartCard>

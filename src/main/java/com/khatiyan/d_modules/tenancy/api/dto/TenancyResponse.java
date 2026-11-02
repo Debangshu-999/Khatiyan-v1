@@ -95,7 +95,9 @@ public record TenancyResponse(
     /** Onboarded from a booking: its pending agreement cannot be removed by management. */
     boolean fromBooking,
     /** This stay's own move-out checklist (2026-10-29); null on a stay from before, which reads the property's. */
-    List<String> moveOutChecklist
+    List<String> moveOutChecklist,
+    /** The tenant's profile photo, for the tenancy card (2026-11-01). Null without one, or on a guest stay. */
+    String tenantPhotoUrl
 ) {
     /**
      * The shape before {@code version}, for callers that build a response by
@@ -115,7 +117,7 @@ public record TenancyResponse(
                 dailyRatePaise, startDate, plannedEndDate, endDate, status, createdAt, billingStarted, tosAccepted,
                 fixedTerm, agreementValidityMonths, agreementEndDate, earlyExitRule, idCheckConfirmed, idCheckedAt,
                 guestStay, guestEmail, guestAddress, guestAge, guestGender, 0L,
-                false, null, null, null, false, null, false, false, null);
+                false, null, null, null, false, null, false, false, null, null);
     }
 
     /**
@@ -180,7 +182,8 @@ public record TenancyResponse(
             t.getPaperAgreementPhotoUrls(),
             t.isVerifiedBeforeKhatiyan(),
             t.isFromBooking(),
-            t.getMoveOutChecklist() == null ? null : List.copyOf(t.getMoveOutChecklist())
+            t.getMoveOutChecklist() == null ? null : List.copyOf(t.getMoveOutChecklist()),
+            null
         );
     }
 
@@ -227,7 +230,8 @@ public record TenancyResponse(
             t.getPaperAgreementPhotoUrls(),
             t.isVerifiedBeforeKhatiyan(),
             t.isFromBooking(),
-            t.getMoveOutChecklist() == null ? null : List.copyOf(t.getMoveOutChecklist())
+            t.getMoveOutChecklist() == null ? null : List.copyOf(t.getMoveOutChecklist()),
+            user != null ? user.profilePhotoUrl() : null
         );
     }
 }

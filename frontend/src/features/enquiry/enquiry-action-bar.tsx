@@ -328,7 +328,7 @@ function SentimentModal({ actions, onClose }: { actions: EnquiryChatActions; onC
   }
 
   return (
-    <SheetShell onClose={onClose} title="Enquiry sentiment">
+    <SheetShell size="short" onClose={onClose} title="Enquiry sentiment">
       <SentimentOption
         busy={choosing === "INTERESTED"}
         icon={ThumbsUp}

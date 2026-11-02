@@ -6,9 +6,6 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
-/** The pill's inset from the track, used as both the padding and the gap. */
-const TRACK_PADDING = 4;
-
 export type TabOption<T extends string> = {
   /**
    * A glyph above the label.
@@ -28,8 +25,8 @@ export type TabOption<T extends string> = {
  * The app's one tab switcher.
  *
  * <p>A pill inside a rounded groove. The selected segment is rounded on ALL
- * four corners — including the edge facing its neighbour — and sits inset from
- * the track by a few pixels, so it reads as a token that slides along a channel
+ * four corners — including the edge facing its neighbour — and touches the
+ * track's edge (user, 2026-10-31), so it reads as a token that fills the channel
  * rather than as one half of a divided box.
  *
  * <p>This replaces a corner-to-corner segment in a square-ish track. Filling the
@@ -72,10 +69,6 @@ export function TabSwitcher<T extends string>({
         borderRadius: 999,
         borderWidth: 1,
         flexDirection: "row",
-        gap: TRACK_PADDING,
-        // The inset that lets the pill be rounded on every side. Without it the
-        // segment's curve would be cut off by the track's own edge.
-        padding: TRACK_PADDING,
       }}
     >
       {options.map((option) => {
@@ -107,7 +100,7 @@ export function TabSwitcher<T extends string>({
               justifyContent: "center",
               // The height is the same whether or not a tab has an icon, so a
               // switcher does not change size between screens.
-              minHeight: 44,
+              minHeight: 52,
               paddingHorizontal: spacing.sm,
               paddingVertical: spacing.xs,
             }}

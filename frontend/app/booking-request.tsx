@@ -3,6 +3,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Text, View } from "react-native";
 import { ArrowRight, BedDouble, CalendarCheck, CalendarDays, ChevronDown, ChevronUp, CircleHelp, Fan, FileText, IndianRupee, Snowflake, Wallet } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AgreementMonthDropdown } from "@/components/agreement-month-dropdown";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -58,7 +59,7 @@ export default function BookingRequestScreen() {
     {/* A shared button fills its row. Left bare in this page's column it grew
         to fill the screen, so each one sits in a row of its own. */}
     {!id ? <EmptyState icon={CalendarCheck} title="Start from an attended visit" description="Open My visits or My enquiries and choose Book a stay on the property you visited." action={<View style={{ alignSelf: "stretch", flexDirection: "row" }}><ActionButton label="My visits" onPress={() => router.push("/my-visits")} /></View>} />
-      : query.isError ? <><NoticeBar title="Could not load booking availability" message={errorMessage(query.error)} tone="danger" /><View style={{ flexDirection: "row" }}><ActionButton label="Try again" onPress={() => void query.refetch()} /></View></>
+      : query.isError ? <LoadFailed error={query.error} onReload={() => void query.refetch()} />
       : !options || (options.canBook && identityQuery.isLoading) ? <BookingRequestSkeleton />
       : options.existingRequestId ? <EmptyState artworkNode={<BookingsIcon size={64} />} title="You already have a booking here" description={options.whyNot ?? "Open it to see where it stands."} action={<View style={{ alignSelf: "stretch", flexDirection: "row" }}><ActionButton label="View existing booking" onPress={() => router.replace({ pathname: "/my-booking-detail", params: { requestId: options.existingRequestId! } })} /></View>} />
       : <EmptyState artworkNode={<BookingsIcon size={64} />} title="Booking unavailable" description={options.whyNot ?? "This property is not available for booking yet."} />}
@@ -219,7 +220,12 @@ function BookingRequestForm({ options, identity, authUser, onRefresh }: { option
 
   return <View style={{ flex: 1, backgroundColor: colors.background }}>
     <ScreenScrollView key={`${step}-${bedView}`} surface={colors.background} safeAreaEdges={["top"]} refreshable={listing && !disabled && Boolean(onRefresh)} onRefresh={onRefresh} contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }}>
-      <ScreenHeader title={header.title} italicTail={header.tail} subtitle={header.subtitle} />
+      <ScreenHeader
+        italicTail={header.tail}
+        onBack={step > 0 && !uncertain ? () => { back(); return true; } : undefined}
+        subtitle={header.subtitle}
+        title={header.title}
+      />
       {step === 0 ? <BookingPropertyCard name={options.propertyName} area={options.propertyArea} city={options.propertyCity} visitedOn={options.visitedOn} /> : null}
       <BookingStepper step={step} disabled={disabled} onJump={goTo} />
       {uncertain ? <NoticeBar title="Check before changing this request" message="The connection ended before we could confirm the result. Retry sends the exact same request, not a second booking. You can also check My bookings." tone="warning" /> : null}

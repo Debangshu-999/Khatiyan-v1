@@ -27,7 +27,7 @@ export function FoodProfileSubscribersSheet({
   const people = [...subscribers].sort((left, right) => left.tenantName.localeCompare(right.tenantName));
 
   return (
-    <SheetShell animated onClose={onClose} title={`${profileName} subscribers`}>
+    <SheetShell size="content" animated onClose={onClose} title={`${profileName} subscribers`}>
       {loading ? <FoodSubscribersSkeleton rows={4} /> : null}
 
       {!loading && people.length === 0 ? (

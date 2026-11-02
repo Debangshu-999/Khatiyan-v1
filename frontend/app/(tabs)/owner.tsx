@@ -1,8 +1,9 @@
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Image, Text, View, type GestureResponderHandlers, type ImageSourcePropType } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { ArrowUpDown, Check, Menu, Pin, X, type LucideProps } from "lucide-react-native";
-import { useState, type ComponentType } from "react";
+import { ArrowUpDown, Check, ChevronRight, LayoutGrid, Lightbulb, List, Menu, Pin, X, type LucideProps } from "lucide-react-native";
+import { useState, type ComponentType, type ReactNode } from "react";
 
 import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -13,13 +14,15 @@ import { ReorderableList } from "@/components/reorderable-list";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { OwnerManageMetricsSkeleton } from "@/components/skeletons/owner";
-import { visibleOwnerModules, type OwnerModule, type OwnerModuleRoute } from "@/features/owner/owner-modules";
+import { visibleOwnerModules, type OwnerModule, type OwnerModuleKey, type OwnerModuleRoute } from "@/features/owner/owner-modules";
 import { useWorkspaceSort } from "@/features/owner/use-workspace-sort";
 import {
   WORKSPACE_SORT_OPTIONS,
   pendingByModule,
-  sortWorkspaceModules,
+  groupWorkspaceModules,
+  mergeWorkspaceCategoryOrder,
   type WorkspaceSortMode,
+  type WorkspaceViewMode,
 } from "@/features/owner/workspace-sort";
 import { InServiceIcon, RoomsSummaryIcon } from "@/features/property/room-summary-icons";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
@@ -29,7 +32,7 @@ import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { useGetOwnerDashboardQuery } from "@/store/services/dashboard-api";
 import { useListMyPropertiesQuery, useListPropertyRoomsQuery, type OwnerProperty } from "@/store/services/property-api";
 import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
-import { tabShadow } from "@/theme/shadows";
+import { softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -42,6 +45,15 @@ import { useTheme } from "@/theme/use-theme";
  * clip against, and behaves the same on web and native.
  */
 const PIN_TILT = { transform: [{ rotate: "32deg" }] } as const;
+const SERVICE_SUMMARIES: Record<OwnerModuleKey, string> = {
+  billing: "Bills, deposits & payments",
+  concern: "Tenant issues & resolutions",
+  food: "Menus, plans & plate counts",
+  notice: "Posts, schedules & repeats",
+  property: "Rooms, listing & facilities",
+  staff: "Team, roles & salaries",
+  tenancy: "Move-ins, agreements & exits",
+};
 // The four tiles under the header share the Property screen's side-rail
 // tile, with every glyph in black (user, 2026-10-02). Rooms and Vacancy reuse
 // the Rooms & beds marks so a fact looks the same on both screens.
@@ -102,13 +114,15 @@ export default function OwnerScreen() {
   // 2026-10-04). The shared module list keeps its own order, which Home's
   // pinned tiles and Frequently visited read.
   const workspaceSort = useWorkspaceSort(user?.id ?? null, selectedProperty?.id ?? null, pending);
-  const modules = sortWorkspaceModules(
+  const grid = workspaceSort.view === "grid";
+  const categories = groupWorkspaceModules(
     visibleModules,
-    workspaceSort.mode,
+    grid ? "AZ" : workspaceSort.mode,
     workspaceSort.customOrder,
     workspaceSort.marks,
     selectedProperty?.id ?? null,
   );
+  const modules = categories.flatMap((category) => category.modules);
   const custom = workspaceSort.mode === "CUSTOM";
   // Custom has two states (user, 2026-10-04). Arranging: the pins give way to
   // bars, the cards are moved by them, and the sort gives way to a tick and a
@@ -157,16 +171,18 @@ export default function OwnerScreen() {
   // A card is in the hand: the page holds still under it.
   const [dragging, setDragging] = useState(false);
 
-  function renderServiceCard(module: OwnerModule, handle?: GestureResponderHandlers, held = false) {
+  function renderServiceCard(module: OwnerModule, handle?: GestureResponderHandlers, held = false, divider = false) {
     return (
       <ServiceCard
         artwork={module.artwork}
         artworkVariant={module.artworkVariant}
-        description={module.summary}
+        description={SERVICE_SUMMARIES[module.key]}
+        divider={divider}
         handle={handle}
         held={held}
         icon={module.icon}
         key={module.key}
+        layout={workspaceSort.view}
         onPress={() => open(module.route)}
         onTogglePin={() => togglePin(module.key)}
         pending={(pending?.[module.key] ?? 0) > 0}
@@ -192,6 +208,11 @@ export default function OwnerScreen() {
     (tenanciesQuery.isFetching && !tenanciesQuery.data);
   const occupiedRooms = rooms.filter((room) => room.occupiedCount > 0).length;
   const vacantRooms = rooms.filter((room) => room.availableVacancies > 0).length;
+
+  const loadFailed = loadFailure(propertiesQuery, dashboardQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} scrollEnabled={!dragging} surface={colors.surface}>
@@ -230,7 +251,7 @@ export default function OwnerScreen() {
             <>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 {/* "Tenants", in ink (user, 2026-10-04). It was "Tenancies", in green. */}
-                <MetricTile icon={TenanciesTileIcon} iconPlacement="side" label="Tenants" value={String(activeTenancies.length)} hint="Active stays" />
+                <MetricTile icon={TenanciesTileIcon} iconPlacement="side" label="Tenants" value={tenanciesQuery.isError ? "-" : String(activeTenancies.length)} hint="Active stays" />
                 <MetricTile icon={RoomsTileIcon} iconPlacement="side" label="Rooms" value={String(rooms.length)} hint={`${occupiedRooms} occupied`} />
               </View>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -242,35 +263,54 @@ export default function OwnerScreen() {
           ) : null}
 
           <SectionWithDropdown<WorkspaceSortMode>
+            beforeFilter={!grid ? <WorkspaceViewToggle disabled={arranging} onChange={workspaceSort.setView} value={workspaceSort.view} /> : undefined}
             icon={ArrowUpDown}
             onChange={chooseSort}
             options={sortOptions}
             purpose="Sort"
             // While arranging, the sort itself gives way to the tick and the
             // cross: no line of its own above the cards (user, 2026-10-04).
-            replacement={arranging ? <ArrangeActions onCancel={cancelArrangement} onKeep={keepArrangement} /> : undefined}
+            replacement={grid
+              ? <WorkspaceViewToggle onChange={workspaceSort.setView} value={workspaceSort.view} />
+              : arranging ? <ArrangeActions onCancel={cancelArrangement} onKeep={keepArrangement} /> : undefined}
             title="Open workspace"
             value={workspaceSort.mode}
           >
-            {arranging ? (
-              // The pin gives way to three bars, held and moved to rearrange
-              // the cards (user, 2026-10-04).
-              <ReorderableList
-                gap={spacing.sm}
-                items={modules}
-                keyOf={(module) => module.key}
-                onDraggingChange={setDragging}
-                onReorder={(next) => workspaceSort.setCustomOrder(next.map((module) => module.key))}
-                renderItem={renderServiceCard}
-              />
-            ) : (
-              <View style={{ gap: spacing.sm }}>{modules.map((module) => renderServiceCard(module))}</View>
-            )}
-            <Text style={[type.caption, { color: colors.kicker }]}>
-              {arranging
-                ? "Hold the bars on a service and move it. The tick keeps the order, the cross cancels."
-                : 'Tap the pin on a service to add it to "Pinned Services".'}
-            </Text>
+            <View style={{ gap: spacing.xl }}>
+              {categories.map((category) => (
+                <View key={category.key} style={{ gap: spacing.sm }}>
+                  <Text accessibilityRole="header" style={[type.label, { color: colors.muted }]}>{category.title}</Text>
+                  {grid ? (
+                    <WorkspaceServiceGrid modules={category.modules} renderItem={(module) => renderServiceCard(module)} />
+                  ) : (
+                    <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, paddingHorizontal: spacing.xs, paddingVertical: spacing.xxs, ...softShadow(colors.shadow, 3, 10, 0.7) }}>
+                      {arranging ? (
+                        <ReorderableList
+                          gap={0}
+                          items={category.modules}
+                          keyOf={(module) => module.key}
+                          onDraggingChange={setDragging}
+                          onReorder={(next) => workspaceSort.setCustomOrder(mergeWorkspaceCategoryOrder(
+                            workspaceSort.customOrder,
+                            modules.map((module) => module.key),
+                            next.map((module) => module.key),
+                          ))}
+                          renderItem={(module, handle, held) => renderServiceCard(module, handle, held, module.key !== category.modules.at(-1)?.key)}
+                        />
+                      ) : category.modules.map((module, index) => renderServiceCard(module, undefined, false, index < category.modules.length - 1))}
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+            <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs, paddingHorizontal: spacing.xxs }}>
+              {!arranging ? <Lightbulb color={colors.kicker} size={17} strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 1 }} /> : null}
+              <Text style={[type.caption, { color: colors.kicker, flex: 1 }]}>
+                {arranging
+                  ? "Hold the bars to move a service within its category. The tick keeps the order, the cross cancels."
+                  : "Pin a service to keep it on Home."}
+              </Text>
+            </View>
           </SectionWithDropdown>
         </>
       ) : null}
@@ -289,13 +329,54 @@ function ManageHeader() {
     />
   );
 }
+
+function WorkspaceViewToggle({ disabled = false, onChange, value }: {
+  disabled?: boolean;
+  onChange: (view: WorkspaceViewMode) => void;
+  value: WorkspaceViewMode;
+}) {
+  const { colors } = useTheme();
+  const Icon = value === "list" ? LayoutGrid : List;
+  return (
+    <AnimatedPressable
+      accessibilityLabel={value === "list" ? "Switch to grid view" : "Switch to list view"}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={6}
+      onPress={() => onChange(value === "list" ? "grid" : "list")}
+      style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 999, borderWidth: 1, height: 32, justifyContent: "center", opacity: disabled ? 0.45 : 1, width: 32 }}
+    >
+      <Icon color={colors.ink} size={16} strokeWidth={2.1} />
+    </AnimatedPressable>
+  );
+}
+
+/** Fixed two-column rows: an odd last service never grows across the empty right column. */
+function WorkspaceServiceGrid({ modules, renderItem }: { modules: OwnerModule[]; renderItem: (module: OwnerModule) => ReactNode }) {
+  return (
+    <View style={{ gap: spacing.sm }}>
+      {Array.from({ length: Math.ceil(modules.length / 2) }, (_, row) => (
+        <View key={row} style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ flex: 1, minWidth: 0 }}>{renderItem(modules[row * 2])}</View>
+          {modules[row * 2 + 1] ? (
+            <View style={{ flex: 1, minWidth: 0 }}>{renderItem(modules[row * 2 + 1])}</View>
+          ) : <View accessible={false} pointerEvents="none" style={{ flex: 1, minWidth: 0 }} />}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function ServiceCard({
   artwork,
   artworkVariant,
   description,
+  divider = false,
   handle,
   held = false,
   icon: Icon,
+  layout = "list",
   onPress,
   onTogglePin,
   pending,
@@ -306,6 +387,8 @@ function ServiceCard({
   artworkVariant?: "compact" | "large" | "wide";
   /** One short line under the title, kept narrow (user, 2026-10-28). */
   description: string;
+  divider?: boolean;
+  layout?: WorkspaceViewMode;
   /**
    * Given while the cards are being arranged by hand: the pin gives way to
    * three bars that carry these handlers, held and moved to rearrange.
@@ -322,48 +405,38 @@ function ServiceCard({
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  // Small enough that the words decide the card's height, not the picture
-  // (user, 2026-10-04): at its old 82 the artwork was taller than three lines
-  // of description, so every card came out the same height whatever it said.
-  // Trimmed again with the short descriptions (user, 2026-10-28): a title and two
-  // lines stand about 56 tall, and the art was holding every card open past it.
+  const grid = layout === "grid";
   const artworkFrame = artworkVariant === "wide"
-    ? { height: 56, width: 74 }
-    : artworkVariant === "large"
-      ? { height: 58, width: 58 }
-      : { height: 56, width: 56 };
+    ? { height: 48, width: 62 }
+    : { height: 48, width: 48 };
   const artworkImage = artworkVariant === "wide"
-    ? { height: 54, width: 73 }
-    : artworkVariant === "large"
-      ? { height: 57, width: 57 }
-      : artworkVariant === "compact"
-        ? { height: 48, width: 48 }
-        : { height: 54, width: 54 };
+    ? { height: 46, width: 60 }
+    : artworkVariant === "compact"
+      ? { height: 42, width: 42 }
+      : { height: 46, width: 46 };
 
   // The pin remains a sibling overlay rather than a nested pressable, keeping
   // the whole module card tappable while preserving a separate pin action.
   return (
-    <View>
+    <View style={{ flex: grid ? 1 : undefined, minWidth: 0 }}>
       <AnimatedPressable
+        accessibilityLabel={`Open ${title}`}
         accessibilityRole="button"
         onPress={onPress}
         style={{
           backgroundColor: colors.surface,
-          // The card in the hand is outlined in ink, so it reads as lifted.
-          borderColor: held ? colors.ink : colors.borderStrong,
+          borderColor: held ? colors.ink : grid ? colors.border : "transparent",
           borderCurve: "continuous",
-          // The four tiles' own corner, so the tab reads as one set of cards (user, 2026-10-04). It was 22.
-          borderRadius: 12,
-          borderWidth: 1,
-          elevation: 2,
-          // No fixed height: a two-line description makes a shorter card than
-          // a three-line one.
-          paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
-          ...tabShadow(colors.shadow, 4, 11, 0.7),
+          borderRadius: grid ? 14 : 10,
+          borderWidth: held || grid ? 1 : 0,
+          flex: grid ? 1 : undefined,
+          minHeight: grid ? 150 : 80,
+          paddingHorizontal: grid ? spacing.md : spacing.sm,
+          paddingVertical: spacing.md,
+          ...(grid || held ? softShadow(colors.shadow, 2, 6, 0.7) : {}),
         }}
       >
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+        <View style={grid ? { gap: spacing.sm } : { alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
           <View
             style={{
               alignItems: "center",
@@ -371,6 +444,7 @@ function ServiceCard({
               borderRadius: 999,
               justifyContent: "center",
               overflow: "hidden",
+              flexShrink: 0,
               ...artworkFrame,
             }}
           >
@@ -387,14 +461,15 @@ function ServiceCard({
             )}
           </View>
 
-          <View style={{ flex: 1, gap: 2, paddingRight: 34 }}>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ flex: grid ? undefined : 1, gap: grid ? spacing.xs : 3, minWidth: 0, paddingRight: grid ? 0 : 40 }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
               <Text
                 style={{
                   color: colors.ink,
                   fontFamily: fonts.display,
-                  fontSize: 20,
-                  lineHeight: 25,
+                  flexShrink: 1,
+                  fontSize: grid ? 16 : 17,
+                  lineHeight: 22,
                 }}
               >
                 {title}
@@ -403,17 +478,19 @@ function ServiceCard({
                 <View
                   accessibilityLabel="Something is waiting here"
                   accessible
-                  style={{ backgroundColor: colors.danger, borderRadius: 999, height: 9, width: 9 }}
+                  style={{ backgroundColor: colors.danger, borderRadius: 999, flexShrink: 0, height: 8, width: 8 }}
                 />
               ) : null}
             </View>
-            {/* Short and narrow: one or two lines, never a paragraph beside the art (user, 2026-10-28). */}
-            <Text numberOfLines={2} style={[type.description, { color: colors.muted, maxWidth: 230 }]}>
+            <Text numberOfLines={2} style={[type.description, { color: colors.muted, fontFamily: fonts.sansMedium, lineHeight: 17 }]}>
               {description}
             </Text>
           </View>
+          {!grid ? <ChevronRight color={colors.kicker} size={18} strokeWidth={2} style={{ flexShrink: 0 }} /> : null}
         </View>
       </AnimatedPressable>
+
+      {divider && !grid ? <View pointerEvents="none" style={{ backgroundColor: colors.border, height: 1, marginHorizontal: spacing.sm }} /> : null}
 
       {handle ? (
         // In the pin's own place, and as large a target: held and moved, it
@@ -428,7 +505,7 @@ function ServiceCard({
             justifyContent: "center",
             marginTop: -22,
             position: "absolute",
-            right: spacing.sm,
+            right: 24,
             top: "50%",
             width: 44,
           }}
@@ -445,21 +522,22 @@ function ServiceCard({
             alignItems: "center",
             height: 44,
             justifyContent: "center",
-            marginTop: -22,
+            marginTop: grid ? 0 : -22,
             position: "absolute",
-            // Nearer the edge and a size smaller (user, 2026-10-28).
-            right: spacing.xxs,
-            top: "50%",
+            right: grid ? spacing.xxs : 24,
+            top: grid ? spacing.xs : "50%",
             width: 44,
           }}
         >
-          <View style={PIN_TILT}>
-            <Pin
-              color={colors.primary}
-              fill={pinned ? colors.primary : "transparent"}
-              size={18}
-              strokeWidth={2.1}
-            />
+          <View style={{ alignItems: "center", backgroundColor: grid ? "transparent" : colors.surfaceSunken, borderRadius: 999, height: 32, justifyContent: "center", width: 32 }}>
+            <View style={PIN_TILT}>
+              <Pin
+                color={colors.primary}
+                fill={pinned ? colors.primary : "transparent"}
+                size={18}
+                strokeWidth={2.1}
+              />
+            </View>
           </View>
         </AnimatedPressable>
       )}

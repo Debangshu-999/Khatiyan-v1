@@ -9,6 +9,7 @@ import { agreementPreviewReducer } from "@/store/slices/agreement-preview-slice"
 import { analyticsPeriodReducer } from "@/store/slices/analytics-period-slice";
 import { appConfigReducer } from "@/store/slices/app-config-slice";
 import { authReducer } from "@/store/slices/auth-slice";
+import { connectionReducer } from "@/store/slices/connection-slice";
 import { locationReducer } from "@/store/slices/location-slice";
 import { ownerPinsReducer } from "@/store/slices/owner-pins-slice";
 import { ownerWorkspaceReducer } from "@/store/slices/owner-workspace-slice";
@@ -20,6 +21,7 @@ export const store = configureStore({
     analyticsPeriod: analyticsPeriodReducer,
     appConfig: appConfigReducer,
     auth: authReducer,
+    connection: connectionReducer,
     location: locationReducer,
     ownerPins: ownerPinsReducer,
     ownerWorkspace: ownerWorkspaceReducer,
@@ -37,9 +39,9 @@ export const store = configureStore({
     }).concat(api.middleware),
 });
 
-let walletSession = store.getState().auth.accessToken;
+let walletSession = store.getState().auth.user?.id ?? null;
 store.subscribe(() => {
-  const nextSession = store.getState().auth.accessToken;
+  const nextSession = store.getState().auth.user?.id ?? null;
   if (nextSession !== walletSession) {
     walletSession = nextSession;
     clearWalletAccess();

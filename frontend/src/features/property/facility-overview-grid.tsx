@@ -53,12 +53,11 @@ export function FacilityOverviewGrid({
     <View style={{ gap: spacing.sm, width: "100%", minWidth: 0 }}>
       <View
         style={{
-          // Matches the detail grids on the same screen — the outlined boxes
-          // on this page all take the stronger hairline.
+          // Individual facility cards carry their own outline; only the flat
+          // discovery grid needs an enclosing border.
           borderColor: colors.borderStrong,
-          borderRadius: variant === "cards" ? 12 : 10,
-          borderWidth: 1,
-          backgroundColor: variant === "cards" ? colors.surface : undefined,
+          borderRadius: variant === "cards" ? 0 : 10,
+          borderWidth: variant === "cards" ? 0 : 1,
           padding: variant === "cards" ? spacing.sm : 0,
           gap: variant === "cards" ? spacing.sm : 0,
           overflow: variant === "cards" ? "visible" : "hidden",
@@ -171,27 +170,30 @@ function FacilityOverviewCell({ facility, showDivider, card = false }: { facilit
         flexDirection: "row",
         gap: spacing.sm,
         minWidth: 0,
-        paddingHorizontal: spacing.md,
+        // Keep the familiar icon/label row, but leave more width for the
+        // label on a phone instead of squeezing it beside an oversized glyph.
+        paddingHorizontal: card ? spacing.sm : spacing.md,
         paddingVertical: spacing.md,
       }}
     >
       {/* AC is drawn with lucide's air vent, as everywhere else in the app.
           Material's air-conditioner glyph is a different picture of it. */}
       {facility === "AIR_CONDITIONING" ? (
-        <AirVent color={card ? "#000000" : colors.muted} size={card ? 38 : 25} strokeWidth={1.9} />
+        <AirVent color={card ? "#000000" : colors.muted} size={card ? 30 : 25} strokeWidth={1.9} style={{ flexShrink: 0 }} />
       ) : (
-        <MaterialCommunityIcons color={card ? "#000000" : colors.muted} name={iconName} size={card ? 38 : 25} />
+        <MaterialCommunityIcons color={card ? "#000000" : colors.muted} name={iconName} size={card ? 30 : 25} style={{ flexShrink: 0 }} />
       )}
       <View style={{ flex: 1, minWidth: 0 }}>
         <FitText
-          numberOfLines={2}
-          style={{ color: colors.text, fontFamily: card ? fonts.sansSemiBold : undefined, fontSize: 15, fontWeight: card ? undefined : "800", lineHeight: 19 }}
+          minimumFontScale={0.7}
+          numberOfLines={card ? 1 : 2}
+          style={{ color: colors.text, fontFamily: card ? fonts.sansSemiBold : undefined, fontSize: 15, fontWeight: card ? undefined : "800", lineHeight: 19, width: "100%" }}
         >
           {humanizeToken(facility)}
         </FitText>
-        <Text style={{ color: colors.muted, fontSize: 12, fontWeight: "700", marginTop: 2 }}>
+        <FitText style={{ color: colors.muted, fontSize: 12, fontWeight: "700", marginTop: 2, width: "100%" }}>
           Available
-        </Text>
+        </FitText>
       </View>
     </View>
   );

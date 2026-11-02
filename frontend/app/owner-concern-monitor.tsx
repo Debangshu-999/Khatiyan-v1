@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Eye, type LucideProps } from "lucide-react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -57,6 +58,11 @@ export default function OwnerConcernMonitorScreen() {
       pathname: "/owner-concern-detail",
       params: { concernId: concern.id, mode: "history", propertyId: concern.propertyId },
     });
+  }
+
+  const loadFailed = loadFailure(monitorQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (

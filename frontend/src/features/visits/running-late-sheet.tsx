@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { ClockAlert } from "lucide-react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
@@ -94,6 +95,15 @@ export function RunningLateSheet({
       return;
     }
     onReschedule();
+  }
+
+  const loadFailed = loadFailure(options);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title="Running late?">
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
   }
 
   return (

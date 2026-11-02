@@ -12,7 +12,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * One issued access token, recorded so it can be listed and revoked on its own.
+ * One device's sign-in, recorded so it can be listed and revoked on its own. Every
+ * access token issued to it carries its {@code jti}.
  *
  * <p>Deliberately NOT a {@code BaseEntity}: that contributes {@code updated_at},
  * and this row's lifecycle is told by three columns of its own — when it was
@@ -33,7 +34,7 @@ public class UserSession {
     @Column(name = "user_id", nullable = false, updatable = false)
     private UUID userId;
 
-    /** The token's {@code jti} claim — the link from a bearer token to this row. */
+    /** The tokens' {@code jti} claim — the link from a bearer token to this row. */
     @Column(nullable = false, updatable = false)
     private UUID jti;
 
@@ -50,9 +51,19 @@ public class UserSession {
     @Column(name = "last_seen_at", nullable = false)
     private Instant lastSeenAt;
 
-    /** When the token stops being valid regardless of revocation. */
-    @Column(name = "expires_at", nullable = false, updatable = false)
+    /** When the session ends regardless of revocation. Each renewal moves it on. */
+    @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
+
+    /** SHA-256 of the refresh token in force. Never the token itself. */
+    @Column(name = "refresh_token_hash", length = 64)
+    private String refreshTokenHash;
+
+    @Column(name = "previous_refresh_token_hash", length = 64)
+    private String previousRefreshTokenHash;
+
+    @Column(name = "previous_refresh_rotated_at")
+    private Instant previousRefreshRotatedAt;
 
     @Column(name = "revoked_at")
     private Instant revokedAt;
@@ -82,6 +93,40 @@ public class UserSession {
             Instant now,
             Instant expiresAt) {
         return new UserSession(userId, jti, deviceLabel, platform, now, expiresAt);
+    }
+
+    public static UserSession opened(
+            UUID userId,
+            UUID jti,
+            String deviceLabel,
+            String platform,
+            Instant now,
+            Instant expiresAt,
+            String refreshTokenHash) {
+        UserSession session = new UserSession(userId, jti, deviceLabel, platform, now, expiresAt);
+        session.refreshTokenHash = refreshTokenHash;
+        return session;
+    }
+
+    /** The token in force was used. The one presented stays known for a moment, as the previous one. */
+    public void rotateRefreshToken(String newHash, Instant now, Instant newExpiresAt) {
+        this.previousRefreshTokenHash = this.refreshTokenHash;
+        this.previousRefreshRotatedAt = now;
+        this.refreshTokenHash = newHash;
+        this.expiresAt = newExpiresAt;
+    }
+
+    /**
+     * The previous token came back in its grace period: the reply to its first use was lost.
+     * That window is not extended, or a replay could keep it open.
+     */
+    public void replaceRefreshTokenInGrace(String newHash, Instant newExpiresAt) {
+        this.refreshTokenHash = newHash;
+        this.expiresAt = newExpiresAt;
+    }
+
+    public boolean withinRefreshGrace(Instant now, java.time.Duration grace) {
+        return previousRefreshRotatedAt != null && previousRefreshRotatedAt.plus(grace).isAfter(now);
     }
 
     /**

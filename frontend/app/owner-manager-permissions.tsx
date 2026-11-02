@@ -1,3 +1,4 @@
+import { LoadFailed } from "@/components/load-failed";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, Switch, Text, View } from "react-native";
@@ -17,7 +18,6 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
 import { OwnerPermissionSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
-import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { ActionButton, IconButton } from "@/features/owner/owner-ui";
@@ -204,12 +204,7 @@ export default function OwnerManagerPermissionsScreen() {
         ) : null}
 
         {!permissionsQuery.isLoading && permissionsQuery.isError ? (
-          <EmptyState
-            icon={ShieldCheck}
-
-            title="Could not load permissions"
-            description="Only the property owner can view or change manager permissions."
-          />
+          <LoadFailed error={permissionsQuery.error} onReload={() => void permissionsQuery.refetch()} />
         ) : null}
       </ScreenScrollView>
 
@@ -592,5 +587,5 @@ function LevelOption({
   );
 }
 import { CircleHelp } from "lucide-react-native";
-import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";
+import { HelpModalHeader } from "@/components/help-modal-header";
 import { FitText } from "@/components/fit-text";

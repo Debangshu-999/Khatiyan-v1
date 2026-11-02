@@ -3,6 +3,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react-native";
 import { Text, View } from "react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -60,6 +61,7 @@ import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
+import { MealPassCard } from "@/features/food/meal-pass";
 
 /**
  * The tenant's own food: which plan they are on, and what it feeds them.
@@ -141,6 +143,7 @@ export default function TenancyFoodScreen() {
   const header = (
     <ScreenHeader
       italicTail="preference."
+      onBack={choosing && hasPlan ? closePlanList : undefined}
       subtitle="Your meal plan and repeating weekly menu"
       title="Food"
     />
@@ -172,12 +175,7 @@ export default function TenancyFoodScreen() {
     return (
       <ScreenScrollView onRefresh={refresh} safeAreaEdges={["top", "bottom"]}>
         {header}
-        <EmptyState
-          compact
-          description="Pull down to try again."
-          icon={foodIcon("alert-circle-outline")}
-          title="Could not load your food plan"
-        />
+        <LoadFailed error={availabilityQuery.error} onReload={() => void availabilityQuery.refetch()} />
       </ScreenScrollView>
     );
   }
@@ -233,6 +231,7 @@ export default function TenancyFoodScreen() {
       {plan && hasPlan && !choosing ? (
         <>
           {/* Up next is about today, so only a plan that feeds them today has one. */}
+          {todaysProfileId ? <MealPassCard showUpcoming /> : null}
           {todaysProfileId ? <UpcomingMealCard profileId={todaysProfileId} /> : null}
           <PlanCard
             onChangePlan={() => setChoosing(true)}
@@ -836,7 +835,7 @@ function HybridPlanSheet({
   }
 
   return (
-    <SheetShell onClose={onClose} title="Your hybrid plan">
+    <SheetShell size="tall" onClose={onClose} title="Your hybrid plan">
       <View style={{ gap: spacing.md }}>
         <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12, lineHeight: 16 }}>
           Starts tomorrow, {tomorrow}. Pick a plan for each day.

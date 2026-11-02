@@ -1,3 +1,6 @@
+import { HelpModalClose } from "@/components/help-modal-header";
+import { FilterMark } from "@/features/owner/status-filter-marks";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
@@ -164,6 +167,11 @@ export default function TenancyBillingHistoryScreen() {
 
   const narrowed = Boolean(search.trim()) || status !== "ALL" || filter !== "ALL";
 
+  const loadFailed = loadFailure(cyclesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView onScroll={handleScroll} safeAreaEdges={["top", "bottom"]}>
       {/* No back row. The gesture and the hardware button both still leave,
@@ -300,6 +308,7 @@ function StatusFilterDialog({
             overflow: "hidden",
             width: "100%",
           }}>
+          <HelpModalClose corner onClose={onClose} />
           <View
             style={{
               alignItems: "center",
@@ -310,15 +319,15 @@ function StatusFilterDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Payment status
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 
-          <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
+          <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}>
             {STATUS_OPTIONS.map((option) => (
               <PickerOptionRow
+                icon={<FilterMark value={option.value} />}
                 key={option.value}
                 label={option.label}
                 onPress={() => {

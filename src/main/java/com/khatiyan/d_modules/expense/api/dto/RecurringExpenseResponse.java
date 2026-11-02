@@ -17,7 +17,6 @@ public record RecurringExpenseResponse(
         String paidTo,
         long amountPaise,
         String description,
-        int dayOfMonth,
         boolean active,
         LocalDate lastGeneratedMonth,
         boolean system,
@@ -33,7 +32,6 @@ public record RecurringExpenseResponse(
                 recurring.getPaidTo(),
                 recurring.getAmountPaise(),
                 recurring.getDescription(),
-                recurring.getDayOfMonth(),
                 recurring.isActive(),
                 recurring.getLastGeneratedMonth(),
                 false, recurring.getVersion());

@@ -4,6 +4,7 @@ import { ArrowDownToLine, ArrowUpFromLine, CheckCircle2, ChevronDown, ChevronRig
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Ellipse, Path, Rect } from "react-native-svg";
 
+import { CARD_STATUS_ROW, NAME_UNDER_STATUS, cardText, smallerCardText } from "@/components/card-name-row";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
@@ -40,9 +41,11 @@ export function formatDepositDate(value: string, includeTime = false) {
 
 export function DepositAccountHeader({
   canManage,
+  onBack,
   tenantName,
 }: {
   canManage: boolean;
+  onBack?: () => boolean | void;
   tenantName: string | null;
 }) {
   const { colors, fonts } = useTheme();
@@ -50,6 +53,7 @@ export function DepositAccountHeader({
     <ScreenHeader
       badge={!canManage ? <ViewOnlyChip /> : null}
       italicTail="account"
+      onBack={onBack}
       subtitle={
         <>
           View{" "}
@@ -108,13 +112,21 @@ export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => 
       {/* Name over reference, and nothing else in the column — so the pill can
           leave it entirely. */}
       <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
+        {NAME_UNDER_STATUS ? <View style={CARD_STATUS_ROW}><BillingStatusBadge
+          background={active ? colors.successSoft : onNotice ? colors.warningSoft : colors.neutralSoft}
+          color={statusColor}
+          icon={active ? Landmark : onNotice ? Clock3 : CheckCircle2}
+          // "On notice" for both notice kinds. "On Premature Notice" was long
+          // enough to push the name and tenancy code out of the card.
+          label={tenancyStatusLabel(tenancy.status)}
+        /></View> : null}
         <FitText
           numberOfLines={1}
-          style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 18, lineHeight: 25 }}
+          style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: cardText(18), lineHeight: 25 }}
         >
           {cardName(tenancy.tenantName ?? "Unnamed tenant")}
         </FitText>
-        <Text selectable style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 18 }]}>
+        <Text selectable style={[smallerCardText(type.caption), { color: colors.muted, fontSize: cardText(12), lineHeight: 18 }]}>
           {tenancy.referenceCode}
         </Text>
       </View>
@@ -132,7 +144,7 @@ export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => 
           alignItems:"center" and pinned the chip to the top of the card. The
           wrapper is what the row centres; the badge then aligns within a box
           only as tall as itself. */}
-      <View style={{ flexShrink: 0 }}>
+      {NAME_UNDER_STATUS ? null : <View style={{ flexShrink: 0 }}>
         <BillingStatusBadge
           background={active ? colors.successSoft : onNotice ? colors.warningSoft : colors.neutralSoft}
           color={statusColor}
@@ -141,7 +153,7 @@ export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => 
           // enough to push the name and tenancy code out of the card.
           label={tenancyStatusLabel(tenancy.status)}
         />
-      </View>
+      </View>}
       <ChevronRight color={colors.muted} size={20} strokeWidth={2} />
     </AnimatedPressable>
   );
@@ -282,7 +294,7 @@ export function DepositAccountDetail({
       </View>
 
       {filterOpen ? (
-        <SheetShell onClose={() => setFilterOpen(false)} title="Transaction type">
+        <SheetShell size="short" onClose={() => setFilterOpen(false)} title="Transaction type">
           <View>
             {MOVEMENT_FILTERS.map((option, index) => (
               <PickerOptionRow

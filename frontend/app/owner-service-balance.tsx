@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { AppState, Linking, Platform, Text, View } from "react-native";
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { WalletLockCard } from "@/features/billing/wallet-lock-card";
 import { WalletTransactionSkeleton, WalletTransactionsErrorCard } from "@/features/billing/wallet-loading-ui";
 import { WalletPinGate, WalletPinModal } from "@/features/billing/wallet-pin-gate";
@@ -25,6 +26,7 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { ServiceBalanceTransactionRow, TransactionSeparator } from "@/features/billing/service-balance-transaction-row";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
@@ -238,8 +240,14 @@ function OwnerServiceBalanceContent() {
   // clearing the debt and landing back at zero would just stall again.
   const minimumTopUpPaise = balance?.minTopUpPaise ?? 10_000;
 
+  const loadFailed = loadFailure(balanceQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView scrollOnlyWhenNeeded contentContainerStyle={{ gap: 12, paddingTop: 8, paddingBottom: 12 }} onRefresh={async () => { await Promise.all([balanceQuery.refetch(), transactionsQuery.refetch()]); }} safeAreaEdges={["top", "bottom"]}>
+      <ScreenHeader italicTail="balance." title="Service" />
       <View style={{ gap: spacing.sm }}>
         <LinearGradient
           colors={["#E7F1FF", "#FFFFFF"]}

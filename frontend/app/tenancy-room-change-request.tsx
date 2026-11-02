@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, Text, View, useWindowDimensions } from "
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { BedDouble, CalendarDays, Check } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
@@ -197,11 +198,7 @@ export default function TenancyRoomChangeRequestScreen() {
           description="This room-change request can no longer be edited and raised again."
         />
       ) : roomsQuery.error ? (
-        <EmptyState
-          icon={BedDouble}
-          title="Could not load rooms"
-          description="Refresh after the backend is running with the latest tenant room endpoint."
-        />
+        <LoadFailed error={roomsQuery.error} onReload={() => void roomsQuery.refetch()} />
       ) : !activeTenancyQuery.data ? (
         <EmptyState
           icon={BedDouble}

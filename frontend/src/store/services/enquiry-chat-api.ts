@@ -293,10 +293,11 @@ export const enquiryChatApi = api.injectEndpoints({
     /** Each part is optional. What is left out stays blank, and the leaving time becomes the slot's end overnight. */
     completeVisitForm: builder.mutation<
       VisitCard,
-      { visitId: string; departedAt: string | null; partySize: number | null; impression: VisitImpression | null }
+      { visitId: string; version: number; departedAt: string | null; partySize: number | null; impression: VisitImpression | null }
     >({
-      query: ({ departedAt, impression, partySize, visitId }) => ({
+      query: ({ departedAt, impression, partySize, version, visitId }) => ({
         body: { departedAt, impression, partySize },
+        headers: ifMatch(version),
         method: "PUT",
         url: `/api/v1/visits/${visitId}/form`,
       }),

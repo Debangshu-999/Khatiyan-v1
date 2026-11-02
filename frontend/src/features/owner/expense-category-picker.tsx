@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { ChevronDown, Filter, Plus } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { CenterModal } from "@/components/center-modal";
 import { FieldError } from "@/components/field-error";
+import { HelpModalClose } from "@/components/help-modal-header";
+import { ModalTitle } from "@/components/modal-title";
+import { PickerOptionRow } from "@/components/picker-option-row";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
@@ -49,7 +53,7 @@ export function ExpenseCategoryPicker({
   propertyId: string;
   value: string;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -111,37 +115,51 @@ export function ExpenseCategoryPicker({
       <FieldError message={error} />
 
       {open ? (
-        <SheetShell onClose={() => setOpen(false)} title="Category">
-          <View style={{ gap: spacing.xs }}>
-            {categories.map((category) => (
-              <CategoryRow
-                active={category.id === value}
-                key={category.id}
-                label={category.name}
-                // System categories are seeded and written into automatically —
-                // a deposit payout posts to one — so they are not the owner's to
-                // remove.
-                onDelete={category.system ? undefined : () => setPendingDelete(category)}
-                onPress={() => {
-                  onChange(category.id);
-                  setOpen(false);
-                }}
-              />
-            ))}
-
-            <ActionButton
-              icon={Plus}
-              label="New category"
-              onPress={() => {
-                // The picker closes first. Two sheets stacked is two native
-                // windows, and the one underneath shows through the gaps.
-                setOpen(false);
-                setCreating(true);
-              }}
-              variant="secondary"
-            />
+        // Centred, in the app's standard centred modal, with the same rows (user,
+        // 2026-11-01). A long list scrolls, with New category fixed under it.
+        <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={() => setOpen(false)} statusBarTranslucent transparent visible>
+          <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl }}>
+            <View style={{ backgroundColor: colors.surface, borderCurve: "continuous", borderRadius: 14, maxHeight: "80%", overflow: "hidden", width: "100%" }}>
+              <HelpModalClose corner onClose={() => setOpen(false)} />
+              <View style={{ paddingBottom: spacing.xl, paddingLeft: spacing.lg, paddingRight: spacing.md, paddingTop: spacing.md }}>
+                <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>Category</ModalTitle>
+              </View>
+              <ScrollView
+                contentContainerStyle={{ gap: spacing.xs, paddingHorizontal: spacing.lg }}
+                showsVerticalScrollIndicator={false}
+                style={{ flexShrink: 1 }}
+              >
+                {categories.map((category) => (
+                  <CategoryRow
+                    active={category.id === value}
+                    key={category.id}
+                    label={category.name}
+                    // System categories are seeded and written into automatically —
+                    // a deposit payout posts to one — so they are not the owner's to
+                    // remove.
+                    onDelete={category.system ? undefined : () => setPendingDelete(category)}
+                    onPress={() => {
+                      onChange(category.id);
+                      setOpen(false);
+                    }}
+                  />
+                ))}
+              </ScrollView>
+              <View style={{ flexDirection: "row", padding: spacing.lg, paddingTop: spacing.sm }}>
+                <ActionButton
+                  icon={Plus}
+                  label="New category"
+                  onPress={() => {
+                    // The picker closes first. Two modals stacked is two native
+                    // windows, and the one underneath shows through the gaps.
+                    setOpen(false);
+                    setCreating(true);
+                  }}
+                />
+              </View>
+            </View>
           </View>
-        </SheetShell>
+        </CenterModal>
       ) : null}
 
       {creating ? (
@@ -208,7 +226,7 @@ function CreateCategoryModal({
   }
 
   return (
-    <SheetShell onClose={onClose} title="New expense category">
+    <SheetShell size="content" onClose={onClose} title="New expense category">
       <FormInput
         autoCapitalize="sentences"
         error={fieldErrors.errors.name}
@@ -256,55 +274,25 @@ function CategoryRow({
   onDelete?: () => void;
   onPress: () => void;
 }) {
-  const { colors, type } = useTheme();
+  const { colors } = useTheme();
 
-  // One bordered row containing both controls, matching the staff picker. The
-  // delete used to be a separate square BESIDE the row, which read as acting on
-  // the list rather than on the category it sat next to.
-  //
-  // The selected row is filled ink — no tick as well: the fill already says it,
-  // and a tick on a solid row is the same fact stated twice.
+  // The app's own picker row, pale blue when chosen (user, 2026-11-01), with the
+  // delete at its end for the categories an owner made.
   return (
-    <View
-      style={{
-        alignItems: "center",
-        backgroundColor: active ? colors.ink : "transparent",
-        borderColor: active ? colors.ink : colors.border,
-        borderCurve: "continuous",
-        borderRadius: 12,
-        borderWidth: 1,
-        flexDirection: "row",
-      }}
-    >
-      <AnimatedPressable
-        accessibilityRole="button"
-        accessibilityState={{ selected: active }}
-        onPress={onPress}
-        style={{ flex: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.md }}
-      >
-        <Text style={[type.bodyStrong, { color: active ? colors.surface : colors.ink }]}>
-          {label}
-        </Text>
-      </AnimatedPressable>
-
-      {onDelete ? (
+    <PickerOptionRow
+      label={label}
+      onPress={onPress}
+      selected={active}
+      trailing={onDelete ? (
         <AnimatedPressable
           accessibilityLabel={`Delete ${label} category`}
           accessibilityRole="button"
           hitSlop={8}
           onPress={onDelete}
-          style={{
-            alignItems: "center",
-            alignSelf: "stretch",
-            justifyContent: "center",
-            paddingHorizontal: spacing.md,
-          }}
         >
-          {/* Surface on a selected row: danger red on the ink fill is unreadable
-              in one theme or the other. Unselected rows show it red. */}
-          <Trash2 color={active ? colors.surface : colors.danger} size={16} strokeWidth={2.2} />
+          <Trash2 color={colors.danger} size={16} strokeWidth={2.2} />
         </AnimatedPressable>
-      ) : null}
-    </View>
+      ) : undefined}
+    />
   );
 }

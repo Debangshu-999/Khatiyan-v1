@@ -1,12 +1,11 @@
-import type { ComponentType } from "react";
 import { Text, View } from "react-native";
-import { AlertTriangle, Siren, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import type { NotificationItem } from "@/store/services/notification-api";
 import type { MealType } from "@/store/services/property-api";
 import { MEAL_LABEL, formatMealWindow } from "@/features/food/food-ui";
-import { spacing } from "@/theme/spacing";
+import { softShadow } from "@/theme/shadows";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type Props = {
@@ -25,7 +24,6 @@ type Props = {
 };
 
 type UrgencySignal = {
-  icon: ComponentType<LucideProps>;
   label: "High" | "Urgent";
   tone: "danger" | "warning";
 };
@@ -34,84 +32,139 @@ export function NotificationRow({ notification, onPress, unread }: Props) {
   const { colors, fonts, type } = useTheme();
   const isUnread = unread ?? !notification.readAt;
   const urgency = urgencySignal(notification.priority);
-  const details = notificationDetails(notification);
+  const allDetails = notificationDetails(notification);
+  // The property names the place, so it rides the time line rather than a row.
+  const place = allDetails.find((detail) => detail.label === "Property")?.value;
+  const details = allDetails.filter((detail) => detail.label !== "Property");
+  const when = formatRelative(notification.createdAt);
 
   return (
     <AnimatedPressable
       onPress={onPress}
       style={{
-        backgroundColor: colors.surface,
-        borderColor: isUnread ? colors.accent : colors.border,
+        // Unread is pale blue with a blue border (user, 2026-10-31). The New pill
+        // says what it means, for a reader who cannot tell the colour.
+        backgroundColor: isUnread ? colors.primarySoft : colors.surface,
+        borderColor: isUnread ? colors.primary : colors.borderStrong,
         borderCurve: "continuous",
-        borderRadius: 14,
-        // Unread is carried by the edge alone, so it has to be heavy enough to
-        // read at a glance down a list.
-        borderWidth: isUnread ? 2 : 1,
-        gap: spacing.sm,
-        padding: spacing.lg,
+        borderRadius: radii.card,
+        borderWidth: 1,
+        gap: spacing.md,
+        padding: spacing.md,
+        // softShadow, not useSoftShadow: this list is a tab, whose shadow a phone
+        // does not draw (user, 2026-10-31).
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
-      {/* Urgency rides the title line rather than a row of its own.
-          The category eyebrow that used to sit up here is gone — it duplicated
-          the filter bubble already selected above the list — and leaving the
-          marker alone on that row kept the empty band it used to fill. */}
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-        <Text
+      {/* No icons (user, 2026-11-01). The property on the left and the time on
+          the right of one row, both bold. */}
+      <View style={{ gap: spacing.xs }}>
+        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+          <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15, lineHeight: 20 }}>
+            {notification.title}
+          </Text>
+          {urgency ? <UrgencyPill signal={urgency} /> : isUnread ? <NewPill /> : null}
+        </View>
+        <Text style={[type.description, { color: colors.inkSoft, fontSize: 13, lineHeight: 19 }]}>
+          {notification.body}
+        </Text>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+          {place ? (
+            <Text numberOfLines={1} style={{ color: colors.muted, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 12 }}>
+              {place}
+            </Text>
+          ) : <View />}
+          <Text numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 12 }}>
+            {when}
+          </Text>
+        </View>
+      </View>
+      {details.length > 0 ? (
+        <View
           style={{
-            color: isUnread ? colors.ink : colors.inkSoft,
-            flex: 1,
-            fontFamily: fonts.display,
-            fontSize: 17,
-            fontWeight: isUnread ? "500" : "400",
-            letterSpacing: -0.2,
-            lineHeight: 22,
+            // White on the blue of an unread card, where grey would look muddy.
+            backgroundColor: isUnread ? colors.surface : colors.surfaceSunken,
+            borderCurve: "continuous",
+            borderRadius: radii.card,
+            paddingHorizontal: 12,
+            paddingVertical: spacing.xxs,
           }}
         >
-          {notification.title}
-        </Text>
-        {/* Nudged down a couple of px: the display face sits high in its line
-            box, so a marker aligned to the box top reads as floating. */}
-        {urgency ? (
-          <View style={{ marginTop: 3 }}>
-            <UrgencyMarker signal={urgency} />
-          </View>
-        ) : null}
-      </View>
-      <Text style={[type.description, { color: colors.muted }]}>
-        {notification.body}
-      </Text>
-      {details.length > 0 ? (
-        <View style={{ gap: spacing.xxs }}>
-          {details.map((detail) => (
-            <Text
+          {details.map((detail, index) => (
+            <View
               key={`${detail.label}-${detail.value}`}
-              style={[type.caption, { color: colors.inkSoft, fontSize: 12 }]}
+              style={{
+                alignItems: "flex-start",
+                borderTopColor: colors.border,
+                borderTopWidth: index === 0 ? 0 : 1,
+                flexDirection: "row",
+                gap: spacing.md,
+                justifyContent: "space-between",
+                paddingVertical: 7,
+              }}
             >
-              <Text style={{ color: colors.kicker, fontWeight: "700" }}>{detail.label}: </Text>
-              {detail.value}
-            </Text>
+              <Text style={[type.caption, { color: colors.muted, fontSize: 12, lineHeight: 17 }]}>{detail.label}</Text>
+              <Text
+                style={{
+                  color: colors.ink,
+                  flexShrink: 1,
+                  fontFamily: fonts.sansBold,
+                  fontSize: 12,
+                  lineHeight: 17,
+                  textAlign: "right",
+                }}
+              >
+                {detail.value}
+              </Text>
+            </View>
           ))}
         </View>
       ) : null}
-      <Text style={[type.caption, { color: colors.kicker, fontFamily: fonts.mono, fontSize: 11 }]}>
-        {formatRelative(notification.createdAt)}
-      </Text>
     </AnimatedPressable>
   );
 }
 
-function UrgencyMarker({ signal }: { signal: UrgencySignal }) {
-  const { colors, type } = useTheme();
-  const Icon = signal.icon;
-  const tone = signal.tone === "danger" ? colors.danger : colors.warningText;
+function NewPill() {
+  const { colors, fonts } = useTheme();
+  return (
+    <View
+      style={{
+        backgroundColor: colors.primary,
+        borderRadius: 999,
+        marginTop: -3,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 3,
+      }}
+    >
+      <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 10, letterSpacing: 0.5 }}>NEW</Text>
+    </View>
+  );
+}
+
+/** Tint and a caps label, nothing else. */
+function UrgencyPill({ signal }: { signal: UrgencySignal }) {
+  const { colors, fonts } = useTheme();
+  const danger = signal.tone === "danger";
 
   return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-      <Icon color={tone} size={15} strokeWidth={2.5} />
+    <View
+      style={{
+        backgroundColor: danger ? colors.dangerSoft : colors.warningSoft,
+        borderRadius: 999,
+        marginTop: -3,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 3,
+      }}
+    >
       <Text
-        style={[type.eyebrow, { color: tone }]}
+        style={{
+          color: danger ? colors.danger : colors.warningText,
+          fontFamily: fonts.sansBold,
+          fontSize: 10,
+          letterSpacing: 0.5,
+        }}
       >
-        {signal.label}
+        {signal.label.toUpperCase()}
       </Text>
     </View>
   );
@@ -120,10 +173,10 @@ function UrgencyMarker({ signal }: { signal: UrgencySignal }) {
 function urgencySignal(priority: string): UrgencySignal | null {
   const normalized = priority.toUpperCase();
   if (normalized === "EMERGENCY" || normalized === "URGENT") {
-    return { icon: Siren, label: "Urgent", tone: "danger" };
+    return { label: "Urgent", tone: "danger" };
   }
   if (normalized === "HIGH") {
-    return { icon: AlertTriangle, label: "High", tone: "warning" };
+    return { label: "High", tone: "warning" };
   }
   return null;
 }
@@ -240,6 +293,13 @@ function notificationDetails(notification: NotificationItem) {
     case "BILLING_CYCLE_CANCELLED":
       add(details, "Amount", formatPaise(data.totalAmountPaise));
       add(details, "Bill", code(data.billReferenceCode));
+      break;
+    // A damage record naming the tenant, by its DMG- code (2026-10-29).
+    case "DAMAGE_RECORDED":
+    case "DAMAGE_RECORD_UPDATED":
+    case "DAMAGE_RECORD_REMOVED":
+      add(details, "Your share", formatPaise(data.amountPaise));
+      add(details, "Record", code(data.damageRecordCode));
       break;
     case "BILLING_LATE_FEE_APPLIED":
       add(details, "Late fee", formatPaise(data.lateFeeAmountPaise));

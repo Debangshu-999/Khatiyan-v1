@@ -2,6 +2,8 @@ import type { ComponentType } from "react";
 import { useMemo, useState } from "react";
 import { Image, Text, View, type ImageSourcePropType } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Clock, History, MoreHorizontal, Undo2, UserRound, type LucideProps } from "lucide-react-native";
 
@@ -90,6 +92,11 @@ export default function TenancyRequestHistoryScreen() {
     ...activeRoomChanges.map((request) => ({ kind: "ROOM_CHANGE" as const, request })),
   ].sort((left, right) => new Date(right.request.createdAt).getTime() - new Date(left.request.createdAt).getTime());
   const pastCount = pastExits.length + pastRoomChanges.length;
+
+  const loadFailed = loadFailure(exitQuery, roomChangeQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView>
@@ -454,23 +461,21 @@ function RequestCardHeader({
 
   return (
     <View style={{ gap: spacing.xs }}>
-      <View
-        style={{
+      <CardNameRow rowStyle={{
           alignItems: "center",
           flexDirection: "row",
           gap: spacing.sm,
           justifyContent: "space-between",
-        }}
-      >
+        }}>
         <FitText
           numberOfLines={1}
-          style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20 }}
+          style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: cardText(20) }}
         >
           {title}
         </FitText>
-        <StatusPill label={humanizeToken(status)} tone={statusTone(status)} />
-      </View>
-      <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
+        <CardStatus><StatusPill label={humanizeToken(status)} tone={statusTone(status)} /></CardStatus>
+      </CardNameRow>
+      <Text style={[smallerCardText(type.caption), { color: colors.kicker, fontWeight: "800" }]}>
         {referenceCode}
       </Text>
     </View>
@@ -507,7 +512,7 @@ function WithdrawExitSheet({
   }
 
   return (
-    <SheetShell onClose={onClose} title="Cancel your exit">
+    <SheetShell size="short" onClose={onClose} title="Cancel your exit">
       <View style={{ gap: spacing.md }}>
         <Text style={[type.modalDescription, { color: colors.muted }]}>
           You asked to leave on{" "}

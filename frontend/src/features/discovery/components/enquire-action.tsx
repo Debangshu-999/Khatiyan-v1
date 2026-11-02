@@ -366,7 +366,7 @@ function EnquirySheet({
   // fading backdrop, without the pan gesture, which would fight the message
   // field's keyboard and the scroll under it.
   return (
-    <SheetShell animated onClose={onClose} title="Enquire">
+    <SheetShell animated contentMaxSize="tall" onClose={onClose} size="content" title="Enquire">
       {/* Names what was actually consented to rather than assuming phone. Someone
           who declined the call-back should not be told their number is going
           over on the very screen where they send the message. */}

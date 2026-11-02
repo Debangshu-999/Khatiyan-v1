@@ -51,7 +51,7 @@ export const DIVISIONS: Record<AnalyticsDivision, DivisionConfig> = {
   tenants: {
     groups: [
       { keys: ["tenants.occupancy", "tenants.room_vacancy", "tenants.stay_type"], title: "Rooms and beds" },
-      { keys: ["tenants.moves", "tenants.upcoming_exits", "tenants.tenure", "tenants.profile", "tenants.id_verification"], title: "Tenants" },
+      { keys: ["tenants.moves", "tenants.transitioned_vs_new", "tenants.upcoming_exits", "tenants.tenure", "tenants.profile", "tenants.id_verification"], title: "Tenants" },
       { keys: ["tenants.agreement_status", "tenants.agreement_terms", "tenants.terms_ending", "tenants.time_to_sign"], title: "Agreements" },
       { keys: ["tenants.meal_preferences", "tenants.food_subscriptions"], title: "Food" },
     ],

@@ -3,6 +3,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ActivityIndicator, Linking, ScrollView, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { MarqueeText } from "@/components/marquee-text";
@@ -314,6 +315,11 @@ export default function TenancyNearbyMapScreen() {
 
   // No dev build, no map. Said plainly rather than rendering an empty grey box:
   // the SDK does not exist in Expo Go, and the list below is still useful.
+  const loadFailed = loadFailure(mapQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   if (!mappls) {
     return (
       <ScreenScrollView safeAreaEdges={["top", "bottom"]}>

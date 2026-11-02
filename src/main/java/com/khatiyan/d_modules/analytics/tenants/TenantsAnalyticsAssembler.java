@@ -105,6 +105,10 @@ public class TenantsAnalyticsAssembler implements DivisionAssembler {
         MetricGuard.add(out, context, MetricKey.TENANTS_ROOM_VACANCY, () -> roomVacancy(p, today, period.dataSince()));
         MetricGuard.add(out, context, MetricKey.TENANTS_STAY_TYPE, () -> stayType(p, period, nights.get(), nightsBefore.get()));
         MetricGuard.add(out, context, MetricKey.TENANTS_MOVES, () -> moves(p, period));
+        // No carried-over stay means the card is not there at all, rather than empty.
+        if (context.wants(MetricKey.TENANTS_TRANSITIONED_VS_NEW) && hasTransitioned(p)) {
+            MetricGuard.add(out, context, MetricKey.TENANTS_TRANSITIONED_VS_NEW, () -> transitionedVsNew(p, period));
+        }
         MetricGuard.add(out, context, MetricKey.TENANTS_UPCOMING_EXITS, () -> upcomingExits(live.get(), today));
         MetricGuard.add(out, context, MetricKey.TENANTS_TENURE, () -> tenure(live.get(), today, period.dataSince()));
         MetricGuard.add(out, context, MetricKey.TENANTS_PROFILE, () -> profile(live.get(), today));
@@ -128,6 +132,16 @@ public class TenantsAnalyticsAssembler implements DivisionAssembler {
             return foodModule.isManagementEnabled(p);
         } catch (RuntimeException e) {
             log.warn("Could not read the food setting for property {}; showing the food cards", p, e);
+            return true;
+        }
+    }
+
+    /** If it cannot be read, the card is shown and fails on its own, rather than vanish silently. */
+    private boolean hasTransitioned(UUID p) {
+        try {
+            return tenancy.hasTransitionedStay(p);
+        } catch (RuntimeException e) {
+            log.warn("Could not read carried-over stays for property {}; showing the card", p, e);
             return true;
         }
     }
@@ -247,6 +261,22 @@ public class TenantsAnalyticsAssembler implements DivisionAssembler {
     }
 
     /**
+     * Monthly stays that joined in the period: carried over from before Khatiyan
+     * (dated by their first Khatiyan bill) against new, which are the move-ins.
+     */
+    private MetricResult transitionedVsNew(UUID p, ResolvedPeriod period) {
+        TenancyAnalytics.JoinCounts counts = tenancy.joinCounts(p, period.range().from(), period.range().to());
+        long total = (long) counts.transitioned() + counts.newStays();
+        return MetricResult.of(MetricKey.TENANTS_TRANSITIONED_VS_NEW)
+                .status(total > 0 ? MetricStatus.OK : MetricStatus.NO_DATA)
+                .sampleSize(total)
+                .partUnit(Unit.COUNT)
+                .part("TRANSITIONED", null, counts.transitioned(), null)
+                .part("NEW", null, counts.newStays(), null)
+                .build();
+    }
+
+    /**
      * Checkouts due within 30 days, by how the stay is leaving, plus every stay
      * already past its date as PENDING_EXIT (nothing ends a stay by itself, so
      * it waits for a person). A stay past its date the nightly sweep has not
@@ -306,13 +336,14 @@ public class TenantsAnalyticsAssembler implements DivisionAssembler {
     }
 
     /** Counts only, and only from 5 tenants up: below that a split could point at one person. */
+    /** Shows from one tenant (user, 2026-10-31), replacing the earlier minimum of five. */
     private MetricResult profile(List<MonthlyStay> live, LocalDate today) {
         List<UUID> users = live.stream().map(MonthlyStay::userId).filter(Objects::nonNull).distinct().toList();
         MetricResult.Builder builder = MetricResult.of(MetricKey.TENANTS_PROFILE)
-                .status(MetricRules.statusForSample(users.size()))
+                .status(users.isEmpty() ? MetricStatus.NO_DATA : MetricStatus.OK)
                 .sampleSize(users.size())
                 .partUnit(Unit.COUNT);
-        if (users.size() < MetricRules.MIN_SAMPLE) {
+        if (users.isEmpty()) {
             return builder.build();
         }
         AuthAnalytics.ProfileCounts counts = auth.profileCounts(users, today);

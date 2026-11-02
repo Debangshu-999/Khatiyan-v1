@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { Text, View } from "react-native";
 import { ChevronDown, Compass, MapPinned, Plus, Star } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -75,6 +76,11 @@ export default function OwnerLocalPlacesScreen() {
     } catch (caught) {
       removeErrors.failFromServer(errorMessage(caught) || "Could not remove the place.");
     }
+  }
+
+  const loadFailed = loadFailure(placesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (

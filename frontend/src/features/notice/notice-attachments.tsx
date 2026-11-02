@@ -1,3 +1,4 @@
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
@@ -16,6 +17,7 @@ import { ChevronRight, FileText, Image as ImageIcon, Plus, X } from "lucide-reac
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
+import { TipBoard } from "@/components/tip-board";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { AlertModal } from "@/components/alert-modal";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -412,18 +414,7 @@ export function AttachmentSection({
         </View>
       )}
 
-      {tip ? (
-        <View
-          style={{
-            backgroundColor: colors.surfaceSunken,
-            borderCurve: "continuous",
-            borderRadius: 12,
-            padding: spacing.sm,
-          }}
-        >
-          <Text style={[type.caption, { color: colors.inkSoft, lineHeight: 18 }]}>{tip}</Text>
-        </View>
-      ) : null}
+      {tip ? <TipBoard>{tip}</TipBoard> : null}
     </View>
   );
 }
@@ -486,7 +477,7 @@ function AttachChoiceSheet({
   onPickImages: () => void;
 }) {
   return (
-    <SheetShell onClose={onClose} title="Attach to this notice">
+    <SheetShell size="tall" onClose={onClose} title="Attach to this notice">
       <View style={{ gap: spacing.sm }}>
         <ActionButton icon={ImageIcon} label="Gallery" onPress={onPickImages} variant="upload" />
         <ActionButton icon={FileText} label="Device" onPress={onPickDocuments} variant="upload" />
@@ -568,8 +559,8 @@ function DocumentPreviewModal({
             >
               {attachment.name}
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
 
           <ScrollView contentContainerStyle={{ gap: spacing.md }} showsVerticalScrollIndicator={false}>
             <View

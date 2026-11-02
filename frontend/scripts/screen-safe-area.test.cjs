@@ -63,6 +63,12 @@ function harness({ os = "android", insets = defaultInsets, segments = ["owner-ac
     "@/components/app-background": { AppBackground: "AppBackground" },
     "@/components/keyboard-intent": { focusedInput: () => null },
     "@/components/header-scroll-layout": layout,
+    "@/components/compact-screen-header": {
+      COMPACT_SCREEN_HEADERS: false,
+      CompactHeaderBar: "CompactHeaderBar",
+      CompactHeaderSlotContext: { Provider: "CompactHeaderSlot" },
+      CompactScreenHeader: "CompactScreenHeader",
+    },
     "@/components/screen-header": { ScreenHeader, ScreenHeaderScrollContext: { Provider: "HeaderContext" } },
     "@/store/api": { API_TAGS: [], api: { util: { invalidateTags() {} } } },
     "@/store/hooks": { useAppDispatch: () => () => {} },
@@ -98,6 +104,44 @@ function assertSafeFrame(render, expected) {
   assert.ok(descendants(clip).includes(render.scroll));
   assert.ok(!descendants(tree).some((node) => node.type === "SafeAreaView"));
 }
+
+test("Home explicitly opts out of sticky headers, including its Header-named banner", () => {
+  const source = ts.createSourceFile("home.tsx", read("app/(tabs)/index.tsx"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const home = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "HomeScreen");
+  let container;
+  function find(node) {
+    if (ts.isJsxOpeningElement(node) && node.tagName.getText(source) === "ScreenScrollView") container = node;
+    ts.forEachChild(node, find);
+  }
+  find(home); assert.ok(container);
+  const sticky = container.attributes.properties.find((node) => ts.isJsxAttribute(node) && node.name.text === "stickyHeaderIndices");
+  assert.ok(sticky?.initializer && ts.isJsxExpression(sticky.initializer));
+  assert.ok(ts.isArrayLiteralExpression(sticky.initializer.expression));
+  assert.equal(sticky.initializer.expression.elements.length, 0);
+
+  function WorkspaceHomeHeader() {}
+  const banner = element(WorkspaceHomeHeader, { children: "Location, greeting and alerts" });
+  const children = [banner, element("PropertySelector", {}), element("HomeTabs", {}), element("Workspace", {})];
+  for (const os of ["android", "ios", "web"]) {
+    const h = harness({ os, segments: ["(tabs)"] });
+    const inferred = h.render({ children });
+    assert.equal(inferred.context.props.value.sticky, true, "Reproduces automatic detection of the custom Home banner");
+    const props = { children, stickyHeaderIndices: [], safeAreaEdges: ["bottom"] };
+    let page = h.render(props);
+    page.scroll.props.onLayout({ nativeEvent: { layout: { height: 600 } } });
+    page.scroll.props.onContentSizeChange(390, 1800);
+    page = h.render(props);
+    assert.equal(page.context.props.value.sticky, false, os);
+    assert.equal(page.scroll.props.stickyHeaderIndices.length, 0, os);
+    assert.equal(page.contentStyle.minHeight, undefined, os);
+    assert.equal(page.scroll.props.scrollEnabled, true, os);
+    assert.equal(descendants(page.scroll).find((node) => node.type === WorkspaceHomeHeader).props.children, banner.props.children);
+    for (const y of [0, 120, 350, 40, 0]) {
+      page.scroll.props.onScroll({ nativeEvent: { contentOffset: { y } } });
+      assert.equal(page.context.props.value.scrollY.value, 0, "Home does not drive a pinned/collapsing header while the native page scrolls");
+    }
+  }
+});
 
 test("each native screen reserves the real status-bar inset on its first render, including repeated opens", () => {
   for (const os of ["android", "ios"]) {

@@ -16,6 +16,8 @@ import {
   type LucideProps,
 } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -30,7 +32,7 @@ import { ClosesInChip, CountPill, TagPill, clockTime } from "@/features/enquiry/
 import { ManageVisitSheet } from "@/features/enquiry/manage-visit-sheet";
 import { formatVisitShort } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
-import { ActionButton, ConfirmDialog, NoticeBar } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import { PropertyVisitsIcon } from "@/features/property/property-control-icons";
 import { BookAStayEntry } from "@/features/booking/book-a-stay-entry";
 import { RunningLateSheet } from "@/features/visits/running-late-sheet";
@@ -188,10 +190,7 @@ export default function MyVisitsScreen() {
         />
 
         {tab === "history" && historyQuery.isError ? (
-          <View style={{ gap: spacing.sm }}>
-            <NoticeBar title="Unable to load history" message="Visit history could not be loaded." tone="warning" />
-            <ActionButton label="Try again" onPress={() => void historyQuery.refetch()} variant="secondary" />
-          </View>
+          <LoadFailed error={historyQuery.error} onReload={() => void historyQuery.refetch()} />
         ) : loading ? (
           // The real cards, drawn as their own placeholder: every leaf is a Ghost.
           <SkeletonBoundary>
@@ -367,23 +366,23 @@ function MyVisitCard({
   return (
     <Card style={{ gap: spacing.xs }}>
       <View style={{ gap: spacing.xs, opacity: over ? 0.55 : 1 }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
           <GhostIcon color={colors.ink} icon={HomeMark} size={20} />
           {/* Smaller, and a long name runs onto a second line rather than
               being cut short by the chip beside it (user, 2026-10-04). */}
           <GhostText
             ghostWidth="55%"
-            style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 18, lineHeight: 23 }}
+            style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: cardText(18), lineHeight: 23 }}
           >
             {visit.propertyName}
           </GhostText>
           {/* Where the visit stands, beside the name, as on the property's own cards (user, 2026-10-04). */}
-          {status ? (
+          <CardStatus>{status ? (
             <GhostPill height={16} width={72}>
               <VisitStateChip {...status} />
             </GhostPill>
-          ) : null}
-        </View>
+          ) : null}</CardStatus>
+        </CardNameRow>
         {/* No rule under the name (user, 2026-10-04): the pills follow it directly. */}
 
         <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -438,7 +437,7 @@ function MyVisitCard({
             <View style={{ paddingTop: 2 }}>
               <GhostIcon color={colors.danger} icon={AlertCircle} size={15} strokeWidth={2.4} />
             </View>
-            <GhostText ghostWidth="90%" style={[type.description, { color: colors.danger, flex: 1 }]}>
+            <GhostText ghostWidth="90%" style={[smallerCardText(type.description), { color: colors.danger, flex: 1 }]}>
               You were not checked in for this visit. Are you still interested? Reschedule it to say yes.
             </GhostText>
           </View>

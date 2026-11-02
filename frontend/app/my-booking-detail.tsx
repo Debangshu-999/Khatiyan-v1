@@ -3,6 +3,8 @@ import { useLocalSearchParams } from "expo-router";
 import { Text, View } from "react-native";
 import { AlertTriangle, CalendarCheck, CalendarDays, CircleAlert, CircleHelp, Clock3, FileText, Mail, Phone, UserRound } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { Card } from "@/components/card";
 import { BookingTokenAmountIcon } from "@/components/booking-vector-icons";
 import { EmptyState } from "@/components/empty-state";
@@ -63,7 +65,7 @@ export default function MyBookingDetailScreen() {
     <ScreenScrollView surface={colors.background} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: actions ? footerHeight + spacing.lg : spacing.xl }} onRefresh={() => { if (id) void query.refetch(); }}>
       <ScreenHeader title="Your" italicTail="booking." subtitle={booking?.propertyName ?? "Your request and the property's current offer."} />
       {!id ? <EmptyState icon={CalendarCheck} title="Choose a booking" description="Open a request from My bookings." action={<ActionButton label="My bookings" onPress={() => router.replace("/my-bookings")} />} /> : !booking && !query.isError ? <BookingDetailSkeleton /> : null}
-      {query.isError ? <><NoticeBar title="Could not load booking" message={errorMessage(query.error)} tone="danger" /><ActionButton label="Try again" onPress={() => void query.refetch()} /></> : null}
+      {query.isError ? <LoadFailed error={query.error} onReload={() => void query.refetch()} /> : null}
       {booking ? <TenantBookingSummary booking={booking} /> : null}
     </ScreenScrollView>
     {booking && actions > 0 ? <PinnedFooter onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}>
@@ -115,13 +117,13 @@ function TenantBookingSummary({ booking }: { booking: BookingRequest }) {
 
   return <>
     <Card style={{ gap: spacing.xs, padding: spacing.md, paddingBottom: spacing.xxs }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
           <Text style={labelStyle}>Ref</Text>
-          <FitText selectable numberOfLines={1} minimumFontScale={0.65} style={[type.display, { color: colors.ink, fontSize: 21, fontWeight: "900" }]}>{booking.referenceCode}</FitText>
+          <FitText selectable numberOfLines={1} minimumFontScale={0.65} style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(21), fontWeight: "900" }]}>{booking.referenceCode}</FitText>
         </View>
-        <TenantBookingStatus status={booking.status} />
-      </View>
+        <CardStatus><TenantBookingStatus status={booking.status} /></CardStatus>
+      </CardNameRow>
       {booking.handlerName ? <Text style={[type.description, { color: colors.muted }]}>Handled by {booking.handlerName}</Text> : null}
     </Card>
     {booking.status === "AWAITING_HANDLER" ? <NoticeBar title="Waiting for the property" message="Your request holds one bed while the property reviews it. You can return here to see its answer." tone="info" /> : null}

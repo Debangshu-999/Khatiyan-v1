@@ -62,6 +62,20 @@ test("the action center's deep link starts the token ledger at the tokens waitin
   assert.equal(inner.tokenArguments.at(-1).status, "DECISION_PENDING");
 });
 
+test("token-recording and cancellation shortcuts select the handler's bookings without performing a mutation", () => {
+  for (const [quickAction, status] of [["record-token", "AWAITING_TOKEN"], ["cancel-booking", null]]) {
+    const h = harness({ params: { quickAction } });
+    h.render(h.list.BookingRequestList, listProps());
+    h.flushEffects();
+    h.render(h.list.BookingRequestList, listProps());
+    const asked = h.listArguments.at(-1);
+    assert.equal(asked.mine, true);
+    assert.equal(asked.unassigned, false);
+    assert.equal(asked.status, status);
+    assert.equal(h.writes.length, 0);
+  }
+});
+
 function harness(options = {}) {
   let cursor = 0;
   const values = [];
@@ -75,6 +89,9 @@ function harness(options = {}) {
   const accumulatedKeys = [];
   const scopes = { property: { id: "property-1", name: "Sample PG" }, canView: true, owner: true, loading: false, retry() {}, ...options.scope };
   const dependencies = {
+    "@/features/quick-actions/quick-action-intent": { useQuickActionIntent: (handlers, ready) => {
+      if (ready && options.params?.quickAction && handlers[options.params.quickAction]) effects.push(handlers[options.params.quickAction]);
+    } },
     "@/components/modal-title": { ModalTitle: "Text" },
     "@/components/add-record-card": { AddRecordCard: "AddRecordCard" },
     "@/components/artwork-icon": { PaymentClaimsIcon: "PaymentClaimsIcon" },
@@ -418,7 +435,7 @@ test("the token list keeps its skeleton, its failure and its two empty states ap
   assert.equal(nodes(first, "SkeletonList").length, 1); assert.equal(nodes(first, "EmptyState").length, 0);
   const failed = harness({ tokenQuery: { currentData: undefined, isError: true } });
   const refused = failed.render(failed.tokenList.BookingTokenList, props);
-  assert.equal(one(refused, "NoticeBar").props.title, "Could not load tokens"); assert.equal(nodes(refused, "EmptyState").length, 0);
+  one(refused, "LoadFailed"); assert.equal(nodes(refused, "EmptyState").length, 0);
   const none = harness({ tokenQuery: ledger([]) });
   let empty = none.render(none.tokenList.BookingTokenList, props);
   assert.equal(one(empty, "EmptyState").props.title, "No tokens collected yet");
@@ -561,7 +578,7 @@ test("with nothing in the list the Bookings screen sits still, and scrolls again
   assert.ok(scroll.includes('import { contentFitsWithoutScroll, getHeaderScrollMinHeight } from "@/components/header-scroll-layout";'));
 });
 
-test("a card's shadow is one a phone draws: the new one inside a module, the old one left on the tab screens", () => {
+test("cards use phone-visible shadows inside modules and Home, leaving the other tabs unchanged", () => {
   const drawn = [];
   const shadows = (os, version, segments) => load(read("src/theme/shadows.ts"), {
     "expo-router": { useSegments: () => segments },
@@ -575,18 +592,26 @@ test("a card's shadow is one a phone draws: the new one inside a module, the old
   assert.deepEqual({ ...shadows("web", undefined, []).softShadow("rgba(15, 23, 42, 0.16)", 2, 6) }, { boxShadow: "0px 2px 6px 0px rgba(15, 23, 42, 0.16)" });
   // Android before 9 has no box shadow, so it also gets the system's own.
   assert.equal(shadows("android", 27, []).softShadow("rgba(15, 23, 42, 0.16)", 4, 12).elevation, 3);
-  // On a tab screen the shadow stays exactly as it was written (user, 2026-10-11: "not the 5 tabs").
+  // The other tabs retain the original treatment; Home now opts in explicitly.
   const tab = shadows("android", 34, ["(tabs)", "owner"]);
   assert.deepEqual(JSON.parse(JSON.stringify(tab.useSoftShadow()("rgba(15, 23, 42, 0.16)", 4, 12))), { shadowColor: "rgba(15, 23, 42, 0.16)", shadowOffset: { height: 4, width: 0 }, shadowOpacity: 1, shadowRadius: 12 });
   assert.equal(tab.useSoftShadow()("x", 4, 12).boxShadow, undefined);
   assert.equal(modern.useSoftShadow()("rgba(15, 23, 42, 0.16)", 4, 12).boxShadow, "0px 4px 12px 0px rgba(15, 23, 42, 0.16)");
+  for (const segments of [["(tabs)"], ["(tabs)", "index"]]) {
+    assert.equal(shadows("android", 34, segments).useSoftShadow()("x", 4, 12).boxShadow, "0px 4px 12px 0px x");
+  }
+  for (const name of ["discovery", "chats", "owner", "account"]) {
+    assert.equal(shadows("android", 34, ["(tabs)", name]).useSoftShadow()("x", 4, 12).boxShadow, undefined, name);
+  }
 
   // Every card is drawn by the shared Card, which asks which of the two it is to wear.
   const card = read("src/components/card.tsx");
   assert.ok(card.includes("const softShadow = useSoftShadow();") && card.includes("...softShadow(colors.shadow, 4, 12)"));
   assert.doesNotMatch(card, /shadowOpacity|elevation:/);
-  // The tab screens themselves keep the old one, and no file is left writing the kind a phone ignores.
-  for (const file of ["app/(tabs)/index.tsx", "app/(tabs)/owner.tsx"]) {
+  // Only Home's hand-drawn cards change; Manage still keeps the old treatment.
+  assert.match(read("app/(tabs)/index.tsx"), /\.\.\.softShadow\(colors\.shadow/);
+  assert.doesNotMatch(read("app/(tabs)/index.tsx"), /tabShadow/);
+  for (const file of ["app/(tabs)/owner.tsx"]) {
     assert.ok(read(file).includes("...tabShadow(colors.shadow"), file);
     assert.doesNotMatch(read(file), /\.\.\.softShadow\(/, file);
   }
@@ -644,8 +669,7 @@ test("while the next page loads the last one stays, and cannot be paged again", 
 test("a list failure is not described as no requests", () => {
   const h = harness({ listQuery: { currentData: undefined, isSuccess: false, isError: true, error: { status: 500 } } });
   const tree = h.render(h.list.BookingRequestList, listProps());
-  one(tree, "NoticeBar", (node) => node.props.title === "Could not load bookings");
-  button(tree, "Try again"); assert.equal(nodes(tree, "EmptyState").length, 0);
+  one(tree, "LoadFailedCard"); assert.equal(nodes(tree, "EmptyState").length, 0);
 });
 
 test("an empty list says why, compactly, and carries no button to balloon inside it", () => {
@@ -831,9 +855,11 @@ test("reason uses the real input's red asterisk and scoped grey styling without 
   const h = harness();
   const ownerUi = load(read("src/features/owner/owner-ui.tsx"), { ...h.dependencies,
     "@/components/app-text-input": { AppTextInput: "AppTextInput" },
+    "@/components/arrow-bullet": { ArrowBullet: "ArrowBullet" },
     "@/components/status-icon": { statusTonePalette() {} },
     "@/lib/haptics": { tapHaptic() {} },
     "@/components/skeletons": { useIsSkeleton: () => false },
+    "@/components/modal-kind": { CenterDialogContext: { Provider: "Provider" } },
   });
   const sheet = h.render(h.detail.Decision, decisionProps("CANCEL")); const props = one(sheet, "FormInput").props;
   const field = h.render(ownerUi.FormInput, props);
@@ -864,6 +890,7 @@ test("raised close-circle shadow is darker and symmetric, without Android's dire
     "react-native-safe-area-context": {},
     "@/components/leave-on-stale": {},
     "@/components/keyboard-intent": { onKeyboardLeaving: () => () => {} },
+    "@/components/modal-title-rule": { ModalTitleRule: "ModalTitleRule" },
   }).CloseShadow;
   const shadow = shadowFor(34);
   assert.equal(shadow.boxShadow.length, 1);
@@ -890,9 +917,13 @@ test("shared top-right sheet close uses a smaller faded-black cross without shri
     "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 24, bottom: 20 }) },
     "@/components/leave-on-stale": { useLeavableSurface() {} },
     "@/components/keyboard-intent": { onKeyboardLeaving: () => () => {} },
+    "@/components/modal-title-rule": { ModalTitleRule: "ModalTitleRule" },
   });
+  // No x by default (user, 2026-10-29): only a sensitive sheet, a PIN or a code, asks for one.
+  const plain = h.render(shell.SheetShell, { title: "Cancel booking?", onClose() {}, children: "Body" });
+  assert.equal(JSON.stringify(plain).includes('"accessibilityLabel":"Close"'), false);
   for (const title of ["Cancel booking?", ""]) {
-    const tree = h.render(shell.SheetShell, { title, onClose() {}, children: "Body" });
+    const tree = h.render(shell.SheetShell, { title, onClose() {}, showClose: true, children: "Body" });
     const close = one(tree, "AnimatedPressable", (node) => node.props.accessibilityLabel === "Close");
     const mark = one(close, "X");
     assert.equal(mark.props.size, 18);
@@ -903,7 +934,7 @@ test("shared top-right sheet close uses a smaller faded-black cross without shri
     assert.equal(close.props.style.boxShadow[0].color, "rgba(15, 23, 42, 0.28)");
   }
   for (const [variant, size, color] of [["circle", 16, themes.light.ink], ["plain", 21, themes.light.muted]]) {
-    const tree = h.render(shell.SheetShell, { title: "Other sheet", closeButtonVariant: variant, onClose() {}, children: "Body" });
+    const tree = h.render(shell.SheetShell, { title: "Other sheet", closeButtonVariant: variant, onClose() {}, showClose: true, children: "Body" });
     const mark = one(tree, "X");
     assert.equal(mark.props.size, size); assert.equal(mark.props.color, color);
   }
@@ -1160,7 +1191,7 @@ test("a card is made as the tenant's My bookings card is, with a short status at
   assert.equal(name.numberOfLines, 1);
   assert.equal(one(header, "Text", (node) => node.props.children === "BKG-2026-000001").props.numberOfLines, 1);
   // The status is the Review booking screen's own chip, last in that row, saying "Awaiting" and not "Awaiting handler" (user, 2026-10-11).
-  const chip = header.props.children.filter(Boolean).at(-1);
+  const chip = one(header, "OwnerBookingStatus");
   assert.equal(chip.type, "OwnerBookingStatus"); assert.equal(chip.props.status, "AWAITING_HANDLER"); assert.equal(chip.props.short, true);
   const drawn = load(read("src/features/booking/owner-booking-status.tsx"), h.dependencies);
   const said = (props) => one(drawn.OwnerBookingStatus(props), "Text").props.children;

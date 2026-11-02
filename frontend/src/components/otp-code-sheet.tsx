@@ -1,3 +1,4 @@
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useState, type ReactNode } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, Text, View } from "react-native";
@@ -184,6 +185,7 @@ export function OtpCodeSheet({
               <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: "center" }}>
                 {title}
               </ModalTitle>
+              <ModalTitleRule />
             </View>
 
             <OtpCodeEntry

@@ -37,7 +37,10 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.khatiyan.c_shared.concurrency.ExpectedVersion;
+import com.khatiyan.c_shared.concurrency.ExpectedVersionHolder;
 import com.khatiyan.c_shared.exception.ForbiddenException;
+import com.khatiyan.c_shared.exception.StaleVersionException;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.analytics.LargePropertySeeder;
 import com.khatiyan.d_modules.analytics.LargePropertySeeder.Seeded;
@@ -588,6 +591,39 @@ class VisitDayIntegrationTest {
         // The owner may correct it.
         assertThat(visitDay.completeForm(owner, visit,
                 new VisitFormRequest(LocalTime.of(16, 55), 3, VisitImpression.OKAY)).partySize()).isEqualTo(3);
+    }
+
+    /**
+     * The checker and the owner may both fill the form, so the second to save
+     * from an old screen is refused rather than overwriting the first (2026-11-01).
+     */
+    @Test
+    void aVisitFormSavedFromAnOldScreenIsRefusedAndKeepsTheFirstAnswer() {
+        UUID prospect = prospects.get(0);
+        UUID visit = visitOn(prospect, today, FOUR);
+        itIs(16, 10);
+        visitDay.checkIn(otherManager, visit, new CheckInVisitRequest(visitDay.pass(prospect, visit).token(), null));
+        long opened = cardFor(owner, visit).version();
+
+        try {
+            ExpectedVersionHolder.set(ExpectedVersion.of(opened));
+            VisitCardResponse first = visitDay.completeForm(otherManager, visit,
+                    new VisitFormRequest(LocalTime.of(16, 50), 2, VisitImpression.LIKED));
+            assertThat(first.version()).isGreaterThan(opened);
+
+            ExpectedVersionHolder.set(ExpectedVersion.of(opened));
+            assertThatThrownBy(() -> visitDay.completeForm(owner, visit,
+                    new VisitFormRequest(LocalTime.of(16, 55), 3, VisitImpression.OKAY)))
+                    .isInstanceOf(StaleVersionException.class);
+            assertThat(cardFor(owner, visit).partySize()).isEqualTo(2);
+
+            // On the version the screen shows after refreshing, it goes through.
+            ExpectedVersionHolder.set(ExpectedVersion.of(first.version()));
+            assertThat(visitDay.completeForm(owner, visit,
+                    new VisitFormRequest(LocalTime.of(16, 55), 3, VisitImpression.OKAY)).partySize()).isEqualTo(3);
+        } finally {
+            ExpectedVersionHolder.clear();
+        }
     }
 
     /**

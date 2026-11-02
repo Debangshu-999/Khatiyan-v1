@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -23,6 +24,8 @@ import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryCardResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryProfileResponse;
 import com.khatiyan.d_modules.discovery.api.dto.UpdatePropertyDiscoveryProfileRequest;
+import com.khatiyan.d_modules.discovery.metro.MetroProximity;
+import com.khatiyan.d_modules.discovery.metro.MetroService;
 import com.khatiyan.d_modules.discovery.model.PropertyDiscoveryProfile;
 import com.khatiyan.d_modules.discovery.repository.PropertyDiscoveryProfileRepository;
 import com.khatiyan.d_modules.property.PropertyModule;
@@ -47,6 +50,7 @@ public class PropertyDiscoveryService {
     private final AuthModule authModule;
     private final PropertyImageService propertyImageService;
     private final PropertyContactService propertyContactService;
+    private final MetroService metroService;
 
     public PropertyDiscoveryService(
             PropertyDiscoveryProfileRepository discoveryProfileRepository,
@@ -54,7 +58,9 @@ public class PropertyDiscoveryService {
             DiscoveryAccessPolicy discoveryAccessPolicy,
             AuthModule authModule,
             PropertyImageService propertyImageService,
-            PropertyContactService propertyContactService) {
+            PropertyContactService propertyContactService,
+            MetroService metroService) {
+        this.metroService = metroService;
         this.discoveryProfileRepository = discoveryProfileRepository;
         this.propertyModule = propertyModule;
         this.discoveryAccessPolicy = discoveryAccessPolicy;
@@ -114,6 +120,45 @@ public class PropertyDiscoveryService {
             DiscoverySort sort,
             int page,
             int size) {
+        return searchVisibleProperties(
+                state, city, countryCode, locality, latitude, longitude, radiusKm, pgFor, minRentPaise, maxRentPaise,
+                preferredFor, foodIncluded, mealTypes, electricityIncluded, bathroomType, sharingTypes, propertyType,
+                sort, null, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PropertyDiscoveryCardResponse> searchVisibleProperties(
+            String state,
+            String city,
+            String countryCode,
+            String locality,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            Double radiusKm,
+            PgFor pgFor,
+            Long minRentPaise,
+            Long maxRentPaise,
+            PreferredTenantType preferredFor,
+            Boolean foodIncluded,
+            Set<MealType> mealTypes,
+            Boolean electricityIncluded,
+            BathroomType bathroomType,
+            Set<SharingType> sharingTypes,
+            PropertyType propertyType,
+            DiscoverySort sort,
+            List<String> metroStationCodes,
+            int page,
+            int size) {
+        // Ticked stations replace the searched place: the list is what is near
+        // them, wherever the person is or last searched.
+        boolean byMetro = metroStationCodes != null && !metroStationCodes.isEmpty();
+        if (byMetro) {
+            state = null;
+            city = null;
+            countryCode = null;
+            locality = null;
+        }
+
         // Every listed property is in India. A resolved foreign country code
         // means the device is outside India, so there is nothing to show here.
         if (isForeignCountry(countryCode)) {
@@ -126,11 +171,14 @@ public class PropertyDiscoveryService {
         // from the database (bounding-box prefilter on the partial btree index,
         // exact haversine refine). A radius additionally restricts candidates
         // to coordinated properties inside it.
-        boolean hasSearchPoint = latitude != null && longitude != null;
-        boolean hasRadius = hasSearchPoint && radiusKm != null && radiusKm > 0;
-        Map<UUID, Double> distanceByPropertyId = hasSearchPoint
-                ? visibleDistancesAround(latitude, longitude, radiusKm)
-                : Map.of();
+        Map<UUID, MetroProximity.Nearest> nearestTicked = byMetro ? metroService.nearestTicked(metroStationCodes) : Map.of();
+        boolean hasSearchPoint = byMetro || (latitude != null && longitude != null);
+        boolean hasRadius = byMetro || (hasSearchPoint && radiusKm != null && radiusKm > 0);
+        Map<UUID, Double> distanceByPropertyId = byMetro
+                ? nearestTicked.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().distanceKm()))
+                : hasSearchPoint
+                        ? visibleDistancesAround(latitude, longitude, radiusKm)
+                        : Map.of();
 
         // Candidate pool: every visible property whose owner-set discovery
         // filters match. Region/area matching is layered on top of this.
@@ -148,6 +196,9 @@ public class PropertyDiscoveryService {
                         imagesByPropertyId.getOrDefault(profile.getPropertyId(), List.of())))
                 .filter(response -> response != null)
                 .filter(response -> !hasRadius || distanceByPropertyId.containsKey(response.propertyId()))
+                .map(response -> nearestTicked.containsKey(response.propertyId())
+                        ? response.withNearestMetroStation(nearestTicked.get(response.propertyId()).stationName())
+                        : response)
                 .filter(response -> matchesDiscoveryFilters(
                         response,
                         pgFor,

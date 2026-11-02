@@ -69,6 +69,19 @@ class BillingAnalyticsQueriesTest {
     }
 
     @Test
+    void theSplitsOfADamageAreOneReason() {
+        UUID first = fx.cycle(p, "PAID", "ONE_OFF", JUL, JUL, 0, 1200, 0, 0, Instant.parse("2026-07-01T06:00:00Z"));
+        UUID second = fx.cycle(p, "UNPAID", "ONE_OFF", JUL, JUL, 0, 800, 0, 0, null);
+        fx.extraCharge(p, first, "Damage DMG-2026-000279: Cupboard (D3), split 1", 1200, "ADDED");
+        fx.extraCharge(p, second, "Damage DMG-2026-000279: Cupboard (D3), split 2", 800, "ADDED");
+        // Only a damage's name is folded: a reason someone typed stays as typed.
+        fx.extraCharge(p, second, "Fan, split 1", 100, "ADDED");
+
+        assertThat(billing.oneOffReasons(p, JUL, TODAY)).containsExactly(
+                new LabelTotal("Damage DMG-2026-000279: Cupboard (D3)", 2000, 2), new LabelTotal("Fan, split 1", 100, 1));
+    }
+
+    @Test
     void statusCategoryFeesAndReasonsFollowTheBillsMonth() {
         UUID oneOff = fx.cycle(p, "PAID", "ONE_OFF", JUL, JUL, 0, 1800, 0, 0, Instant.parse("2026-07-01T06:00:00Z"));
         fx.extraCharge(p, oneOff, "Electricity", 1000, "ADDED");

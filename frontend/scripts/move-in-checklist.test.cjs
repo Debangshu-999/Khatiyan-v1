@@ -25,12 +25,13 @@ test("four damage levels, NA to D3, priced per item on Exit policies", () => {
   assert.match(policies, /setPriceError\("Each level costs at least the one before\."\)/);
 });
 
-test("the checklist is an optional step between Verify and Review, never for a daily guest", () => {
+test("the checklist is a required step between Verify and Review, never for a daily guest", () => {
   assert.match(wizard, /const STEP_ORDER: Step\[\] = \["type", "tenant", "details", "verify", "handover", "review", "agreement"\];/);
   assert.match(wizard, /const DAILY_STEP_ORDER: Step\[\] = \["type", "tenant", "details", "verify", "review", "agreement"\];/);
   assert.match(wizard, /setStep\(isDaily \? "review" : "handover"\);/);
-  assert.match(wizard, /label="Skip move-in"/);
-  // Continue stays blocked until every item has a photo. Skipped, nothing is sent.
+  // Required now: no Skip (user, 2026-10-29). Continue stays blocked until it is complete.
+  assert.doesNotMatch(wizard, /Skip move-in/);
+  assert.doesNotMatch(wizard, /moveInSkipped/);
   // Every item a photo, every damage described, and at least 1 key (user, 2026-10-29).
   assert.match(wizard, /moveInItems\.every\(\(item\) => item\.photoUrls\.length > 0 && \(item\.damageLevel === "NA" \|\| item\.note\.trim\(\)\)\)/);
   assert.match(wizard, /Number\(keysHandedOver\) >= 1/);
@@ -39,6 +40,15 @@ test("the checklist is an optional step between Verify and Review, never for a d
   assert.match(wizard, /<Field label="What is damaged" required>/);
   assert.match(wizard, /disabled=\{!moveInReady\}\s+label="Continue"/);
   assert.match(wizard, /moveInChecklist: moveInPayload,/);
+});
+
+test("each item starts from the room's condition, and carried photos cannot be removed", () => {
+  assert.match(wizard, /useGetRoomItemConditionsQuery\(/);
+  assert.match(wizard, /damageLevel: condition\?\.level \?\? "NA"/);
+  assert.match(wizard, /photoUrls: carried,/);
+  // A carried photo has a lock where an added one has its remove x.
+  assert.match(wizard, /\(item\.carried \?\? \[\]\)\.includes\(url\) \?/);
+  assert.match(wizard, /<Lock color=\{colors\.muted\} size=\{12\}/);
 });
 
 test("the checklist shows what the room's type picked, from the damage list, and more can be added", () => {
@@ -53,7 +63,7 @@ test("the checklist shows what the room's type picked, from the damage list, and
   assert.match(wizard, /\{item\.fixed \? null : \(/);
   assert.match(wizard, /title="Remove this item\?"/);
   assert.match(wizard, /trailing=\{section === "AMENITY" \? null : \(/);
-  assert.match(wizard, /<SheetShell onClose=\{\(\) => setAddingTo\(null\)\}/);
+  assert.match(wizard, /<SheetShell size="short" onClose=\{\(\) => setAddingTo\(null\)\}/);
   assert.match(wizard, /needPhotos > 0 \? `\$\{needPhotos\} need/);
   // 1 to 3 photos on each item, and its level from a dropdown with an ⓘ.
   assert.match(wizard, /<MultiImageField\s+label=\{`Photos \(\$\{item\.photoUrls\.length\} of 3\)`\}\s+max=\{3\}/);
@@ -64,7 +74,7 @@ test("room types pick their things from the damage list, in a Room and a Bathroo
   const picker = read("src/features/property/amenity-picker.tsx");
   assert.match(picker, />Amenities</);
   assert.match(picker, /const bathroomCategory = bathroomType === "COMMON" \? "COMMON_TOILET" : "BATHROOM";/);
-  assert.match(picker, /bathroomType === "COMMON" \? "Common toilet" : "Attached bathroom"/);
+  assert.match(picker, /bathroomType === "COMMON" \? "Common washroom" : "Attached washroom"/);
   // AC, or Fan, fixed and ticked; the common toilet is not an item in its own list.
   assert.match(picker, /label=\{conditioning === "AC" \? "AC" : "Fan"\}/);
   assert.match(picker, /bathroomType === "COMMON" \? null : \(/);

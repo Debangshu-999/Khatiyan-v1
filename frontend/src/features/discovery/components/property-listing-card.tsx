@@ -11,13 +11,13 @@ import {
   ImageOff,
   MapPin,
   Navigation,
-  Sparkles,
   Utensils,
   Zap,
   type LucideProps,
 } from "lucide-react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
+import { AiNoteCard } from "@/components/ai-style";
 import { Card } from "@/components/card";
 import { IconButton } from "@/components/icon-button";
 import { MarqueeText } from "@/components/marquee-text";
@@ -67,6 +67,10 @@ export function PropertyListingCard({
   onView,
 }: PropertyListingCardProps) {
   const { colors, fonts } = useTheme();
+  // A ticked metro station is measured from like a landmark: "800 m from Esplanade".
+  const nearestPlace = nearest ?? (property.nearestMetroStationName && property.distanceKm != null
+    ? { km: property.distanceKm, name: property.nearestMetroStationName }
+    : null);
   const match = serverMatch !== undefined
     ? serverMatch
     : filters
@@ -194,14 +198,14 @@ export function PropertyListingCard({
               minHeight: 15,
             }}
           >
-            {nearest ? (
+            {nearestPlace ? (
               <>
                 <Navigation color={colors.jade} fill={colors.jade} size={11} strokeWidth={2} />
                 <View style={{ flexShrink: 1, minWidth: 0 }}>
                   <MarqueeText
                     style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"] }}
                   >
-                    {`${nearest.km < 1 ? `${Math.round(nearest.km * 1000)} m` : `${nearest.km.toFixed(1)} km`} from ${nearest.name}`}
+                    {`${nearestPlace.km < 1 ? `${Math.round(nearestPlace.km * 1000)} m` : `${nearestPlace.km.toFixed(1)} km`} from ${nearestPlace.name}`}
                   </MarqueeText>
                 </View>
               </>
@@ -287,7 +291,7 @@ export function PropertyListingCard({
 
       {reason ? (
         <View style={[section, { paddingHorizontal: 0 }]}>
-          <ReasonLine reason={reason} />
+          <AiNoteCard text={reason} />
         </View>
       ) : null}
 
@@ -307,43 +311,6 @@ function DirectionsIcon({ color, size }: LucideProps) {
       name="directions"
       size={typeof size === "number" ? size + 3 : 20}
     />
-  );
-}
-
-/**
- * The AI's line for this card.
- *
- * <p>On the pale blue the AI panel uses, which is the one thing that tint means
- * anywhere in the app: these are words a model wrote, not a fact the property
- * stated. Everything factual on the card keeps its ordinary treatment.
- */
-function ReasonLine({ reason }: { reason: string }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View
-      style={{
-        alignItems: "flex-start",
-        backgroundColor: colors.primarySoft,
-        borderCurve: "continuous",
-        borderRadius: 10,
-        flexDirection: "row",
-        gap: spacing.sm,
-        padding: spacing.sm,
-      }}
-    >
-      <Sparkles color={colors.primary} size={15} strokeWidth={2.2} style={{ marginTop: 1 }} />
-      <Text
-        style={{
-          color: colors.ink,
-          flex: 1,
-          fontFamily: fonts.sansMedium,
-          fontSize: 11.5,
-          lineHeight: 16,
-        }}
-      >
-        {reason}
-      </Text>
-    </View>
   );
 }
 

@@ -1,3 +1,4 @@
+import { freshAccessToken } from "@/auth/session-refresh";
 import { Platform } from "react-native";
 
 import { store } from "@/store/store";
@@ -311,7 +312,8 @@ function postMultipart(endpoint: string, form: FormData): Promise<{ status: numb
 
 async function requestSignature(target: UploadTarget): Promise<UploadSignature> {
   const state = store.getState();
-  const token = state.auth.accessToken;
+  // By hand, so it does not get the renewal every other request does.
+  const token = await freshAccessToken(store);
   // Normalised here as well as at the source. This is the one caller that
   // builds its URL by hand rather than going through the RTK base query, so it
   // is the one that breaks silently if a bad value ever reaches the store.

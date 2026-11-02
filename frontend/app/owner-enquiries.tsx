@@ -1,3 +1,5 @@
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { ModalTitle } from "@/components/modal-title";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
@@ -324,6 +326,13 @@ export default function OwnerEnquiriesScreen() {
   const [mineFilter, setMineFilter] = useState<MineFilter>("ALL");
   const [allFilter, setAllFilter] = useState<AllFilter>("ALL");
   const [filterResets, setFilterResets] = useState(0);
+  useQuickActionIntent({
+    "follow-up": () => { setTab("mine"); setMineFilter("ALL"); },
+    "schedule-visit": () => { setTab("mine"); setMineFilter("OPEN"); },
+    "reschedule-visit": () => { setTab("mine"); setMineFilter("SCHEDULED"); },
+    "cancel-visit": () => { setTab("mine"); setMineFilter("SCHEDULED"); },
+    "assign-enquiry": () => { setTab("all"); setAllFilter("OPEN"); },
+  }, Boolean(selectedProperty) && !attention);
   useFocusEffect(
     useCallback(
       () => () => {
@@ -392,6 +401,11 @@ export default function OwnerEnquiriesScreen() {
     if (contentSize.height - contentOffset.y - layoutMeasurement.height <= LOAD_MORE_THRESHOLD_PX) {
       setVisibleCount((current) => Math.min(current + PAGE_SIZE, visible.length));
     }
+  }
+
+  const loadFailed = loadFailure(propertiesQuery, enquiriesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (
@@ -1041,17 +1055,16 @@ function EnquiryCard({
           ) : null}
         </View>
 
-        {/* The actions, under a hairline. History on every card would bury the
-            message, so it lives behind the disc at the end. */}
+        {/* Keep actions on the same uninterrupted card surface. History lives
+            behind the quiet disc at the end. */}
         <View
           style={{
             alignItems: "center",
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
             flexDirection: "row",
             gap: spacing.sm,
             paddingHorizontal: spacing.lg,
-            paddingVertical: spacing.md,
+            paddingBottom: spacing.md,
+            paddingTop: 0,
           }}
         >
           {/* Gone while a visit is booked (owner's rule, 2026-10-03): booking
@@ -1376,7 +1389,7 @@ function ActionLogSheet({
   ].sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
 
   return (
-    <SheetShell onClose={onClose} title="Action log">
+    <SheetShell size="tall" onClose={onClose} title="Action log">
       <Text style={[type.modalDescription, { color: colors.muted }]}>
         Everything done on this enquiry, newest first.
       </Text>

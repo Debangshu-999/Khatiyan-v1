@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SelectionTabs } from "@/components/selection-tabs";
 import { AppBackground } from "@/components/app-background";
@@ -20,7 +21,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { useAvailableAccounts } from "@/features/account/accounts";
-import { FloatingForecastChef } from "@/features/food/floating-forecast-chef";
+import { ForecastChefButton, ForecastChefTip, type ChefAnchor } from "@/features/food/floating-forecast-chef";
 import { beforeCutoff } from "@/features/food/meal-schedule-ui";
 import {
   DAY_LABEL,
@@ -127,6 +128,10 @@ export default function OwnerFoodForecastScreen() {
   // The note under the button, when a tap cannot take the dish off.
   const [note, setNote] = useState<{ anchor: Anchor; message: string } | null>(null);
   const closeNote = useCallback(() => setNote(null), []);
+  const [chefTip, setChefTip] = useState<ChefAnchor | null>(null);
+  const closeChefTip = useCallback(() => setChefTip(null), []);
+  const chef = <ForecastChefButton onOpen={setChefTip} />;
+  const chefCard = chefTip ? <ForecastChefTip anchor={chefTip} onClose={closeChefTip} /> : null;
 
   function tryMarkUnavailable(item: ConsolidatedItemForecast, anchor: Anchor) {
     if (laterDay) {
@@ -205,10 +210,12 @@ export default function OwnerFoodForecastScreen() {
   ) {
     return (
       <ForecastFrame
+        overlay={chefCard}
         header={<ScreenHeader
           italicTail="forecast."
           subtitle={property ? property.name : undefined}
           title="Cooking"
+          trailing={chef}
         />}
       >
         <FoodForecastSkeleton />
@@ -216,30 +223,34 @@ export default function OwnerFoodForecastScreen() {
     );
   }
 
+  const loadFailed = loadFailure(overviewQuery, forecastQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ForecastFrame
-      overlay={note ? <FloatingNote anchor={note.anchor} message={note.message} onClose={closeNote} /> : null}
+      overlay={note ? <FloatingNote anchor={note.anchor} message={note.message} onClose={closeNote} /> : chefCard}
       header={<>
         <ScreenHeader
         italicTail="forecast."
         subtitle={property ? `${property.name} · ${DAY_LABEL[weekdayOf(date)]}, ${shortDate(date)}` : undefined}
         title="Cooking"
+        trailing={chef}
         />
 
-        <View style={{ flexShrink: 0, height: 64, overflow: "hidden" }}>
-          <DayStrip
-            onSelect={(day) => {
-              const picked = week.find((candidate) => weekdayOf(candidate) === day);
-              if (picked) {
-                setDate(picked);
-              }
-            }}
-            selected={weekdayOf(date)}
-            showDates
-            variant="contained"
-            week={week}
-          />
-        </View>
+        <DayStrip
+          onSelect={(day) => {
+            const picked = week.find((candidate) => weekdayOf(candidate) === day);
+            if (picked) {
+              setDate(picked);
+            }
+          }}
+          selected={weekdayOf(date)}
+          showDates
+          variant="bubbles"
+          week={week}
+        />
 
         {served.length > 1 ? (
           <MealBubbles active={activeMeal ?? served[0]} meals={served} onChange={setMeal} />
@@ -275,10 +286,23 @@ export default function OwnerFoodForecastScreen() {
           title="Nothing to cook"
         />
       ) : (
-        <>
-          {forecast.consolidatedItems.map((item) => (
+        // One card for the whole meal, with a line between dishes (user, 2026-11-01).
+        // The shadow is on the outer view, because the inner one has to clip.
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.borderStrong,
+            borderCurve: "continuous",
+            borderRadius: radii.card,
+            borderWidth: 1,
+            ...softShadow(colors.shadow, 4, 12),
+          }}
+        >
+          <View style={{ borderRadius: radii.card, overflow: "hidden" }}>
+          {forecast.consolidatedItems.map((item, index) => (
             <ForecastRow
               dimmed={phase === "SERVED"}
+              first={index === 0}
               item={item}
               key={item.itemId}
               markBlocked={markWindowClosed()}
@@ -290,8 +314,9 @@ export default function OwnerFoodForecastScreen() {
               than in a section of their own further down. The backend leaves
               them out of every quantity, so they arrive separately and are
               put back into the list here. */}
-          {forecast.unavailableItems.map((item) => (
+          {forecast.unavailableItems.map((item, index) => (
             <ForecastRow
+              first={index === 0 && forecast.consolidatedItems.length === 0}
               item={skippedAsForecast(item)}
               key={item.itemId}
               onRestore={canChange ? () => setRestoring(item) : undefined}
@@ -299,8 +324,8 @@ export default function OwnerFoodForecastScreen() {
               unavailable
             />
           ))}
-
-        </>
+          </View>
+        </View>
       )}
 
       {skipping && activeMeal ? (
@@ -494,7 +519,7 @@ function FloatingNote({ anchor, message, onClose }: { anchor: Anchor; message: s
   );
 }
 
-/** Keep the selectors fixed; only the forecast menu scrolls behind the chef. */
+/** Keep the selectors fixed; only the forecast menu scrolls. */
 function ForecastFrame({
   children,
   header,
@@ -506,7 +531,6 @@ function ForecastFrame({
   overlay?: ReactNode;
 }) {
   const { colors } = useTheme();
-  const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const headerScrollY = useRef(new Animated.Value(0)).current;
   const scrollOffset = useRef(0);
   // A menu that scrolls at all scrolls far enough for the header to collapse
@@ -525,19 +549,17 @@ function ForecastFrame({
       <ScreenHeaderScrollContext.Provider
         value={{ scrollY: headerScrollY, sticky: true, surface: colors.background }}
       >
-        <View
-          onLayout={(event) => {
-            const { width, height } = event.nativeEvent.layout;
-            setViewport((current) => current.width === width && current.height === height ? current : { width, height });
-          }}
-          style={{ flex: 1, gap: spacing.lg, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}
-        >
+        <View style={{ flex: 1, gap: spacing.lg, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}>
           <View style={{ flexShrink: 0, gap: spacing.lg }}>{header}</View>
           <ScrollView
             contentContainerStyle={{
               gap: spacing.lg,
               minHeight: overflows ? scrollHeight + SCREEN_HEADER_COLLAPSE_DISTANCE : undefined,
-              paddingBottom: spacing.sm,
+              // The scroller reaches the screen's edges and the gutter moves inside
+              // it, so the card's shadow is not cut off at its sides.
+              paddingBottom: spacing.lg,
+              paddingHorizontal: spacing.lg,
+              paddingTop: 2,
             }}
             onLayout={(event) => setScrollHeight(event.nativeEvent.layout.height)}
             onScroll={(event) => {
@@ -547,7 +569,7 @@ function ForecastFrame({
             }}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
-            style={{ flex: 1 }}
+            style={{ flex: 1, marginHorizontal: -spacing.lg }}
           >
             {children}
             <View
@@ -559,7 +581,6 @@ function ForecastFrame({
               style={{ height: 0, marginTop: -spacing.lg }}
             />
           </ScrollView>
-          <FloatingForecastChef viewport={viewport} />
         </View>
       </ScreenHeaderScrollContext.Provider>
       {overlay}
@@ -627,6 +648,7 @@ function skippedAsForecast(item: SkippedItem): ConsolidatedItemForecast {
 
 function ForecastRow({
   dimmed,
+  first,
   item,
   markBlocked,
   onMarkUnavailable,
@@ -636,6 +658,8 @@ function ForecastRow({
 }: {
   /** Greyed, for a meal already served. */
   dimmed?: boolean;
+  /** The top dish of the card, with no line above it. */
+  first?: boolean;
   item: ConsolidatedItemForecast;
   /**
    * The window to take it off has passed. Faded, but a tap still reaches
@@ -660,14 +684,7 @@ function ForecastRow({
   const faded = unavailable || dimmed;
 
   return (
-    <View
-      style={{
-        borderColor: colors.border,
-        borderRadius: radii.card,
-        borderWidth: 1,
-        overflow: "hidden",
-      }}
-    >
+    <View style={{ borderTopColor: colors.border, borderTopWidth: first ? 0 : 1 }}>
       {/* The controls sit in the middle, between the name and the number.
           Both outer zones take equal flex, so the pair lands halfway however
           long the name is — and the cluster holds a fixed width whether or not
@@ -697,7 +714,7 @@ function ForecastRow({
           {/* Scrolls back and forth when it overflows rather than ellipsising.
               "Paneer butter ma..." is not a dish anyone can identify at a
               glance, and the column is narrow by design here. */}
-          <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{item.itemName}</MarqueeText>
+          <MarqueeText style={[type.bodyStrong, { color: colors.ink, fontSize: 13.5, lineHeight: 18 }]}>{item.itemName}</MarqueeText>
           {splittable ? (
             <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5 }}>
               across {item.profileBreakdown.length} profiles
@@ -803,9 +820,12 @@ function ForecastRow({
               Not cooking
             </FitText>
           ) : (
-            <FitText numberOfLines={1} style={[type.metric, { color: colors.ink, fontSize: 17 }]}>
+            // One plain size for every dish. The tall, tightly spaced metric type ran
+            // the number into its unit and shrank long ones unevenly (user, 2026-11-01).
+            // Plain Text, because fitted text drew "23 pcs" smaller than "1.5 Kg".
+            <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14, fontVariant: ["tabular-nums"], lineHeight: 18 }}>
               {formatBulkQuantity(item.targetQuantity, item.quantityUnit)}
-            </FitText>
+            </Text>
           )}
         </View>
       </View>

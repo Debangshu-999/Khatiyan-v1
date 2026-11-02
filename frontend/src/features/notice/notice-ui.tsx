@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { Text, View } from "react-native";
-import { Flame, Megaphone, ShieldAlert, type LucideProps } from "lucide-react-native";
+import { Megaphone, Zap, type LucideProps } from "lucide-react-native";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 
 import { type NoticePriority, type NoticeSummary } from "@/store/services/notice-api";
 import { spacing } from "@/theme/spacing";
@@ -143,6 +144,72 @@ export function Fact({ fact, tone }: { fact: CardFact; tone?: string }) {
   );
 }
 
+/**
+ * A priority's own mark, filled and coloured, the same everywhere it is shown: a
+ * megaphone, a shield, a lightning bolt, a siren (user, 2026-10-31).
+ */
+export function PriorityMark({ priority, size = 16 }: { priority: NoticePriority; size?: number }) {
+  const { colors } = useTheme();
+  if (priority === "NORMAL") {
+    return <Megaphone color={colors.muted} fill={colors.muted} size={size} strokeWidth={2} />;
+  }
+  if (priority === "URGENT") {
+    return <Zap color={colors.warning} fill={colors.warning} size={size} strokeWidth={2} />;
+  }
+  if (priority === "EMERGENCY") {
+    return (
+      <Svg height={size} viewBox="0 0 24 24" width={size}>
+        <Path d="M6 17v-5.5a6 6 0 0 1 12 0V17Z" fill={colors.danger} />
+        <Rect fill={colors.danger} height={4} rx={1.2} width={18} x={3} y={18} />
+        <Path d="M12 2.2V3.6M3.9 5.4l1 1M20.1 5.4l-1 1" stroke={colors.danger} strokeLinecap="round" strokeWidth={2} />
+        <Path d="M9.2 12a2.8 2.8 0 0 1 2.8-2.8" fill="none" stroke="#FFFFFF" strokeLinecap="round" strokeWidth={1.8} />
+      </Svg>
+    );
+  }
+  return (
+    <Svg height={size} viewBox="0 0 24 24" width={size}>
+      <Path d="M12 2 4 5v6.5c0 5 3.4 8.9 8 10.5 4.6-1.6 8-5.5 8-10.5V5l-8-3Z" fill={colors.primary} />
+      <Rect fill="#FFFFFF" height={7} rx={1} width={2} x={11} y={7} />
+      <Circle cx={12} cy={16.6} fill="#FFFFFF" r={1.2} />
+    </Svg>
+  );
+}
+
+/**
+ * How loud a notice is, as a pill with its mark (user, 2026-10-31). A normal
+ * notice has none, so its title moves up into the space.
+ */
+export function PriorityChip({ priority }: { priority: NoticePriority }) {
+  const { colors, fonts } = useTheme();
+  if (priority === "NORMAL") {
+    return null;
+  }
+  const tone =
+    priority === "EMERGENCY"
+      ? { fill: colors.dangerSoft, text: colors.danger }
+      : priority === "URGENT"
+        ? { fill: colors.warningSoft, text: colors.warningText }
+        : { fill: colors.primarySoft, text: colors.primaryDeep };
+
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        alignSelf: "flex-start",
+        backgroundColor: tone.fill,
+        borderRadius: 999,
+        flexDirection: "row",
+        gap: 5,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 3,
+      }}
+    >
+      <PriorityMark priority={priority} size={14} />
+      <Text style={{ color: tone.text, fontFamily: fonts.sansBold, fontSize: 11.5 }}>{priorityLabel(priority)}</Text>
+    </View>
+  );
+}
+
 export function priorityLabel(priority: NoticePriority) {
   return priority.charAt(0) + priority.slice(1).toLowerCase();
 }
@@ -158,14 +225,21 @@ export function priorityLabel(priority: NoticePriority) {
  */
 export function PriorityFact({ priority }: { priority: NoticePriority }) {
   const { colors } = useTheme();
-  const display =
+  const tone =
     priority === "EMERGENCY"
-      ? { icon: Flame, tone: colors.danger }
+      ? colors.danger
       : priority === "URGENT"
-        ? { icon: Flame, tone: colors.warningText }
+        ? colors.warningText
         : priority === "IMPORTANT"
-          ? { icon: ShieldAlert, tone: colors.primaryDeep }
-          : { icon: Megaphone, tone: colors.muted };
+          ? colors.primaryDeep
+          : colors.muted;
 
-  return <Fact fact={{ icon: display.icon, text: priorityLabel(priority) }} tone={display.tone} />;
+  return <Fact fact={{ icon: FACT_MARKS[priority], text: priorityLabel(priority) }} tone={tone} />;
 }
+
+const FACT_MARKS: Record<NoticePriority, IconType> = {
+  EMERGENCY: () => <PriorityMark priority="EMERGENCY" size={14} />,
+  IMPORTANT: () => <PriorityMark priority="IMPORTANT" size={14} />,
+  NORMAL: () => <PriorityMark priority="NORMAL" size={14} />,
+  URGENT: () => <PriorityMark priority="URGENT" size={14} />,
+};

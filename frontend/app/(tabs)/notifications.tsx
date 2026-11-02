@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
+import { LoadFailed } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Bell, BellOff } from "lucide-react-native";
@@ -219,12 +220,7 @@ export default function NotificationsScreen() {
       {loading ? <SkeletonCard /> : null}
 
       {recentQuery.isError ? (
-        <EmptyState
-          icon={BellOff}
-
-          title="Couldn't load alerts"
-          description="Check your backend connection, then pull down to try again."
-        />
+        <LoadFailed error={recentQuery.error} onReload={() => void recentQuery.refetch()} />
       ) : null}
 
       {!loading && !recentQuery.isError ? (

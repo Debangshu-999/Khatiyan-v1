@@ -3,6 +3,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Clock3, ReceiptText } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -36,6 +37,11 @@ export default function TenancyBillingCycleScreen() {
   // Nothing to pay on a bill that is settled, cancelled, or already sitting with
   // the owner for confirmation.
   const payable = cycle ? cycle.status === "UNPAID" || cycle.status === "OVERDUE" : false;
+
+  const loadFailed = loadFailure(cyclesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView>

@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.khatiyan.d_modules.billing.api.dto.ApplyExitPolicyRequest;
 import com.khatiyan.d_modules.billing.api.dto.ExitChargeInstrument;
+import com.khatiyan.d_modules.billing.model.ManualPaymentMethod;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
@@ -38,8 +39,14 @@ public record EndTenancyRequest(
          */
         Boolean depositPayable,
 
-        /** Damage assessed at move-out. Null if none. */
+        /** The damage records still open on the stay, off the deposit or waived. Null if none. */
         @Valid ApplyExitPolicyRequest.DamageCharge damages,
+
+        /** Anything that is not damage. Billed and recorded paid, never the deposit. */
+        @Valid List<ApplyExitPolicyRequest.CustomCharge> customCharges,
+
+        /** How the Other charges were collected. Null falls back to cash. */
+        ManualPaymentMethod collectedVia,
 
         /**
          * The move-out checklist items the actor confirmed. Advisory: recorded as
@@ -52,6 +59,16 @@ public record EndTenancyRequest(
          * payment recorded against the exit's bill. Null when nothing is billed.
          */
         @Size(max = 600) String proofImageUrl) {
+
+    /** No Other charges. */
+    public EndTenancyRequest(
+            List<ApplyExitPolicyRequest.ExitCharge> earlyExitCharges,
+            Boolean depositPayable,
+            ApplyExitPolicyRequest.DamageCharge damages,
+            List<String> checklistConfirmed,
+            String proofImageUrl) {
+        this(earlyExitCharges, depositPayable, damages, null, null, checklistConfirmed, proofImageUrl);
+    }
 
     /**
      * A retained deposit cannot simultaneously fund exit charges. Enforcing the
@@ -68,11 +85,11 @@ public record EndTenancyRequest(
                         .anyMatch(charge -> charge != null
                                 && charge.instrument() == ExitChargeInstrument.DEPOSIT);
         boolean damagesUseDeposit = damages != null
-                && damages.instrument() == ExitChargeInstrument.DEPOSIT;
+                && damages.recordIds() != null && !damages.recordIds().isEmpty();
         return !earlyExitUsesDeposit && !damagesUseDeposit;
     }
 
     public ApplyExitPolicyRequest toExitPolicy() {
-        return new ApplyExitPolicyRequest(earlyExitCharges, damages, depositPayable, proofImageUrl);
+        return new ApplyExitPolicyRequest(earlyExitCharges, damages, customCharges, collectedVia, depositPayable, proofImageUrl);
     }
 }

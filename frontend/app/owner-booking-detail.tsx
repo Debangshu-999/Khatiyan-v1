@@ -3,6 +3,8 @@ import { useLocalSearchParams } from "expo-router";
 import { Text, View } from "react-native";
 import { AlertTriangle, CalendarDays, Check, CircleAlert, CircleHelp, Clock3, FileText, Info, LockKeyhole, Mail, Phone, RotateCcw, UserRound } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BookingTokenAmountIcon } from "@/components/booking-vector-icons";
@@ -54,10 +56,7 @@ export default function OwnerBookingDetailScreen() {
   if (matches && requestId && scope.canView && !scope.error) return <BookingDetailPage key={`${params.propertyId}:${requestId}`} propertyId={params.propertyId!} requestId={requestId} owner={scope.owner} />;
   return <ScreenScrollView surface={colors.background} safeAreaEdges={["top", "bottom"]} refreshable={false}>
     <ScreenHeader title="Review" italicTail="booking." subtitle="The request, its terms and where it stands." />
-    {scope.loading ? <BookingDetailSkeleton /> : scope.error ? <>
-      <NoticeBar tone="danger" title="Could not load this booking" message={errorMessage(scope.error)} />
-      <View style={{ flexDirection: "row" }}><ActionButton label="Try again" onPress={scope.retry} /></View>
-    </> : <EmptyState icon={LockKeyhole} title="Booking unavailable" description="Select this booking's property on Home, then open the request again." />}
+    {scope.loading ? <BookingDetailSkeleton /> : scope.error ? <LoadFailed error={scope.error} onReload={scope.retry} /> : <EmptyState icon={LockKeyhole} title="Booking unavailable" description="Select this booking's property on Home, then open the request again." />}
   </ScreenScrollView>;
 }
 
@@ -99,10 +98,7 @@ function BookingDetailPage({ propertyId, requestId, owner }: { propertyId: strin
         <NoticeBar tone="danger" title="Could not open this booking" message={openError} />
         <View style={{ flexDirection: "row" }}><ActionButton label="Try again" icon={RotateCcw} onPress={() => { opening.current = null; setOpenError(null); setAttempt((value) => value + 1); }} /></View>
       </> : !booking && !query.isError ? <BookingDetailSkeleton /> : null}
-      {query.isError ? <>
-        <NoticeBar tone="danger" title="Could not refresh this booking" message={errorMessage(query.error)} />
-        <View style={{ flexDirection: "row" }}><ActionButton label="Try again" icon={RotateCcw} onPress={() => void query.refetch()} variant="secondary" /></View>
-      </> : null}
+      {query.isError && !booking ? <LoadFailed error={query.error} onReload={() => void query.refetch()} /> : null}
       {booking ? <BookingDetails booking={booking} owner={owner} /> : null}
     </ScreenScrollView>
     {booking && hasFooter ? <PinnedFooter onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}>
@@ -174,13 +170,13 @@ function BookingDetails({ booking }: { booking: BookingRequest; owner: boolean }
         With none, the chip already says "Awaiting handler": a second line saying nobody handles it repeated
         that, pressed against the card's bottom edge (user, 2026-10-11). A named handler gets room under it. */}
     <Card style={{ gap: spacing.xs, padding: spacing.md, paddingBottom: booking.handlerName ? spacing.sm : spacing.xxs }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
           <Text style={labelStyle}>Ref</Text>
-          <FitText selectable numberOfLines={1} minimumFontScale={0.65} style={[type.display, { color: colors.ink, fontSize: 21, fontWeight: "900" }]}>{booking.referenceCode}</FitText>
+          <FitText selectable numberOfLines={1} minimumFontScale={0.65} style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(21), fontWeight: "900" }]}>{booking.referenceCode}</FitText>
         </View>
-        <OwnerBookingStatus status={booking.status} />
-      </View>
+        <CardStatus><OwnerBookingStatus status={booking.status} /></CardStatus>
+      </CardNameRow>
       {booking.handlerName ? <Text style={[type.description, { color: colors.muted }]}>Handled by {booking.handlerName}</Text> : null}
     </Card>
     {booking.status === "AWAITING_TENANT" ? <NoticeBar title={booking.currentOfferNegotiable ? "The property has made an offer" : "This is the property's final price"} message={booking.currentOfferNegotiable ? "The tenant can accept, counter or withdraw." : "The tenant can accept this rent or withdraw. This offer cannot be countered."} tone="info" /> : null}

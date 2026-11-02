@@ -1,3 +1,5 @@
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { CenterModal } from "@/components/center-modal";
@@ -183,6 +185,11 @@ export default function OwnerConcernDetailScreen() {
     }
   }
 
+  const loadFailed = loadFailure(availableQuery, escalatedQuery, historyQuery, undertakenQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
@@ -310,8 +317,8 @@ function AssignConcernModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Assign concern</Text>
               <ModalTitle style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 30 }]}>Choose a manager</ModalTitle>
             </View>
-            <IconButton accessibilityLabel="Close assignment" icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
 
           {loading ? <OwnerStaffListSkeleton rows={2} /> : null}
           {!loading && managers.length === 0 ? (

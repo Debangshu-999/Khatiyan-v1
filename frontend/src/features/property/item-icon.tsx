@@ -13,7 +13,7 @@ type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
  */
 const RULES: [RegExp, IconName][] = [
   [/\bac\b|air ?con/i, "air-conditioner"],
-  [/toilet|commode|wc\b/i, "toilet"],
+  [/toilet|washroom|commode|wc\b/i, "toilet"],
   [/geyser|water heater|boiler/i, "water-boiler"],
   [/shower/i, "shower-head"],
   [/tap|faucet/i, "faucet"],

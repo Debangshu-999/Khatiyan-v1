@@ -24,7 +24,7 @@ test("their address is required on the tenant step, marked and checked there (us
 test("room and dates keep what came before Khatiyan: move-in, deposit held, dues, first bill", () => {
   assert.match(wizard, /label=\{existingTenant \? "Deposit already held" : "Deposit"\}/);
   assert.match(wizard, /label=\{existingTenant \? "First Khatiyan bill" : "Start date"\}/);
-  assert.match(wizard, /maximumDate=\{existingTenant \? addDays\(startOfToday\(\), 31\) : undefined\}/);
+  assert.match(wizard, /maximum=\{existingTenant \? isoOfDate\(addDays\(startOfToday\(\), 31\)\) : undefined\}/);
   assert.match(wizard, /<Field error=\{form\.errors\.movedInOn\} label="Moved in on" required>/);
   assert.match(wizard, /<Field error=\{form\.errors\.dues\} label="Dues at the switch">/);
   // No eyebrow on the card: the deposit and dues notes sit behind a question mark (user, 2026-10-28).

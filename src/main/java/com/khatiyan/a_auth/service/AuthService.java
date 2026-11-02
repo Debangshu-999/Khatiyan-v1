@@ -158,19 +158,41 @@ public class AuthService {
         // Firebase and PIN reset all mint tokens through this one method, and a
         // session missed by any of them would be a device the owner cannot see
         // and cannot sign out.
-        userSessionService.open(
+        String refreshToken = userSessionService.open(
                 user.getId(),
                 issued.sessionId(),
                 deviceDescriptor.label(),
                 deviceDescriptor.platform(),
-                issuedAt,
-                issued.expiresAt());
+                issuedAt);
 
         return new TokenResponse(
                 issued.token(),
                 "Bearer",
                 jwtService.accessTokenExpirySeconds(),
-                UserSummaryResponse.from(user));
+                UserSummaryResponse.from(user),
+                refreshToken);
+    }
+
+    /**
+     * A new access token for a session, against its refresh token (user, 2026-11-02).
+     * Empty when it cannot be honoured, which means signing in again. Deliberately not in
+     * one transaction: a session ended by {@code rotate} must stay ended.
+     */
+    public Optional<TokenResponse> refresh(String refreshToken) {
+        Instant now = Instant.now();
+        return userSessionService.rotate(refreshToken, now).flatMap(rotated -> {
+            Optional<User> user = userRepository.findById(rotated.userId()).filter(User::isCurrentlyActive);
+            if (user.isEmpty()) {
+                userSessionService.revokeOwn(rotated.userId(), rotated.sessionId(), now);
+                return Optional.empty();
+            }
+            return Optional.of(new TokenResponse(
+                    jwtService.issue(user.get(), rotated.sessionId()).token(),
+                    "Bearer",
+                    jwtService.accessTokenExpirySeconds(),
+                    UserSummaryResponse.from(user.get()),
+                    rotated.refreshToken()));
+        });
     }
 
     private User findActiveByPhone(String phone) {

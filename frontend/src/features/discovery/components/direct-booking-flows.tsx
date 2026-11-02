@@ -69,14 +69,14 @@ export function BookAStayFlow({ onDone, propertyId }: { onDone: () => void; prop
   if (step === "CONSENT") {
     // Already granted: book() is on its way, so only the wait shows.
     if (openState.isLoading || consentsQuery.data?.anyGranted) {
-      return <SheetShell onClose={onDone} title="Book a stay"><ActivityIndicator color={colors.primary} style={{ padding: spacing.lg }} /></SheetShell>;
+      return <SheetShell contentMaxSize="tall" onClose={onDone} size="content" title="Book a stay"><ActivityIndicator color={colors.primary} style={{ padding: spacing.lg }} /></SheetShell>;
     }
     if (!consentsQuery.data) {
       return null;
     }
     return <EnquiryConsentModal consents={consentsQuery.data} onClose={onDone} onGranted={() => void book()} />;
   }
-  return <SheetShell onClose={onDone} title="">
+  return <SheetShell contentMaxSize="tall" onClose={onDone} size="content" title="">
     <View style={{ gap: spacing.md }}>
       <View style={{ alignItems: "center", gap: spacing.xs, paddingTop: spacing.xs }}>
         <Image accessibilityIgnoresInvertColors resizeMode="contain" source={VISIT_ARTWORK} style={{ height: 72, width: 72 }} />

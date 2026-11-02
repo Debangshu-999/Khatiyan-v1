@@ -118,6 +118,7 @@ public class LeadVisitController {
 
     /** The visit form, from whoever checked them in or the owner. Saved again, it is replaced. */
     @PutMapping("/visits/{visitId}/form")
+    @RequiresVersion
     public VisitCardResponse completeForm(
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID visitId,

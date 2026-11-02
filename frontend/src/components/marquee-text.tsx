@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -19,6 +20,8 @@ const OVERFLOW_SLOP = 4; // ignore sub-pixel/tiny overflow — not worth animati
 
 export type MarqueeTextProps = {
   children: string;
+  /** Styled pieces to draw in place of the plain string, which still does the measuring and the label. */
+  spans?: ReactNode;
   style?: StyleProp<TextStyle>;
   // Set false to keep a static single-line ellipsis instead of scrolling.
   animate?: boolean;
@@ -32,7 +35,7 @@ export type MarqueeTextProps = {
  * overflow its box (tiles, chips, tight rows). Reduce-motion falls back to a
  * static ellipsis. The width comes from the parent, so give it a bounded box.
  */
-export function MarqueeText({ accessibilityLabel, animate = true, children, style }: MarqueeTextProps) {
+export function MarqueeText({ accessibilityLabel, animate = true, children, spans, style }: MarqueeTextProps) {
   const [boxWidth, setBoxWidth] = useState(0);
   const [textWidth, setTextWidth] = useState<number | null>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -97,7 +100,7 @@ export function MarqueeText({ accessibilityLabel, animate = true, children, styl
         numberOfLines={1}
         style={[style, marqueeActive ? { opacity: 0 } : null]}
       >
-        {children}
+        {spans ?? children}
       </Text>
       {marqueeActive ? (
         <View
@@ -108,7 +111,7 @@ export function MarqueeText({ accessibilityLabel, animate = true, children, styl
               single-line text to the clip box and hide part of the label. */}
           <Animated.View style={{ transform: [{ translateX }], width: textWidth ?? undefined }}>
             <Text numberOfLines={1} style={[style, { textAlign: "left" }]}>
-              {children}
+              {spans ?? children}
             </Text>
           </Animated.View>
         </View>
@@ -122,7 +125,7 @@ export function MarqueeText({ accessibilityLabel, animate = true, children, styl
             onLayout={(event) => setTextWidth(event.nativeEvent.layout.width)}
             style={[style, { alignSelf: "flex-start", textAlign: "left" }]}
           >
-            {children}
+            {spans ?? children}
           </Text>
         </View>
       ) : null}

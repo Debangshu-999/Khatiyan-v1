@@ -62,7 +62,7 @@ test("a booking keeps every booking's rules: 3 to 21 days, an adult, a bed", () 
 
 // "For booking, bed selection should show a bottom up modal with floors expandable to show rooms".
 test("the bed is chosen in a sheet of floors that open to their rooms, and its rent fills in", () => {
-  assert.match(bedSheet, /<SheetShell onClose=\{onClose\} title="Choose a bed">/);
+  assert.match(bedSheet, /<SheetShell size="tall" onClose=\{onClose\} title="Choose a bed">/);
   assert.match(bedSheet, /\.sort\(\(\[left\], \[right\]\) => compareFloors\(left, right\)\)/);
   assert.match(bedSheet, /accessibilityState=\{\{ expanded: open \}\}/);
   assert.match(bedSheet, /\{open\s+\? inFloor\.map/);

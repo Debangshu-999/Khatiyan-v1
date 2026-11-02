@@ -8,7 +8,7 @@ const screen = fs.readFileSync(path.join(__dirname, "..", "app/owner-end-tenancy
 
 test("End tenancy asks before ending, and only the dialog ends the stay", () => {
   assert.match(screen, /label=\{endState\.isLoading \? "Ending\.\.\." : "End tenancy"\}\s+onPress=\{\(\) => setConfirmEndOpen\(true\)\}/);
-  assert.match(screen, /title="End this tenancy\?"/);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "src/features/tenancy/end-tenancy-confirm.tsx"), "utf8"),/>End this tenancy\?</);
   assert.match(screen, /onConfirm=\{\(\) => \{\s+setConfirmEndOpen\(false\);\s+void end\(\);/);
   assert.equal(screen.match(/void end\(\)/g).length, 1);
 });

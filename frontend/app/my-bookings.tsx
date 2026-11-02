@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { CalendarDays, Clock3, IndianRupee, MessageCircle } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { BookingPropertyIcon } from "@/components/booking-vector-icons";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -15,8 +17,7 @@ import { bookingDateLabel, bookingExpiresInLabel } from "@/features/booking/book
 import { filterTenantBookings, TENANT_BOOKING_TABS, tenantBookingCount, type TenantBookingTab } from "@/features/booking/tenant-booking-list";
 import { BookingInfoBand, TenantBookingStatus } from "@/features/booking/tenant-booking-parts";
 import { useOpenBookingChat } from "@/features/booking/use-open-booking-chat";
-import { errorMessage } from "@/features/forms/server-error";
-import { ActionButton, NoticeBar, formatMoneyPaise } from "@/features/owner/owner-ui";
+import { ActionButton, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { BookingsIcon } from "@/features/property/property-control-icons";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useGetMyBookingsQuery, type BookingRequestListItem } from "@/store/services/booking-api";
@@ -41,7 +42,7 @@ export default function MyBookingsScreen() {
     <SelectionTabs<TenantBookingTab> active={tab} bleed={spacing.lg} distributed options={TENANT_BOOKING_TABS} onChange={setTab} />
     <SearchField value={search} onChangeText={setSearch} placeholder="Search property or booking ID" />
     {!data && !query.isError ? <MyBookingsSkeleton /> : null}
-    {query.isError ? <><NoticeBar title="Could not load bookings" message={errorMessage(query.error)} tone="danger" /><View style={{ flexDirection: "row" }}><ActionButton label="Try again" onPress={() => void query.refetch()} /></View></> : null}
+    {query.isError ? <LoadFailed error={query.error} onReload={() => void query.refetch()} /> : null}
     {data ? <View style={{ alignSelf: "flex-start", backgroundColor: colors.primarySoft, borderRadius: 12, paddingHorizontal: spacing.md, paddingVertical: 8 }}>
       <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>{tenantBookingCount(items.length, tab)}</Text>
     </View> : null}
@@ -59,21 +60,21 @@ function TenantBookingListCard({ item, onChat, onOpen }: { item: BookingRequestL
     <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, marginBottom: 4 }}>
       <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 999, height: 44, justifyContent: "center", width: 44 }}><BookingPropertyIcon color={colors.primary} size={30} /></View>
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-        <View style={{ alignItems: "flex-start", columnGap: spacing.sm, flexDirection: "row", flexWrap: "wrap", rowGap: 6 }}>
+        <CardNameRow rowStyle={{ alignItems: "flex-start", columnGap: spacing.sm, flexDirection: "row", flexWrap: "wrap", rowGap: 6 }}>
           <View style={{ flexBasis: 150, flexGrow: 1, minWidth: 0, gap: 4 }}>
-            <Text style={[type.display, { color: colors.ink, fontSize: 18 }]}>{item.propertyName}</Text>
-            <FitText selectable numberOfLines={1} minimumFontScale={0.8} style={[type.description, { color: colors.muted }]}>{item.referenceCode}</FitText>
+            <Text style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(18) }]}>{item.propertyName}</Text>
+            <FitText selectable numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.description), { color: colors.muted }]}>{item.referenceCode}</FitText>
           </View>
-          <TenantBookingStatus status={item.status} />
-        </View>
+          <CardStatus><TenantBookingStatus status={item.status} /></CardStatus>
+        </CardNameRow>
       </View>
     </View>
-    <BookingInfoBand icon={CalendarDays}><Text style={[type.body, { color: colors.ink }]}>Move-in: {bookingDateLabel(item.moveInDate)}</Text></BookingInfoBand>
+    <BookingInfoBand icon={CalendarDays}><Text style={[smallerCardText(type.body), { color: colors.ink }]}>Move-in: {bookingDateLabel(item.moveInDate)}</Text></BookingInfoBand>
     <BookingInfoBand icon={IndianRupee}>
-      <Text style={[type.description, { color: colors.muted }]}>{rentLabel}</Text>
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 17 }}>{formatMoneyPaise(item.currentRentPaise)} / month</Text>
+      <Text style={[smallerCardText(type.description), { color: colors.muted }]}>{rentLabel}</Text>
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(17) }}>{formatMoneyPaise(item.currentRentPaise)} / month</Text>
     </BookingInfoBand>
-    {item.status === "AWAITING_HANDLER" || item.status === "AWAITING_TENANT" ? <BookingInfoBand icon={Clock3}><Text style={[type.description, { color: colors.muted }]}>{bookingExpiresInLabel(item.expiresAt)}</Text></BookingInfoBand> : null}
+    {item.status === "AWAITING_HANDLER" || item.status === "AWAITING_TENANT" ? <BookingInfoBand icon={Clock3}><Text style={[smallerCardText(type.description), { color: colors.muted }]}>{bookingExpiresInLabel(item.expiresAt)}</Text></BookingInfoBand> : null}
     {/* Chat with the property beside it, at every stage of the booking (user, 2026-10-27). */}
     <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: 4 }}>
       {item.canChat ? <ActionButton icon={MessageCircle} label="Chat" onPress={onChat} variant="secondary" /> : null}

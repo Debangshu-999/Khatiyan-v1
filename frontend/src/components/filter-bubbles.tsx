@@ -32,8 +32,7 @@ export type FilterBubbleOption<T extends string> = {
  *
  * <p>
  * The notice board's row, lifted out so the screens that copied it cannot drift
- * from it. Soft-blue fill and a short underline bar on the chosen one, the
- * count inside the label.
+ * from it. Each tab is a {@link FilterBubble}.
  *
  * <p>
  * <b>The count is in the pill, not in a heading above it.</b> Those screens all
@@ -48,17 +47,10 @@ export type FilterBubbleOption<T extends string> = {
  * every label on a real phone.
  */
 export function CountTabPills<T extends string>({
-  compact = false,
   onChange,
   options,
   value,
 }: {
-  /**
-   * A shorter pill, for a strip that shares a row with a heading rather than
-   * owning one. Same shape and the same selected treatment — only the height,
-   * the type size and the underline shrink.
-   */
-  compact?: boolean;
   onChange: (value: T) => void;
   /**
    * `count` is optional: some lists are paginated per filter on the server and
@@ -102,12 +94,11 @@ export function CountTabPills<T extends string>({
       style={{ flexGrow: 0, flexShrink: 0 }}
     >
       {options.map((option) => (
-        <CountTabPill
+        <FilterBubble
           active={option.value === value}
           badge={option.badge}
           badgeColor={option.badgeColor}
           chevron={option.chevron}
-          compact={compact}
           count={option.count}
           key={option.value}
           label={option.label}
@@ -118,12 +109,16 @@ export function CountTabPills<T extends string>({
   );
 }
 
-function CountTabPill({
+/**
+ * One filter bubble, the notification screen's, at the same size (user,
+ * 2026-10-31): pale blue with a blue border, solid blue when chosen, the count in
+ * an inner white bubble.
+ */
+export function FilterBubble({
   active,
   badge = 0,
   badgeColor,
   chevron = false,
-  compact = false,
   count,
   label,
   onPress,
@@ -132,13 +127,13 @@ function CountTabPill({
   badge?: number;
   badgeColor?: string;
   chevron?: boolean;
-  compact?: boolean;
-  count?: number;
+  /** What the inner white bubble holds: usually a count, a date on the cooking forecast. */
+  count?: number | string;
   label: string;
   onPress: () => void;
 }) {
-  const { colors, fonts, type } = useTheme();
-  const inkColor = active ? colors.primaryDeep : colors.muted;
+  const { colors, fonts } = useTheme();
+  const ink = active ? colors.onPrimary : colors.primary;
 
   return (
     <AnimatedPressable
@@ -148,64 +143,59 @@ function CountTabPill({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: active ? colors.primarySoft : colors.surfaceSunken,
-        borderCurve: "continuous",
+        backgroundColor: active ? colors.primary : colors.primarySoft,
+        borderColor: colors.primary,
         borderRadius: 999,
-        // Sized to its own label, not to a quarter of the row. flexShrink:0 as
-        // well, or the strip squeezes the pills back to the width that clipped
-        // them in the first place.
+        borderWidth: 1,
+        flexDirection: "row",
+        // Sized to its own label: the strip must not squeeze it until it clips.
         flexShrink: 0,
-        justifyContent: "center",
-        minHeight: compact ? 30 : 42,
-        paddingHorizontal: compact ? spacing.sm : spacing.md,
+        gap: 6,
+        // The chosen one is the bigger one (user, 2026-11-01): at the same size,
+        // solid blue read as slightly smaller than the outlined pills beside it.
+        paddingLeft: active ? spacing.sm + 3 : spacing.sm,
+        paddingRight: count != null ? 4 : active ? spacing.sm + 3 : spacing.sm,
+        paddingVertical: active ? 6 : 4,
       }}
       // No tap lock: switching filters in quick succession must not drop taps.
       tapLockMs={0}
     >
-      {/* A row, so the arrow sits beside the label rather than under it — the
-          pill is a column, with the underline bar as its second child. */}
-      <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
-        <Text
-          style={[
-            type.caption,
-            {
-              color: inkColor,
-              fontFamily: fonts.sansSemiBold,
-              fontSize: compact ? 11.5 : 12.5,
-            },
-          ]}
+      <Text style={{ color: ink, fontFamily: fonts.sansBold, fontSize: active ? 13 : 12 }}>{label}</Text>
+      {chevron ? <ChevronDown color={ink} size={13} strokeWidth={2.4} /> : null}
+      {badge > 0 ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: badgeColor ?? colors.danger,
+            borderRadius: 999,
+            height: 16,
+            justifyContent: "center",
+            minWidth: 16,
+            paddingHorizontal: 4,
+          }}
         >
-          {count == null ? label : `${label} (${count})`}
-        </Text>
-        {chevron ? <ChevronDown color={inkColor} size={compact ? 12 : 14} strokeWidth={2.4} /> : null}
-        {badge > 0 ? (
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: badgeColor ?? colors.danger,
-              borderRadius: 999,
-              height: 16,
-              justifyContent: "center",
-              marginLeft: 2,
-              minWidth: 16,
-              paddingHorizontal: 4,
-            }}
-          >
-            <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 10, lineHeight: 13 }}>
-              {badge > 99 ? "99+" : badge}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-      <View
-        style={{
-          backgroundColor: active ? colors.primary : "transparent",
-          borderRadius: 999,
-          height: compact ? 2 : 2.5,
-          marginTop: compact ? 2 : 3,
-          width: compact ? 14 : 18,
-        }}
-      />
+          <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 10, lineHeight: 13 }}>
+            {badge > 99 ? "99+" : badge}
+          </Text>
+        </View>
+      ) : null}
+      {count != null ? (
+        <View
+          style={{
+            alignItems: "center",
+            backgroundColor: colors.surface,
+            borderRadius: 999,
+            height: 20,
+            justifyContent: "center",
+            minWidth: 20,
+            paddingHorizontal: 5,
+          }}
+        >
+          <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 11, fontVariant: ["tabular-nums"] }}>
+            {count}
+          </Text>
+        </View>
+      ) : null}
     </AnimatedPressable>
   );
 }
@@ -266,62 +256,12 @@ export function FilterPill({
   onPress,
 }: {
   active: boolean;
-  /** Omitted, or zero, renders no badge — the pill still shows. */
+  /** Omitted, or zero, renders no inner bubble. The pill still shows. */
   count?: number;
   label: string;
   onPress: () => void;
 }) {
-  const { colors, fonts } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityLabel={count == null ? label : `${label}, ${count}`}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: active ? colors.primary : colors.surfaceSunken,
-        borderColor: active ? colors.primary : colors.border,
-        borderRadius: 999,
-        borderWidth: 1,
-        flexDirection: "row",
-        gap: 6,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm - 2,
-      }}
-      // No tap lock: switching filters in quick succession must not drop taps.
-      tapLockMs={0}
-    >
-      <Text style={{ color: active ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
-        {label}
-      </Text>
-      {count != null && count > 0 ? (
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: active ? colors.onPrimary : colors.primary,
-            borderRadius: 999,
-            height: 18,
-            justifyContent: "center",
-            minWidth: 18,
-            paddingHorizontal: 5,
-          }}
-        >
-          <Text
-            style={{
-              color: active ? colors.primary : colors.onPrimary,
-              fontFamily: fonts.sansBold,
-              fontSize: 11,
-              fontVariant: ["tabular-nums"],
-            }}
-          >
-            {count}
-          </Text>
-        </View>
-      ) : null}
-    </AnimatedPressable>
-  );
+  return <FilterBubble active={active} count={count ? count : undefined} label={label} onPress={onPress} />;
 }
 
 /**

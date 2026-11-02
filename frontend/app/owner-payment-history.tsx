@@ -3,6 +3,8 @@ import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { CheckCircle2, Clock3, ReceiptText, WalletCards, type LucideProps } from "lucide-react-native";
 
+import { FilterBubble } from "@/components/filter-bubbles";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
@@ -68,6 +70,11 @@ export default function OwnerPaymentHistoryScreen() {
   function pickFilter(next: BillFilter) {
     setFilter(next);
     setPage(0);
+  }
+
+  const loadFailed = loadFailure(cyclesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (
@@ -208,58 +215,6 @@ function HistoryMetric({
   );
 }
 
-function FilterPill({
-  active,
-  count,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  count: number;
-  label: string;
-  onPress: () => void;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: active ? colors.primarySoft : colors.surfaceSunken,
-        borderCurve: "continuous",
-        borderRadius: 999,
-        flex: 1,
-        justifyContent: "center",
-        minHeight: 42,
-        minWidth: 0,
-        paddingHorizontal: spacing.xs,
-      }}
-    >
-      <FitText
-        numberOfLines={1}
-        style={[
-          type.caption,
-          {
-            color: active ? colors.primaryDeep : colors.muted,
-            fontFamily: fonts.sansSemiBold,
-            fontSize: 12,
-          },
-        ]}
-      >
-        {label} ({count})
-      </FitText>
-      <View
-        style={{
-          backgroundColor: active ? colors.primary : "transparent",
-          borderRadius: 999,
-          height: 2.5,
-          marginTop: 3,
-          width: 18,
-        }}
-      />
-    </AnimatedPressable>
-  );
+function FilterPill({ active, count, label, onPress }: { active: boolean; count: number; label: string; onPress: () => void }) {
+  return <FilterBubble active={active} count={count} label={label} onPress={onPress} />;
 }

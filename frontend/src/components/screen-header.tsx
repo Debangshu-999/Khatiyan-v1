@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useRef, type ReactNode } from "react";
 import { Animated, StyleSheet, Text, View, type TextStyle, type ViewStyle } from "react-native";
+import { COMPACT_SCREEN_HEADERS, CompactScreenHeader } from "@/components/compact-screen-header";
 import { HeaderNote } from "@/components/header-note";
 import { SCREEN_HEADER_COLLAPSE_DISTANCE } from "@/components/header-scroll-layout";
 import { spacing } from "@/theme/spacing";
@@ -26,10 +27,31 @@ type ScreenHeaderProps = {
   // badge is a fact about it. Sharing the row with `trailing` is fine: they
   // render side by side.
   badge?: ReactNode;
+  /** The compact header's back press, for a screen where back closes something inside it first. */
+  onBack?: () => boolean | void;
+  /** Opt-in contrast for a screen with its own dark background. */
+  onDark?: boolean;
   style?: ViewStyle;
 };
 
-export function ScreenHeader({ badge, eyebrow, italicTail, style, subtitle, title, titleAdjustsFontSizeToFit, titleMinimumFontScale, titleNumberOfLines, titleStyle, trailing }: ScreenHeaderProps) {
+export function ScreenHeader(props: ScreenHeaderProps) {
+  // The flag never changes while the app runs, so the hooks below keep their order.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return COMPACT_SCREEN_HEADERS ? <CompactFromProps {...props} /> : useClassicScreenHeader(props);
+}
+
+function CompactFromProps({ badge, italicTail, onBack, onDark, title, trailing }: ScreenHeaderProps) {
+  const { sticky, surface } = useContext(ScreenHeaderScrollContext);
+  return (
+    <CompactScreenHeader
+      content={{ badge, italicTail, onBack, onDark, title, trailing }}
+      inlineMargin={sticky ? -spacing.lg : 0}
+      surface={surface}
+    />
+  );
+}
+
+function useClassicScreenHeader({ badge, eyebrow, italicTail, onDark, style, subtitle, title, titleAdjustsFontSizeToFit, titleMinimumFontScale, titleNumberOfLines, titleStyle, trailing }: ScreenHeaderProps) {
   const { colors, type } = useTheme();
   const { scrollY, sticky, surface } = useContext(ScreenHeaderScrollContext);
   const restingScrollY = useRef(new Animated.Value(0)).current;
@@ -99,7 +121,7 @@ export function ScreenHeader({ badge, eyebrow, italicTail, style, subtitle, titl
             numberOfLines={titleNumberOfLines}
             style={[
               type.brand,
-              { color: colors.ink },
+              { color: onDark ? "#FFFFFF" : colors.ink },
               titleStyle,
               { fontSize: animatedTitleSize, lineHeight: animatedTitleLineHeight },
             ]}
@@ -109,7 +131,7 @@ export function ScreenHeader({ badge, eyebrow, italicTail, style, subtitle, titl
               <Animated.Text
                 style={[
                   type.brandItalic,
-                  { color: colors.accent },
+                  { color: onDark ? "#FFE4AA" : colors.accent },
                   titleStyle,
                   { fontSize: animatedTitleSize, lineHeight: animatedTitleLineHeight },
                 ]}

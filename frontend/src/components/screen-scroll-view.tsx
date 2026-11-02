@@ -16,7 +16,13 @@ import { useSafeAreaInsets, type Edge } from "react-native-safe-area-context";
 import { useSegments } from "expo-router";
 
 import { AppBackground } from "@/components/app-background";
-import { focusedInput } from "@/components/keyboard-intent";
+import {
+  COMPACT_SCREEN_HEADERS,
+  CompactHeaderBar,
+  CompactHeaderSlotContext,
+  type CompactHeaderContent,
+} from "@/components/compact-screen-header";
+import { focusedInput, keyboardHeldByModal } from "@/components/keyboard-intent";
 import { contentFitsWithoutScroll, getHeaderScrollMinHeight } from "@/components/header-scroll-layout";
 import { ScreenHeader, ScreenHeaderScrollContext } from "@/components/screen-header";
 import { API_TAGS, api } from "@/store/api";
@@ -95,6 +101,7 @@ export function ScreenScrollView({
   const dispatch = useAppDispatch();
   const [refreshing, setRefreshing] = useState(false);
   const headerScrollY = useRef(new Animated.Value(0)).current;
+  const [compactHeader, setCompactHeader] = useState<CompactHeaderContent | null>(null);
   const [viewportHeight, setViewportHeight] = useState(0);
   const insets = useSafeAreaInsets();
 
@@ -126,6 +133,7 @@ export function ScreenScrollView({
     }
 
     const onShow = Keyboard.addListener("keyboardDidShow", (event) => {
+      if (keyboardHeldByModal()) return;
       // Padding alone only makes ROOM below the content — it does not move the
       // view, so a field the keyboard covers stays covered. iOS handles this via
       // automaticallyAdjustKeyboardInsets; Android has no equivalent, so scroll
@@ -178,7 +186,8 @@ export function ScreenScrollView({
   };
   // Every screen gets the shared ambient gradient unless it supplies its own
   // (e.g. the auth hero). Foreground content scrolls over a transparent layer.
-  const resolvedBackground = background ?? (surface ? null : <AppBackground />);
+  // Under the compact header the page is plain white like the bar, without the wash.
+  const resolvedBackground = background ?? (surface || compactHeader ? null : <AppBackground />);
   // Tab screens sit under the floating (absolute) tab bar, so their content
   // needs extra bottom clearance to scroll out from beneath it. Stack screens
   // pushed over the tabs don't show the bar, so they keep the normal padding.
@@ -191,7 +200,8 @@ export function ScreenScrollView({
   const callerPaddingBottom =
     typeof flattenedContentStyle?.paddingBottom === "number" ? flattenedContentStyle.paddingBottom : bottomPadding;
   const renderedChildren = flattenScreenChildren(children);
-  const detectedHeaderIndex = renderedChildren.findIndex(isScreenHeaderElement);
+  // The compact header draws above the scroll area, so nothing in it is pinned.
+  const detectedHeaderIndex = COMPACT_SCREEN_HEADERS ? -1 : renderedChildren.findIndex(isScreenHeaderElement);
   const resolvedStickyHeaderIndices = stickyHeaderIndices ?? (detectedHeaderIndex >= 0 ? [detectedHeaderIndex] : undefined);
   const stickyScreenHeader = detectedHeaderIndex >= 0 && Boolean(resolvedStickyHeaderIndices?.includes(detectedHeaderIndex));
   const callerMinHeight = flattenedContentStyle?.minHeight;
@@ -252,7 +262,7 @@ export function ScreenScrollView({
   }
 
   return (
-    <View style={{ backgroundColor: surface ?? colors.background, flex: 1, ...safeAreaPadding }}>
+    <View style={{ backgroundColor: surface ?? (compactHeader ? colors.surface : colors.background), flex: 1, ...safeAreaPadding }}>
       {/* Clip at the safe-content boundary, not the full window: a native
           sticky header or overscroll must never paint into the status bar. */}
       <View style={{ flex: 1, overflow: "hidden" }}>
@@ -268,6 +278,8 @@ export function ScreenScrollView({
       >
         {resolvedBackground}
       </View>
+      <CompactHeaderSlotContext.Provider value={COMPACT_SCREEN_HEADERS ? setCompactHeader : null}>
+      {compactHeader ? <CompactHeaderBar content={compactHeader} surface={surface ?? colors.surface} /> : null}
       <ScreenHeaderScrollContext.Provider
         value={{ scrollY: headerScrollY, sticky: stickyScreenHeader, surface: surface ?? colors.background }}
       >
@@ -322,7 +334,7 @@ export function ScreenScrollView({
               paddingBottom: bottomPadding,
               paddingHorizontal: spacing.lg,
             // Titles lead the screen directly below the safe area.
-              paddingTop: spacing.sm,
+              paddingTop: compactHeader ? spacing.lg : spacing.sm,
             },
             contentContainerStyle,
           // LAST, so it cannot be overridden. The inset used to live in the
@@ -358,6 +370,7 @@ export function ScreenScrollView({
           ) : null}
         </ScrollView>
       </ScreenHeaderScrollContext.Provider>
+      </CompactHeaderSlotContext.Provider>
       </View>
     </View>
   );

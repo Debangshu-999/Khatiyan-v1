@@ -1,3 +1,4 @@
+import { CenterDialogContext } from "@/components/modal-kind";
 import { Children, cloneElement, isValidElement, useRef, type ReactElement, type ReactNode } from "react";
 import { Animated, Easing, Modal, StyleSheet, View, type ModalProps, type StyleProp, type ViewStyle } from "react-native";
 import { useTheme } from "@/theme/use-theme";
@@ -38,7 +39,7 @@ export function CenterModal({ children, onShow, onRequestClose, ...props }: Moda
       <Animated.View style={{ flex: 1, opacity: progress, transform: [
         { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) },
         { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) },
-      ] }}>{withoutBackdrop(children)}</Animated.View>
+      ] }}><CenterDialogContext.Provider value>{withoutBackdrop(children)}</CenterDialogContext.Provider></Animated.View>
     </Modal>
   );
 }

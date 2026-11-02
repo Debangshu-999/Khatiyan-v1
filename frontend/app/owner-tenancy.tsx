@@ -1,3 +1,6 @@
+import { StayStatusMark } from "@/features/owner/status-filter-marks";
+import { HelpModalClose } from "@/components/help-modal-header";
+import { LoadFailed } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
@@ -186,10 +189,12 @@ export default function OwnerTenancyWorkspaceScreen() {
     router.push({
       pathname: "/owner-active-tenancy-detail",
       params: {
+        agreementValidityMonths: tenancy.agreementValidityMonths?.toString() ?? "",
         billingStarted: tenancy.billingStarted ? "true" : "false",
         billingType: tenancy.billingType,
         dailyRatePaise: tenancy.dailyRatePaise?.toString() ?? "",
         depositAmountPaise: tenancy.depositAmountPaise?.toString() ?? "",
+        fixedTerm: tenancy.fixedTerm ? "true" : "false",
         plannedEndDate: tenancy.plannedEndDate ?? "",
         referenceCode: tenancy.referenceCode,
         rentAmountPaise: tenancy.rentAmountPaise?.toString() ?? "",
@@ -339,8 +344,11 @@ export default function OwnerTenancyWorkspaceScreen() {
               borderRadius={radii.card}
               icon={TenancyAgreementIcon}
               iconSize={36}
+              raised
+              showArrow={false}
+              smallDescription
               title="Tenancy agreement"
-              description="Choose whether monthly tenancies need an accepted agreement, and author its default terms."
+              description="Set the term and clauses for monthly agreements."
               onPress={() => guard("TENANCY_RULES", "Tenancy agreement", () => router.push("/owner-tenancy-agreement"))}
             />
             {/* Exit policies moved to the Property module as the Item catalogue & damage (user, 2026-10-29). */}
@@ -391,12 +399,7 @@ export default function OwnerTenancyWorkspaceScreen() {
               {isLoading && !visiblePage ? <OwnerTenancyListSkeleton /> : null}
 
               {isError ? (
-                <EmptyState
-                  icon={UsersRound}
-
-                  title="Could not load tenancies"
-                  description="Refresh the screen and try again."
-                />
+                <LoadFailed error={activeTenanciesQuery.error} onReload={() => void activeTenanciesQuery.refetch()} />
               ) : null}
 
               {!isLoading && !isError && visiblePage?.items.length === 0 ? (
@@ -488,7 +491,7 @@ export default function OwnerTenancyWorkspaceScreen() {
     </ScreenScrollView>
 
     {historyOpen ? (
-      <SheetShell onClose={() => setHistoryOpen(false)} title="Tenancy history" onEndReached={() => {
+      <SheetShell size="tall" onClose={() => setHistoryOpen(false)} title="Tenancy history" onEndReached={() => {
         if (pastTenanciesQuery.currentData?.hasNext && !pastTenanciesQuery.isFetching && !pastTenanciesQuery.isError) setPastPage(pastTenanciesQuery.currentData.page + 1);
       }}>
         {pastTenanciesQuery.isFetching && !pastTenancies ? <OwnerTenancyListSkeleton rows={3} /> : null}
@@ -509,13 +512,13 @@ export default function OwnerTenancyWorkspaceScreen() {
           />
         ))}
 
-        {pastTenanciesQuery.isError ? <EmptyState icon={UsersRound} title="Could not load tenancy history" description="Try again to load the remaining tenancies." action={<AnimatedPressable onPress={() => void pastTenanciesQuery.refetch()}><Text style={{ color: colors.primary }}>Try again</Text></AnimatedPressable>} /> : null}
+        {pastTenanciesQuery.isError ? <LoadFailed error={pastTenanciesQuery.error} onReload={() => void pastTenanciesQuery.refetch()} /> : null}
         {pastTenancies && pastTenancies.items.length > 0 && !pastTenanciesQuery.isError ? (pastTenanciesQuery.isFetching || pastTenancies.hasNext ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />) : null}
       </SheetShell>
     ) : null}
 
     {upcomingOpen ? (
-      <SheetShell onClose={() => setUpcomingOpen(false)} title="Upcoming exits">
+      <SheetShell size="tall" onClose={() => setUpcomingOpen(false)} title="Upcoming exits">
         {upcomingExits.length === 0 ? (
           <EmptyState
             description="No stay is due to end in the next seven days."
@@ -731,9 +734,11 @@ function TenancyToolBox({ badge, icon: Icon, label, onPress }: { badge?: number;
         </View>
       ) : null}
       <Icon color="#3F6ED8" size={36} strokeWidth={1.9} />
+      {/* One line, across the box's width. Asked for two, Android's fitting broke
+          "Tenancy history" and hid the second word (user, 2026-11-01). */}
       <FitText
-        numberOfLines={2}
-        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
+        numberOfLines={1}
+        style={{ alignSelf: "stretch", color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 15, textAlign: "center" }}
       >
         {label}
       </FitText>
@@ -846,6 +851,7 @@ function StayStatusFilterDialog({
             width: "100%",
           }}
         >
+          <HelpModalClose corner onClose={onClose} />
           <View
             style={{
               alignItems: "center",
@@ -857,29 +863,24 @@ function StayStatusFilterDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Tenancy status
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
-            {STAY_STATUS_FILTER_OPTIONS.map((option) => {
-              const Icon = option.value === "ALL" ? null : option.value === "ACTIVE" ? CheckCircle2 : option.value === "PENDING_EXIT" ? AlertTriangle : Clock3;
-              return (
-                <View key={option.value} style={{ width: option.value === "ALL" ? "100%" : "50%" }}>
-                  <PickerOptionRow
-                    icon={Icon ? <Icon color={colors.inkSoft} size={18} strokeWidth={2.3} /> : undefined}
-                    label={option.label}
-                    onPress={() => {
-                      onSelect(option.value);
-                      onClose();
-                    }}
-                    selected={option.value === value}
-                  />
-                </View>
-              );
-            })}
+          <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}>
+            {STAY_STATUS_FILTER_OPTIONS.map((option) => (
+              <PickerOptionRow
+                icon={<StayStatusMark value={option.value} />}
+                key={option.value}
+                label={option.label}
+                onPress={() => {
+                  onSelect(option.value);
+                  onClose();
+                }}
+                selected={option.value === value}
+              />
+            ))}
           </View>
         </View>
       </View>

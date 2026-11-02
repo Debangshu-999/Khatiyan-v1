@@ -231,12 +231,19 @@ class TenantsAnalyticsAssemblerTest {
     }
 
     @Test
-    void theProfileNeedsFiveTenantsAndNeverAsksAuthBelowThat() {
-        when(tenancy.currentMonthlyStays(property)).thenReturn(List.of(live(LONG_AGO), live(LONG_AGO), live(LONG_AGO), live(LONG_AGO)));
-        MetricResult result = only(assembler.assemble(context(PeriodPreset.THIS_MONTH, LONG_AGO, MetricKey.TENANTS_PROFILE)));
-        assertThat(result.status()).isEqualTo(MetricStatus.TOO_FEW);
-        assertThat(result.parts()).isEmpty();
+    void theProfileShowsFromOneTenantAndNeverAsksAuthWithNone() {
+        when(tenancy.currentMonthlyStays(property)).thenReturn(List.of());
+        MetricResult none = only(assembler.assemble(context(PeriodPreset.THIS_MONTH, LONG_AGO, MetricKey.TENANTS_PROFILE)));
+        assertThat(none.status()).isEqualTo(MetricStatus.NO_DATA);
         verify(auth, never()).profileCounts(anyCollection(), any());
+
+        when(tenancy.currentMonthlyStays(property)).thenReturn(List.of(live(LONG_AGO)));
+        when(auth.profileCounts(anyCollection(), eq(TODAY))).thenReturn(new AuthAnalytics.ProfileCounts(
+                java.util.Map.of("MALE", 1), java.util.Map.of("25_34", 1)));
+        MetricResult one = only(assembler.assemble(context(PeriodPreset.THIS_MONTH, LONG_AGO, MetricKey.TENANTS_PROFILE)));
+        assertThat(one.status()).isEqualTo(MetricStatus.OK);
+        assertThat(one.sampleSize()).isEqualTo(1);
+        assertThat(one.parts()).extracting(part -> part.key() + "=" + part.value()).contains("GENDER_MALE=1", "AGE_25_34=1");
     }
 
     @Test
@@ -298,6 +305,35 @@ class TenantsAnalyticsAssemblerTest {
         assertThat(result.series()).hasSize(3);
         assertThat(result.series().get(1).values()).containsEntry("move_ins", 0L);
         assertThat(result.series().get(2).values()).containsEntry("move_ins", 1L).containsEntry("move_outs", 1L);
+    }
+
+    @Test
+    void transitionedVsNewSplitsThePeriodsJoiners() {
+        when(tenancy.hasTransitionedStay(property)).thenReturn(true);
+        when(tenancy.joinCounts(property, LocalDate.of(2026, 7, 1), TODAY)).thenReturn(new TenancyAnalytics.JoinCounts(4, 1));
+        MetricResult result = only(assembler.assemble(context(PeriodPreset.LAST_3_MONTHS, LONG_AGO, MetricKey.TENANTS_TRANSITIONED_VS_NEW)));
+        assertThat(result.status()).isEqualTo(MetricStatus.OK);
+        assertThat(result.sampleSize()).isEqualTo(5);
+        assertThat(result.parts()).extracting(part -> part.key() + "=" + part.value()).containsExactly("TRANSITIONED=4", "NEW=1");
+    }
+
+    @Test
+    void transitionedVsNewIsLeftOutUntilAStayIsCarriedOverAndEmptyInAPeriodWithNoJoiners() {
+        when(tenancy.hasTransitionedStay(property)).thenReturn(false);
+        assertThat(assembler.assemble(context(PeriodPreset.LAST_3_MONTHS, LONG_AGO, MetricKey.TENANTS_TRANSITIONED_VS_NEW))).isEmpty();
+
+        when(tenancy.hasTransitionedStay(property)).thenReturn(true);
+        when(tenancy.joinCounts(property, LocalDate.of(2026, 7, 1), TODAY)).thenReturn(new TenancyAnalytics.JoinCounts(0, 0));
+        MetricResult empty = only(assembler.assemble(context(PeriodPreset.LAST_3_MONTHS, LONG_AGO, MetricKey.TENANTS_TRANSITIONED_VS_NEW)));
+        assertThat(empty.status()).isEqualTo(MetricStatus.NO_DATA);
+    }
+
+    @Test
+    void transitionedVsNewShowsAndFailsOnItsOwnWhenTheCheckCannotBeRead() {
+        when(tenancy.hasTransitionedStay(property)).thenThrow(new IllegalStateException("down"));
+        when(tenancy.joinCounts(property, LocalDate.of(2026, 7, 1), TODAY)).thenThrow(new IllegalStateException("down"));
+        MetricResult result = only(assembler.assemble(context(PeriodPreset.LAST_3_MONTHS, LONG_AGO, MetricKey.TENANTS_TRANSITIONED_VS_NEW)));
+        assertThat(result.status()).isEqualTo(MetricStatus.UNAVAILABLE);
     }
 
     @Test

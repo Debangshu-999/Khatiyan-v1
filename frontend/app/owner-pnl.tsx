@@ -1,7 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { CalendarPicker } from "@/components/calendar-picker";
+import { istToday } from "@/features/analytics/period";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ActivityIndicator, Image, Linking, Platform, Text, View } from "react-native";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ArrowLeft, ArrowRight, ChartNoAxesCombined, Download, FileText, Plus, Receipt, ReceiptIndianRupee, Scale, TrendingUp, Undo2, Wallet, WalletCards } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -99,6 +101,11 @@ export default function OwnerPnlScreen() {
   const statement = statementQuery.data;
   const trend = trendQuery.data;
   const incomePage = incomeQuery.data;
+
+  const loadFailed = loadFailure(statementQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <>
@@ -781,7 +788,7 @@ function ReportSheet({
   }
 
   return (
-    <SheetShell onClose={onClose} title={`Summary — ${monthLabel(month)}`}>
+    <SheetShell size="tall" onClose={onClose} title={`Summary — ${monthLabel(month)}`}>
       <ReportBlock title="Income" lines={incomeLines(statement)} />
       <ReportRow bold label="Total income" paise={statement.totalIncomePaise} />
       <ReportRow label="Collected" paise={statement.totalRealizedIncomePaise} />
@@ -837,13 +844,6 @@ function Divider() {
 function IncomeDateField({ error, label, onChange, value }: { error?: string; label: string; onChange: (value: string) => void; value: string }) {
   const { colors, type } = useTheme();
   const [open, setOpen] = useState(false);
-  const selected = value ? new Date(`${value}T12:00:00`) : new Date();
-
-  function update(event: DateTimePickerEvent, picked?: Date) {
-    setOpen(false);
-    if (event.type === "dismissed" || !picked) return;
-    onChange(toLocalIso(picked));
-  }
 
   return (
     <View style={{ gap: spacing.xs }}>
@@ -858,7 +858,7 @@ function IncomeDateField({ error, label, onChange, value }: { error?: string; la
         </Text>
       </AnimatedPressable>
       <FieldError message={error} />
-      {open ? <DateTimePicker display="default" maximumDate={new Date()} mode="date" onChange={update} value={selected} /> : null}
+      {open ? <CalendarPicker maximum={istToday()} onClose={() => setOpen(false)} onPick={onChange} value={value || null} /> : null}
     </View>
   );
 }

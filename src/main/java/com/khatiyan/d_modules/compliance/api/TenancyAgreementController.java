@@ -193,6 +193,13 @@ public class TenancyAgreementController {
                 .toList();
     }
 
+    /** How this stay's tenant was verified, for the tenant profile. */
+    @GetMapping("/tenancies/{tenancyId}/identity-checks")
+    public com.khatiyan.d_modules.compliance.api.dto.TenantIdentityChecksResponse identityChecks(
+            @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID tenancyId) {
+        return complianceModule.identityChecks(user.userId(), tenancyId);
+    }
+
     /**
      * Gives a pending stay's tenant more verification tries, or orders a check
      * that was not ordered at onboarding. Charged like any order: the attempts

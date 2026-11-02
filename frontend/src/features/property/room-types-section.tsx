@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { View } from "react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { OwnerRoomInventorySkeleton } from "@/components/skeletons/owner";
@@ -109,6 +110,11 @@ export function RoomTypesSection({
       setRemoving(null);
       setServerError(errorMessage(caught) || "Could not remove this room type. Please try again.");
     }
+  }
+
+  const loadFailed = loadFailure(molds);
+  if (loadFailed) {
+    return <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />;
   }
 
   if (molds.isLoading) {

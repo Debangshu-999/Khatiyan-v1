@@ -196,7 +196,7 @@ test("settings gate skips owner-only reads for managers and unresolved permissio
 test("load failure is a retry, never a no-property empty state", () => {
   const h = harness({ properties: { currentData: undefined, isError: true, error: { status: 500 } } });
   const tree = h.render(h.default);
-  button(tree, "Try again");
+  one(tree, "LoadFailed");
   assert.equal(nodes(tree, "EmptyState").length, 0);
 });
 
@@ -545,7 +545,7 @@ test("the access list is the property's active managers, each a row with a tick"
 test("access query error is not mislabelled as an empty list", () => {
   const h = harness({ managersQuery: { currentData: undefined, isError: true, error: { status: 500 }, refetch() {} } });
   const tree = h.render(h.BookingAccessList, { propertyId: "property-1", draft: {}, disabled: false, onChange() {} });
-  one(tree, "NoticeBar", (node) => node.props.title === "Could not load managers");
+  one(tree, "LoadFailedCard");
   assert.equal(nodes(tree, "EmptyState").length, 0);
 });
 

@@ -1,3 +1,4 @@
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
@@ -93,6 +94,11 @@ export default function ConcernDetailScreen() {
     } catch {
       setReopenError("Could not reopen this concern. Please check the reopen window and try again.");
     }
+  }
+
+  const loadFailed = loadFailure(currentQuery, historyQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (

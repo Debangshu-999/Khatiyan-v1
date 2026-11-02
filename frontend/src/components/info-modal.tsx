@@ -1,7 +1,7 @@
 import { CenterModal } from "@/components/center-modal";
 import { ReactNode } from "react";
 import { Modal, ScrollView, Text, View } from "react-native";
-import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";
+import { HelpModalClose, HelpModalHeader, HowItWorksClose } from "@/components/help-modal-header";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -11,10 +11,7 @@ import { useTheme } from "@/theme/use-theme";
 /**
  * The explanation behind an "i".
  *
- * <p>Every one of these ends in a solid **Got it** rather than only a corner ×.
- * The × is a dismissal; "Got it" is an acknowledgement, and on a panel whose
- * whole job is to explain something it is the action the reader actually wants.
- * Tapping the backdrop still closes it, for anyone who has already read enough.
+ * <p>Closes by the × in its top right corner (user, 2026-10-31).
  */
 export function InfoModal({
   children,
@@ -38,7 +35,7 @@ export function InfoModal({
   if (bottomUp) return (
     <BottomSheetModal navigationBarTranslucent statusBarTranslucent onRequestClose={onClose}>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        <HelpModalClose onClose={() => dismiss()} />
+        <HowItWorksClose onClose={() => dismiss()} />
         <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: spacing.lg, gap: spacing.sm, maxHeight: "76%" }}>
           <HelpModalHeader title={title} />
           <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}>{children}</ScrollView>

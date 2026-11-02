@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { BedDouble, ChevronDown } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -18,7 +19,7 @@ import { BookingDateField } from "@/features/booking/booking-date-field";
 import { errorMessage } from "@/features/forms/server-error";
 import { FormSectionTitle } from "@/features/forms/form-section-title";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, FormInput, NoticeBar, rupeesToPaise } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, rupeesToPaise } from "@/features/owner/owner-ui";
 import { formatFloor } from "@/features/property/floor";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppSelector } from "@/store/hooks";
@@ -181,7 +182,7 @@ export default function OwnerExternalBookingScreen() {
         <ScreenHeader italicTail="booking." subtitle="Booked in person or over the phone. Saved as confirmed." title="External" />
 
         {optionsQuery.isLoading ? <OwnerDataListSkeleton bodyLines={2} rows={3} /> : null}
-        {optionsQuery.isError ? <NoticeBar message={errorMessage(optionsQuery.error)} title="Could not load the form" tone="danger" /> : null}
+        {optionsQuery.isError ? <LoadFailed error={optionsQuery.error} onReload={() => void optionsQuery.refetch()} /> : null}
         {options && !options.open ? (
           <EmptyState artworkNode={<BedDouble color={colors.muted} size={56} />} title={options.whyNot ?? "No bed is free to book here right now."} />
         ) : null}

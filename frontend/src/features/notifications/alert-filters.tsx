@@ -1,8 +1,6 @@
 import { useCallback } from "react";
-import { ScrollView, Text } from "react-native";
-import { Bell, CreditCard, KeyRound, Megaphone, ShieldAlert, UserRound, Wallet } from "lucide-react-native";
+import { ScrollView, Text, View } from "react-native";
 
-import { PropertyIcon } from "@/components/property-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -29,17 +27,6 @@ const TOPIC_BUBBLES: Array<{ key: AlertSource; label: string }> = [
   { key: "account", label: "Account" },
   { key: "other", label: "Other" },
 ];
-
-const ALERT_ICONS = {
-  account: UserRound,
-  billing: CreditCard,
-  budget: Wallet,
-  concern: ShieldAlert,
-  notice: Megaphone,
-  other: Bell,
-  property: PropertyIcon,
-  tenancy: KeyRound,
-} as const;
 
 export function notificationSource(notification: NotificationItem): AlertSource {
   const category = notification.category.toUpperCase();
@@ -194,10 +181,14 @@ export function useScopedUnreadCount({ enabled = true }: { enabled?: boolean } =
   ).length;
 }
 
+/** Reaches past the screen's gutter but stops a thin margin short of the edge. */
+const ROW_BLEED = spacing.lg - spacing.xs;
+
 /**
  * Sideways-scrollable topic filter: "All" plus every category, always visible
- * (zero counts included), bleeding to the screen edges so the row reads as
- * scrollable.
+ * (zero counts included). Runs almost to the screen edges so the row reads as
+ * scrollable, and a thin margin keeps a bubble from touching them (user,
+ * 2026-10-31). At rest the first bubble lines up with the cards below.
  */
 export function TopicBubbleRow({
   active,
@@ -210,10 +201,10 @@ export function TopicBubbleRow({
 }) {
   return (
     <ScrollView
-      contentContainerStyle={{ gap: spacing.xs, paddingHorizontal: spacing.lg }}
+      contentContainerStyle={{ gap: spacing.xs, paddingHorizontal: ROW_BLEED }}
       horizontal
       showsHorizontalScrollIndicator={false}
-      style={{ marginHorizontal: -spacing.lg }}
+      style={{ marginHorizontal: -ROW_BLEED }}
     >
       <TopicBubble active={active === "all"} count={counts.total} label="All" onPress={() => onChange("all")} />
       {TOPIC_BUBBLES.map((bubble) => (
@@ -223,7 +214,6 @@ export function TopicBubbleRow({
           key={bubble.key}
           label={bubble.label}
           onPress={() => onChange(bubble.key)}
-          source={bubble.key}
         />
       ))}
     </ScrollView>
@@ -235,19 +225,13 @@ function TopicBubble({
   count,
   label,
   onPress,
-  source,
 }: {
   active: boolean;
   count: number;
   label: string;
   onPress: () => void;
-  source?: AlertSource;
 }) {
   const { colors, fonts } = useTheme();
-  const Icon = source ? ALERT_ICONS[source] : null;
-  // Same accent the unread cards use for their edge, so the selected filter
-  // and the rows it produced are visibly the same thought.
-  const color = active ? colors.accent : colors.inkSoft;
 
   return (
     <AnimatedPressable
@@ -257,30 +241,45 @@ function TopicBubble({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: active ? colors.accentSoft : colors.surface,
-        borderColor: active ? colors.accent : colors.border,
+        // Pale blue with a blue border (user, 2026-10-31). The selected one is
+        // solid, since every bubble now shares that border and tint.
+        backgroundColor: active ? colors.primary : colors.primarySoft,
+        borderColor: colors.primary,
         borderRadius: 999,
-        borderWidth: active ? 2 : 1,
+        borderWidth: 1,
         flexDirection: "row",
-        gap: spacing.xs,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 6,
+        gap: 6,
+        // The chosen one is the bigger one, as in FilterBubble (user, 2026-11-01).
+        paddingLeft: active ? spacing.sm + 3 : spacing.sm,
+        paddingRight: 4,
+        paddingVertical: active ? 6 : 4,
       }}
     >
-      {Icon ? <Icon color={color} size={13} strokeWidth={2.3} /> : null}
-      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 12, }}>
+      <Text style={{ color: active ? colors.onPrimary : colors.primary, fontFamily: fonts.sansBold, fontSize: active ? 13 : 12 }}>
         {label}
       </Text>
-      <Text
+      <View
         style={{
-          color: active ? colors.accent : colors.kicker,
-          fontFamily: fonts.sansBold,
-          fontSize: 11,
-          fontVariant: ["tabular-nums"],
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderRadius: 999,
+          height: 20,
+          justifyContent: "center",
+          minWidth: 20,
+          paddingHorizontal: 5,
         }}
       >
-        {count}
-      </Text>
+        <Text
+          style={{
+            color: colors.primary,
+            fontFamily: fonts.sansBold,
+            fontSize: 11,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {count}
+        </Text>
+      </View>
     </AnimatedPressable>
   );
 }

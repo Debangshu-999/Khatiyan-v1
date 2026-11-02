@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react";
-import { Animated, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import Svg, { Path, Rect, Circle } from "react-native-svg";
-import { AnimatedPressable } from "@/components/animated-pressable";
+import { IconSwitch } from "@/components/icon-switch";
 import { useTheme } from "@/theme/use-theme";
 
 function Padlock({ locked, color }: { locked: boolean; color: string }) {
@@ -15,12 +14,6 @@ function Padlock({ locked, color }: { locked: boolean; color: string }) {
 
 export function WalletLockCard({ enabled, busy, onChange }: { enabled: boolean; busy: boolean; onChange: (enabled: boolean) => void }) {
   const { colors, fonts } = useTheme();
-  const slide = useRef(new Animated.Value(enabled ? 1 : 0)).current;
-  useEffect(() => {
-    const animation = Animated.timing(slide, { toValue: enabled ? 1 : 0, duration: 220, useNativeDriver: true });
-    animation.start();
-    return () => animation.stop();
-  }, [enabled, slide]);
   return <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderWidth: 1, borderRadius: 20, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}>
     <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: colors.neutralSoft, alignItems: "center", justifyContent: "center" }}>
       <Svg width={31} height={31} viewBox="0 0 32 32" fill="none">
@@ -31,10 +24,6 @@ export function WalletLockCard({ enabled, busy, onChange }: { enabled: boolean; 
       </Svg>
     </View>
     <Text style={{ flex: 1, color: colors.ink, fontFamily: fonts.display, fontSize: 17, lineHeight: 23 }}>Secure Wallet</Text>
-    <AnimatedPressable accessibilityRole="switch" accessibilityLabel="Secure Wallet" accessibilityState={{ checked: enabled, disabled: busy }} disabled={busy} hitSlop={6} onPress={() => onChange(!enabled)} style={{ width: 62, height: 34, borderRadius: 17, padding: 4, backgroundColor: enabled ? "#FFF0F3" : colors.borderStrong, opacity: busy ? 0.6 : 1 }}>
-      <Animated.View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, 28] }) }] }}>
-        <Padlock locked={enabled} color={enabled ? colors.danger : colors.muted} />
-      </Animated.View>
-    </AnimatedPressable>
+    <IconSwitch accessibilityLabel="Secure Wallet" busy={busy} enabled={enabled} onChange={onChange} renderIcon={(color) => <Padlock locked={enabled} color={color} />} />
   </View>;
 }

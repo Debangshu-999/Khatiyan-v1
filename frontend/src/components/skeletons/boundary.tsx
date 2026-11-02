@@ -145,7 +145,8 @@ export function GhostIcon({
   const isSkeleton = useIsSkeleton();
 
   if (!isSkeleton) {
-    return <Icon color={color} fill={fill} size={size} strokeWidth={strokeWidth} />;
+    // Only when asked for: an explicit undefined overrides the icon's own "none" and fills it black.
+    return <Icon color={color} size={size} strokeWidth={strokeWidth} {...(fill ? { fill } : null)} />;
   }
 
   return <Skeleton height={size} radius={Math.round(size / 3)} width={size} />;

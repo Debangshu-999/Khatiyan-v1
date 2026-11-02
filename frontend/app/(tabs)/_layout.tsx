@@ -1,14 +1,18 @@
-import { useEffect, useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
+import { createRef, useEffect, useRef, useState, type ComponentProps, type ComponentType, type ReactNode, type RefObject } from "react";
 import { Redirect, Tabs } from "expo-router";
-import { AccessibilityInfo, View, type ColorValue } from "react-native";
+import { AccessibilityInfo, StyleSheet, View, type ColorValue } from "react-native";
+import { BlurTargetView, BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { type LucideProps } from "lucide-react-native";
 
 
+import { useTabBarHidden } from "@/components/tab-bar-visibility";
+import { ScreenBoundary } from "@/components/load-failed";
 import { clearStoredSession } from "@/auth/session-storage";
 import { BrandLoadingScreen } from "@/components/brand-logo";
 import { BottomNavigationTab } from "@/components/bottom-navigation-tab";
+import { pinnedFooterEdge } from "@/components/pinned-footer";
 import { loadPinnedOwnerModulesForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { NotificationOptInPrompt } from "@/features/notifications/notification-opt-in-prompt";
@@ -23,8 +27,9 @@ import { clearSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
 import { useTheme } from "@/theme/use-theme";
 
-// Custom bottom bar stuck to the screen's bottom edge, spanning the full width
-// with a hairline top border. Selection cross-fades the outlined/solid icon
+// Custom bottom bar stuck to the screen's bottom edge, spanning the full width,
+// with rounded top corners and glass the screen slides under (user, 2026-11-01).
+// Selection cross-fades the outlined/solid icon
 // and label, keeping all tap targets steady. Honours the safe-area inset so the row clears the
 // home indicator. Routes hidden via `href: null` get a no-op `tabBarButton`
 // from expo-router, which is how we skip them here.
@@ -48,6 +53,11 @@ type TabBarProps = {
   // Route names rendered greyed-out and inert (press does nothing). Used to
   // gate property-scoped tabs until a management workspace has a property.
   blockedRoutes?: string[];
+  /**
+   * The open tab's screen, for the glass to blur. Android can only blur what sits
+   * inside a BlurTargetView, so each tab's screen is wrapped in one.
+   */
+  sceneTarget?: RefObject<View | null>;
 };
 
 /**
@@ -104,10 +114,11 @@ function TabIcon({
   );
 }
 
-function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: TabBarProps) {
-  const { colors } = useTheme();
+function BottomTabBar({ blockedRoutes = [], descriptors, navigation, sceneTarget, state }: TabBarProps) {
+  const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const focusedKey = state.routes[state.index]?.key;
+  const hidden = useTabBarHidden();
   const [reduceMotion, setReduceMotion] = useState(false);
   useEffect(() => {
     let mounted = true;
@@ -117,20 +128,32 @@ function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: Ta
     return () => { mounted = false; subscription.remove(); };
   }, []);
 
+  if (hidden) return null;
+
   return (
     <View
       style={{
-        backgroundColor: colors.surface,
-        borderTopColor: colors.borderStrong,
-        borderTopWidth: 1,
+        ...pinnedFooterEdge(colors),
         bottom: 0,
         left: 0,
+        overflow: "hidden",
         // Pad past the home indicator while the surface still reaches the edge.
         paddingBottom: insets.bottom,
         position: "absolute",
         right: 0,
       }}
     >
+      {/* Remounted per tab, because the blur binds to its target once. The pale wash
+          over it keeps the labels readable, and is what shows if a blur cannot run. */}
+      <BlurView
+        blurMethod="dimezisBlurViewSdk31Plus"
+        blurTarget={sceneTarget}
+        intensity={isDark ? 55 : 60}
+        key={focusedKey}
+        style={StyleSheet.absoluteFill}
+        tint={isDark ? "dark" : "default"}
+      />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `${colors.surface}A6` }]} />
       <View style={{ flexDirection: "row", height: 60 }}>
         {state.routes.map((route) => {
           const { options } = descriptors[route.key];
@@ -171,6 +194,16 @@ function BottomTabBar({ blockedRoutes = [], descriptors, navigation, state }: Ta
 
 export default function TabLayout() {
   const { colors, fonts } = useTheme();
+  // One blur target per tab, as a tab keeps its screen mounted when you leave it.
+  const sceneTargets = useRef(new Map<string, RefObject<View | null>>()).current;
+  const sceneTarget = (routeName: string) => {
+    let target = sceneTargets.get(routeName);
+    if (!target) {
+      target = createRef<View>();
+      sceneTargets.set(routeName, target);
+    }
+    return target;
+  };
   const dispatch = useAppDispatch();
   const auth = useAppSelector((state) => state.auth);
   const profileQuery = useGetProfileQuery(undefined, { skip: !auth.accessToken });
@@ -274,7 +307,18 @@ export default function TabLayout() {
     <>
       <NotificationOptInPrompt />
       <Tabs
-      tabBar={(props) => <BottomTabBar {...props} blockedRoutes={blockedRoutes} />}
+      screenLayout={({ children, route }) => (
+        <BlurTargetView ref={sceneTarget(route.name)} style={{ flex: 1 }}>
+          <ScreenBoundary>{children}</ScreenBoundary>
+        </BlurTargetView>
+      )}
+      tabBar={(props) => (
+        <BottomTabBar
+          {...props}
+          blockedRoutes={blockedRoutes}
+          sceneTarget={sceneTarget(props.state.routes[props.state.index]?.name ?? "")}
+        />
+      )}
       screenOptions={{
         // Opacity-only cross-fade. The previous "shift" animation translated
         // scenes sideways, briefly exposing the outgoing screen's edge shadow

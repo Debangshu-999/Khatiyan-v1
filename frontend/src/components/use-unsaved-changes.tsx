@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigation } from "expo-router";
 
 import { ConfirmDialog } from "@/features/owner/owner-ui";
+import { useAppSelector } from "@/store/hooks";
 
 /**
  * Guards a form against being left with unsaved edits.
@@ -30,6 +31,10 @@ export function useUnsavedChanges(dirty: boolean) {
   // would guard against whatever `dirty` was when the screen mounted.
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  // Signed out, the app is taking this screen away and the form cannot be saved
+  // anyway, so asking would only stand in the way of signing back in (user, 2026-11-01).
+  const signedInRef = useRef(false);
+  signedInRef.current = useAppSelector((state) => Boolean(state.auth.accessToken));
 
   // Set while we replay a navigation the person confirmed, so the listener lets
   // that one through instead of asking again and blocking it forever.
@@ -39,7 +44,7 @@ export function useUnsavedChanges(dirty: boolean) {
     // Present only inside a navigator. Modal-only callers still get `guard`.
     const unsubscribe = navigation.addListener?.("beforeRemove" as never, (event: unknown) => {
       const removal = event as { preventDefault: () => void; data: { action: unknown } };
-      if (!dirtyRef.current || confirming.current) {
+      if (!dirtyRef.current || confirming.current || !signedInRef.current) {
         return;
       }
       removal.preventDefault();

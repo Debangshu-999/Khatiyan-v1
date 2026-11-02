@@ -1,4 +1,6 @@
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useHardwareBack } from "@/components/use-hardware-back";
 import { Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -271,13 +273,20 @@ export default function OwnerAddRoomsScreen() {
     }, [path, router, unsaved]),
   );
 
+  const insets = useSafeAreaInsets();
+  const loadFailed = loadFailure(molds);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <>
       <ScreenScrollView
+        bottomPaddingCovered={live.length > 0 && !choosing}
         safeAreaEdges={["top"]}
-        // A gutter less than the full clearance: that constant assumes a screen
-        // ending in a card, and this one ends in a row of chips.
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE - spacing.lg }}
+        // The full clearance and the nav bar's inset: the form ends in the
+        // amenities card, which sat clipped behind the button (user, 2026-10-29).
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE + insets.bottom }}
         surface={colors.formSurface}
       >
         <ScreenHeader

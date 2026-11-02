@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
 import { Text, View } from "react-native";
-import { RefreshCw } from "lucide-react-native";
 
-import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
+import { LoadFailed } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { PropertyBoardScreenSkeleton } from "@/components/skeletons/property-board";
 import {
@@ -19,7 +18,6 @@ import {
   type PropertyBoardItem,
   useListMyPropertyBoardItemsQuery,
 } from "@/store/services/notice-api";
-import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function PropertyBoardScreen() {
@@ -58,41 +56,13 @@ export default function PropertyBoardScreen() {
           await boardQuery.refetch();
         }}
       >
+        <ScreenHeader italicTail="board." title="Property" />
         <PropertyBoardHero />
 
         {boardQuery.isFetching && !boardQuery.data ? (
           <PropertyBoardScreenSkeleton />
         ) : boardQuery.isError ? (
-          <Card tone="sunken">
-            <View style={{ alignItems: "center", gap: spacing.md }}>
-              <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
-                Could not load the property board
-              </Text>
-              <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
-                Check your connection and try again.
-              </Text>
-              <AnimatedPressable
-                accessibilityLabel="Try loading the property board again"
-                accessibilityRole="button"
-                onPress={() => {
-                  void boardQuery.refetch();
-                }}
-                style={{
-                  alignItems: "center",
-                  borderColor: colors.borderStrong,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  flexDirection: "row",
-                  gap: spacing.sm,
-                  minHeight: 46,
-                  paddingHorizontal: spacing.lg,
-                }}
-              >
-                <RefreshCw color={colors.primary} size={18} strokeWidth={2.2} />
-                <Text style={[type.action, { color: colors.primary }]}>Try again</Text>
-              </AnimatedPressable>
-            </View>
-          </Card>
+          <LoadFailed error={boardQuery.error} onReload={() => void boardQuery.refetch()} />
         ) : groupedItems.length > 0 ? (
           groupedItems.map((group) => (
             <PropertyBoardCategoryCard

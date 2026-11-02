@@ -100,7 +100,6 @@ export type RecurringExpense = {
   paidTo: string;
   amountPaise: number;
   description: string | null;
-  dayOfMonth: number;
   active: boolean;
   lastGeneratedMonth: string | null;
   // Derived by the platform (projected salary) — read-only, no edit/deactivate.
@@ -124,7 +123,6 @@ export type RecurringExpensePayload = {
   categoryId: string;
   paidTo: string;
   amountPaise: number;
-  dayOfMonth: number;
   description?: string;
 };
 

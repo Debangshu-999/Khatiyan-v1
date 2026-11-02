@@ -4,6 +4,7 @@ export * from "./modules/billing";
 export * from "./modules/board";
 export * from "./modules/concerns";
 export * from "./modules/deposits";
+export * from "./modules/damages";
 export * from "./modules/finance";
 export * from "./modules/tenants";
 export * from "./modules/notices";

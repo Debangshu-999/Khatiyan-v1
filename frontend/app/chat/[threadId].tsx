@@ -17,6 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { AlertTriangle, type LucideProps } from "lucide-react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import { LoadFailedScreen } from "@/components/load-failed";
 import { CLIPBOARD_ANNOUNCES_ITSELF } from "@/lib/clipboard";
 import {
   ArrowLeft,
@@ -90,7 +91,7 @@ export default function ChatThreadScreen() {
   }>();
   const threadId = String(params.threadId ?? "");
 
-  const { append, loading, messages, seenCountFor, thread, unreadFrom } = useChatMessages(threadId);
+  const { append, error, loadError, loading, messages, reload, seenCountFor, thread, unreadFrom } = useChatMessages(threadId);
   // The first thing they had not seen when they arrived. Null while the first
   // page is in flight, and for a conversation never opened — where a line above
   // the very first message would be noise rather than information.
@@ -354,6 +355,11 @@ export default function ChatThreadScreen() {
     }
     return null;
   })();
+
+  // A failed poll keeps the conversation: only an empty screen stops here.
+  if (error && messages.length === 0 && !thread) {
+    return <LoadFailedScreen failure={{ error: loadError, reload }} />;
+  }
 
   return (
     <SafeAreaView

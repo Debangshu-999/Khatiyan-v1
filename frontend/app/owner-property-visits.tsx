@@ -3,6 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ArrowRight, CalendarClock, ChevronDown, ChevronUp, Clock, Lock, Minus, Plus, Users } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -58,6 +59,11 @@ export default function OwnerPropertyVisitsScreen() {
   const visible = canView("PROPERTY_SETTINGS");
   const slotsQuery = useGetPropertyVisitSlotsQuery(property?.id ?? "", { skip: !property || !visible });
   const data = slotsQuery.data;
+  const loadFailed = loadFailure(slotsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader

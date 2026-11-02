@@ -2,6 +2,8 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Animated, Easing, View, type DimensionValue } from "react-native";
 
 import { useSoftShadow } from "@/theme/shadows";
+import { COMPACT_SCREEN_HEADERS } from "@/components/compact-screen-header";
+import { ScreenHeader } from "@/components/screen-header";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -236,6 +238,9 @@ export function SkeletonForm({ fields = 3, media = false, note = true }: { field
 /** The screen heading: a title and its two-line note. */
 export function SkeletonHeader() {
   const { colors } = useTheme();
+  if (COMPACT_SCREEN_HEADERS) {
+    return <ScreenHeader title=" " />;
+  }
   return (
     <View style={{ gap: spacing.sm }}>
       <Skeleton height={30} width="62%" />

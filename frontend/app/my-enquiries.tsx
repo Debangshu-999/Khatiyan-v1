@@ -12,6 +12,7 @@ import {
   type LucideProps,
 } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -114,6 +115,11 @@ export default function MyEnquiriesScreen() {
       setChangingMindId(null);
       setRefusal(errorMessage(error));
     }
+  }
+
+  const loadFailed = loadFailure(query);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (

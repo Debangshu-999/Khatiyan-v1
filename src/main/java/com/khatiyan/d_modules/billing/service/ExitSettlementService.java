@@ -13,6 +13,7 @@ import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
 import com.khatiyan.d_modules.billing.api.dto.CreateOneOffBillRequest;
 import com.khatiyan.d_modules.billing.api.dto.ExitChargeInstrument;
 import com.khatiyan.d_modules.billing.api.dto.RecordManualPaymentRequest;
+import com.khatiyan.d_modules.billing.damage.DamageBillService;
 import com.khatiyan.d_modules.billing.model.ManualPaymentMethod;
 import com.khatiyan.d_modules.billing.repository.DepositAccountRepository;
 import com.khatiyan.d_modules.billing.service.DepositManagerService.ExitDeduction;
@@ -29,8 +30,8 @@ import lombok.extern.slf4j.Slf4j;
  * exit is the worst outcome available — a deposit deducted against a tenancy
  * that is still running, with no screen left showing the actor what happened.
  *
- * <p>Prices are resolved here, never accepted from the client: damage items
- * arrive as names and are priced from the property's own schedule.
+ * <p>Prices are resolved here, never accepted from the client: damage arrives
+ * as record ids and is priced from their shares.
  */
 @Slf4j
 @Service
@@ -40,6 +41,7 @@ public class ExitSettlementService {
     private final DepositManagerService depositManagerService;
     private final BillingCycleService billingCycleService;
     private final DepositAccountRepository depositAccountRepository;
+    private final DamageBillService damageBillService;
 
     /**
      * Applies the exit policy for a tenancy that is about to end.
@@ -56,7 +58,7 @@ public class ExitSettlementService {
             UUID tenancyId,
             UUID propertyId,
             ApplyExitPolicyRequest request) {
-        ResolvedExit resolved = resolve(propertyId, request);
+        ResolvedExit resolved = resolve(tenancyId, request);
         List<ExitDeduction> depositDeductions = resolved.depositDeductions();
         List<BilledCharge> billedCharges = resolved.billedCharges();
 
@@ -124,7 +126,7 @@ public class ExitSettlementService {
      * <p>Ordered: the early-exit charge is taken first, so the payability
      * question the actor answered was asked of this same remainder.
      */
-    private ResolvedExit resolve(UUID propertyId, ApplyExitPolicyRequest request) {
+    private ResolvedExit resolve(UUID tenancyId, ApplyExitPolicyRequest request) {
         List<ExitDeduction> depositDeductions = new ArrayList<>();
         List<BilledCharge> billedCharges = new ArrayList<>();
 
@@ -141,38 +143,14 @@ public class ExitSettlementService {
             }
         }
 
-        ApplyExitPolicyRequest.DamageCharge damages = request.damages();
-        if (damages != null) {
-            long scheduleTotalPaise = depositManagerService.resolveDamageTotal(propertyId, damages.itemNames());
-            boolean fromDeposit = damages.instrument() == ExitChargeInstrument.DEPOSIT;
+        // Every record still open must be decided, off the deposit or waived. Billed damage
+        // is a Damage bill, raised and cleared before this point (2026-10-31).
+        depositDeductions.addAll(damageBillService.settleAtExit(tenancyId, request.damages()));
 
-            List<ExitDeduction> lines = new ArrayList<>();
-            if (scheduleTotalPaise > 0) {
-                lines.add(new ExitDeduction("Damage charges", scheduleTotalPaise));
-            }
-            if (damages.customCharges() != null) {
-                for (ApplyExitPolicyRequest.CustomCharge custom : damages.customCharges()) {
-                    lines.add(new ExitDeduction(custom.reason().trim(), custom.amountPaise()));
-                }
-            }
-
-            // The deposit's share of the damage. Unlimited unless the actor split
-            // a charge the deposit could not cover, in which case it is used up
-            // line by line in order and each line's overflow is billed.
-            long depositBudget = !fromDeposit
-                    ? 0L
-                    : damages.fromDepositPaise() == null ? Long.MAX_VALUE : damages.fromDepositPaise();
-            for (ExitDeduction line : lines) {
-                long fromDepositPaise = Math.min(line.amountPaise(), depositBudget);
-                depositBudget -= fromDepositPaise;
-                if (fromDepositPaise > 0) {
-                    depositDeductions.add(new ExitDeduction(line.reason(), fromDepositPaise));
-                }
-                long billedPaise = line.amountPaise() - fromDepositPaise;
-                if (billedPaise > 0) {
-                    String reason = fromDepositPaise > 0 ? line.reason() + " (balance)" : line.reason();
-                    billedCharges.add(new BilledCharge(reason, billedPaise, damages.collectedVia()));
-                }
+        // Other charges never touch the deposit: billed and recorded paid.
+        if (request.customCharges() != null) {
+            for (ApplyExitPolicyRequest.CustomCharge custom : request.customCharges()) {
+                billedCharges.add(new BilledCharge(custom.reason().trim(), custom.amountPaise(), request.collectedVia()));
             }
         }
 

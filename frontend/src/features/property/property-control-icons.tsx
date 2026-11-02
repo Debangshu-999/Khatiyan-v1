@@ -48,6 +48,25 @@ export function RoomsAndBedsIcon(props: LucideProps) {
   </Mark>;
 }
 
+/** Wi-Fi, dining, power and laundry: shared services rather than another building. */
+export function FacilitiesIcon({ size = 24, color = "#000000" }: LucideProps) {
+  return <Svg width={size} height={size} viewBox="0 0 64 64" fill={color} color={color} accessible={false}>
+    <Rect x={2} y={2} width={28} height={28} rx={6} />
+    <Rect x={34} y={2} width={28} height={28} rx={6} />
+    <Rect x={2} y={34} width={28} height={28} rx={6} />
+    <Rect x={34} y={34} width={28} height={28} rx={6} />
+    <G fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M7 12a14 14 0 0 1 18 0M11 17a8 8 0 0 1 10 0" />
+      <Path d="M41 8v6a3 3 0 0 0 6 0V8M44 8v16M53 8v16M53 8c-4 3-4 8 0 8" />
+      <Rect x={40} y={39} width={16} height={18} rx={2} />
+      <Circle cx={48} cy={49} r={5} />
+    </G>
+    <Circle cx={16} cy={22} r={2} fill="#FFFFFF" />
+    <Circle cx={43} cy={42} r={1} fill="#FFFFFF" />
+    <Path d="m17 38-9 12h7l-1 9 10-13h-7Z" fill="#FFFFFF" />
+  </Svg>;
+}
+
 export function PropertyBoardIcon(props: LucideProps) {
   return <Mark {...props}>
     <Path d="m12 16 20-12 20 12" fill="none" stroke="currentColor" strokeWidth={3} />
@@ -132,5 +151,15 @@ export function ItemCatalogueIcon(props: LucideProps) {
     <Path d="M24 24h15M24 37h9M24 50h7" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
     <Path d="M36 38h15l11 11-11 11H36Z" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" />
     <Circle cx={51} cy={49} r={3} fill="#FFFFFF" />
+  </Mark>;
+}
+
+// A cracked tile under a wrench: damage found, and fixed.
+export function DamagesIcon(props: LucideProps) {
+  return <Mark {...props}>
+    <Rect x={2} y={10} width={44} height={44} rx={7} />
+    <Path d="M14 10l6 13-8 9 9 10-4 12" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
+    <Path d="M34 24l-6 8 8 6" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+    <Path d="M58 6a10 10 0 0 0-13 12L30 33a5 5 0 0 0 7 7l15-15a10 10 0 0 0 12-13l-6 6-6-1-1-6Z" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" />
   </Mark>;
 }

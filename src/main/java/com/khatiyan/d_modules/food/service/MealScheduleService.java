@@ -92,6 +92,18 @@ public class MealScheduleService {
         return build(propertyId);
     }
 
+    /** Today's meals as they stand now, delays included. Nothing when the property serves none. */
+    @Transactional(readOnly = true)
+    public List<MealSlot> todaySlots(UUID propertyId) {
+        PropertyResponse property = propertyModule.getActiveProperty(propertyId);
+        Set<MealType> served = property.foodIncluded() && property.includedMeals() != null
+                ? property.includedMeals()
+                : Set.of();
+        ZonedDateTime now = now();
+        return day(propertyId, served, delayRepository.findByPropertyIdAndMealDate(propertyId, now.toLocalDate()),
+                now.toLocalTime());
+    }
+
     /**
      * Saves the timetable. Meals left out of the request keep their current
      * time, and the result is validated whole: moving breakfast later can make

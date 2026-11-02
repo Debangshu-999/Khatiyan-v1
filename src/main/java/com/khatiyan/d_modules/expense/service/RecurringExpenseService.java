@@ -71,7 +71,7 @@ public class RecurringExpenseService {
         if (projectedSalary > 0) {
             items.add(new RecurringExpenseResponse(
                     propertyId, null, "Salary", "Staff payroll", projectedSalary,
-                    "Projected from current staff salaries", 1, true, null, true, 0L));
+                    "Projected from current staff salaries", true, null, true, 0L));
         }
         recurringRepository.findByPropertyIdOrderByCreatedAtDesc(propertyId).stream()
                 .map(recurring -> RecurringExpenseResponse.from(
@@ -86,7 +86,7 @@ public class RecurringExpenseService {
         ExpenseCategory category = activeCategory(propertyId, request.categoryId());
         RecurringExpense recurring = recurringRepository.save(RecurringExpense.create(
                 propertyId, category.getId(), request.paidTo(), request.amountPaise(),
-                request.description(), request.dayOfMonth(), actorUserId));
+                request.description(), actorUserId));
         return RecurringExpenseResponse.from(recurring, category.getName());
     }
 
@@ -98,7 +98,7 @@ public class RecurringExpenseService {
         VersionGuard.claim(recurring);
         ExpenseCategory category = activeCategory(propertyId, request.categoryId());
         recurring.update(category.getId(), request.paidTo(), request.amountPaise(),
-                request.description(), request.dayOfMonth());
+                request.description());
         return RecurringExpenseResponse.from(recurring, category.getName());
     }
 
@@ -116,7 +116,6 @@ public class RecurringExpenseService {
      * daily scheduler can run (and re-run / catch up) safely. Returns the count.
      */
     public int generateDueRecurringExpenses(LocalDate today) {
-        YearMonth month = YearMonth.from(today);
         List<UUID> active = recurringRepository.findByActiveTrue().stream().map(RecurringExpense::getId).toList();
         // One template per transaction, re-read inside it (2026-09-28): an owner
         // editing one at this moment costs only that expense until the next run.
@@ -134,7 +133,9 @@ public class RecurringExpenseService {
                     category.getId(),
                     recurring.getPaidTo(),
                     recurring.getAmountPaise(),
-                    month.atDay(recurring.getDayOfMonth()),
+                    // The day it is added. A template has no day of its own: a date picked
+                    // for it did nothing but label the expense (user, 2026-11-01).
+                    today,
                     recurring.getDescription(),
                     recurring.getId(),
                     recurring.getCreatedByUserId()));

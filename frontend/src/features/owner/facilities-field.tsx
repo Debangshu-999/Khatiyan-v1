@@ -1,3 +1,4 @@
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useState, type ComponentType } from "react";
 import { ScrollView, Text, useWindowDimensions, View } from "react-native";
@@ -307,10 +308,8 @@ function FacilitiesPickerModal({
                 Select facilities
               </ModalTitle>
             </View>
-            <AnimatedPressable accessibilityLabel="Close" accessibilityRole="button" onPress={() => dismiss()}>
-              <X color={colors.muted} size={24} strokeWidth={2.4} />
-            </AnimatedPressable>
           </View>
+          <ModalTitleRule inset={0} />
 
           <ScrollView
             contentContainerStyle={{ gap: spacing.lg, padding: spacing.lg }}

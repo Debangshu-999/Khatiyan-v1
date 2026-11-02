@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { CalendarPlus, LockKeyhole, type LucideProps } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AddRecordCard } from "@/components/add-record-card";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -17,7 +18,6 @@ import { BookingWorkspaceSkeleton } from "@/components/skeletons/booking/workspa
 import { BookingRequestList, type BookingListLoadMore } from "@/features/booking/booking-request-list";
 import { BOOKING_ATTENTION, bookingAttention, type BookingAttentionFilter } from "@/features/booking/booking-attention";
 import { useBookingProperty } from "@/features/booking/use-booking-property";
-import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppDispatch } from "@/store/hooks";
@@ -33,10 +33,7 @@ export default function OwnerBookingsScreen() {
   if (scope.property && scope.canView && !scope.error) return <BookingWorkspace key={`${scope.property.id}:${attention ?? "ALL"}`} propertyId={scope.property.id} propertyName={scope.property.name} owner={scope.owner} attention={attention} />;
   return <ScreenScrollView surface={colors.background} safeAreaEdges={["top", "bottom"]} refreshable={false}>
     <ScreenHeader title="Manage" italicTail="bookings." subtitle="Booking requests for your selected property." />
-    {scope.loading ? <BookingWorkspaceSkeleton /> : scope.error ? <>
-      <NoticeBar tone="danger" title="Could not load bookings" message={errorMessage(scope.error)} />
-      <View style={{ flexDirection: "row" }}><ActionButton label="Try again" onPress={scope.retry} /></View>
-    </> : <EmptyState icon={LockKeyhole} title={scope.property ? "Bookings access needed" : "Select an active property"} description={scope.property ? "The owner can give you access from Booking settings." : "Choose the property on Home, then open Bookings."} />}
+    {scope.loading ? <BookingWorkspaceSkeleton /> : scope.error ? <LoadFailed error={scope.error} onReload={scope.retry} /> : <EmptyState icon={LockKeyhole} title={scope.property ? "Bookings access needed" : "Select an active property"} description={scope.property ? "The owner can give you access from Booking settings." : "Choose the property on Home, then open Bookings."} />}
   </ScreenScrollView>;
 }
 

@@ -136,6 +136,7 @@ export function FilteredQueue<T extends string>({
  * arranged: the list cannot be opened then.
  */
 export function SectionWithDropdown<T extends string>({
+  beforeFilter,
   children,
   icon,
   onChange,
@@ -145,11 +146,13 @@ export function SectionWithDropdown<T extends string>({
   title,
   value,
 }: {
+  /** An optional compact control beside the existing filter, without changing its UI. */
+  beforeFilter?: ReactNode;
   children: ReactNode;
   /** A mark before the chosen label, saying what the list is for. */
   icon?: ComponentType<LucideProps>;
   onChange: (value: T) => void;
-  options: { action?: { label: string; onPress: () => void }; label: string; value: T }[];
+  options: (FilterOption<T> & { action?: { label: string; onPress: () => void } })[];
   /** What the choice is, for a screen reader: "Sort", say. */
   purpose: string;
   /** Drawn in place of the bubble. */
@@ -171,22 +174,29 @@ export function SectionWithDropdown<T extends string>({
   }, []);
   useHardwareBack(closeOnBack, open);
 
+  const filterControl = replacement ?? (
+    <FilterBubble
+      blink={false}
+      icon={icon}
+      label={chosen.label}
+      onPress={() => setOpen((current) => !current)}
+      open={open}
+      purpose={purpose}
+    />
+  );
+
   return (
     <View style={{ gap: spacing.md, minHeight: open ? menuTop + menuHeight + spacing.sm : undefined }}>
       <View onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}>
         <SectionHeading
           title={title}
           trailing={
-            replacement ?? (
-              <FilterBubble
-                blink={false}
-                icon={icon}
-                label={chosen.label}
-                onPress={() => setOpen((current) => !current)}
-                open={open}
-                purpose={purpose}
-              />
-            )
+            beforeFilter ? (
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+                {beforeFilter}
+                {filterControl}
+              </View>
+            ) : filterControl
           }
         />
       </View>
@@ -246,7 +256,17 @@ export function SectionWithDropdown<T extends string>({
                         {option.action.label}
                       </Text>
                     </AnimatedPressable>
-                  ) : undefined
+                  ) : option.count == null ? undefined : (
+                    <Text
+                      style={{
+                        color: option.danger && option.count > 0 ? colors.danger : colors.muted,
+                        fontFamily: fonts.sansBold,
+                        fontSize: 12,
+                      }}
+                    >
+                      {option.count}
+                    </Text>
+                  )
                 }
               />
             ))}

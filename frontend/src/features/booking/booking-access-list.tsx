@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
-import { RotateCcw } from "lucide-react-native";
 
+import { LoadFailedCard } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { BookingAccessSkeleton } from "@/components/skeletons/booking/settings";
@@ -8,7 +8,6 @@ import { Skeleton } from "@/components/skeletons/primitives";
 import type { BookingAccessDraft } from "@/features/booking/booking-settings-form";
 import { InitialsAvatar } from "@/features/enquiry/enquiry-tags";
 import { CircleCheckbox } from "@/features/enquiry/handler-mode-sheet";
-import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import {
@@ -51,12 +50,7 @@ export function BookingAccessList({ propertyId, draft, disabled, onChange }: {
     <View style={{ gap: spacing.sm }}>
       {!managersQuery.currentData && !managersQuery.isError ? <BookingAccessSkeleton /> : null}
       {managersQuery.isError ? (
-        <>
-          <NoticeBar title="Could not load managers" message={errorMessage(managersQuery.error)} tone="danger" />
-          <View style={{ flexDirection: "row" }}>
-            <ActionButton compact label="Try again" icon={RotateCcw} onPress={() => void managersQuery.refetch()} variant="secondary" />
-          </View>
-        </>
+        <LoadFailedCard error={managersQuery.error} onReload={() => void managersQuery.refetch()} />
       ) : null}
       {managersQuery.currentData && managers.length === 0 ? (
         <EmptyState compact artwork={NO_PERSON_ILLUSTRATION} title="No managers yet" description="Add a manager to this property from Staff, then give them booking access here." />

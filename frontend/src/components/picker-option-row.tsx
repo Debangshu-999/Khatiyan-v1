@@ -22,13 +22,14 @@ import { FitText } from "@/components/fit-text";
  *
  * <h2>Where this does NOT apply</h2>
  *
- * <p>Pickers whose options can be CREATED and DELETED — the staff and expense
- * category lists — keep their own ink-filled row. Those rows carry a delete
- * control of their own.
+ * <p>The staff category list, whose options can be created and deleted, keeps its
+ * own ink-filled row. The expense category list uses this one, with its delete in
+ * `trailing` (user, 2026-11-01).
  */
 export function PickerOptionRow({
   content,
   first: _first,
+  fullBleed = false,
   icon,
   label,
   mode = "single",
@@ -44,6 +45,8 @@ export function PickerOptionRow({
   content?: ReactNode;
   /** Kept for callers from the ruled-row days; rows no longer draw a rule. */
   first?: boolean;
+  /** Extend the selection fill to a full-bleed sheet's edges, keeping labels on its gutter. */
+  fullBleed?: boolean;
   /** Drawn before the label. Leave it out for a words-only picker. */
   icon?: ReactNode;
   label: string;
@@ -67,12 +70,13 @@ export function PickerOptionRow({
         alignItems: "center",
         backgroundColor: selected ? colors.primarySoft : "transparent",
         borderCurve: "continuous",
-        borderRadius: 10,
+        borderRadius: fullBleed ? 0 : 10,
         flexDirection: "row",
         gap: spacing.sm,
         marginVertical: 1,
+        marginHorizontal: fullBleed ? -spacing.lg : undefined,
         minHeight: 48,
-        paddingHorizontal: spacing.sm,
+        paddingHorizontal: fullBleed ? spacing.lg : spacing.sm,
         paddingVertical: spacing.sm,
       }}
     >

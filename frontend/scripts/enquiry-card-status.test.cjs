@@ -85,7 +85,7 @@ function harness(colors) {
     }
     return found;
   }
-  return { tags, statuses };
+  return { tags, statuses, EnquiryCard };
 }
 
 for (const [mode, colors] of Object.entries(themes)) {
@@ -172,4 +172,34 @@ test("a person who keeps walking away carries the leads mark and its reason on t
 test("an enquiry already reached offers Follow up, with or without a written reply", () => {
   const screen = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "app/owner-enquiries.tsx"), "utf8");
   assert.match(screen, /return enquiry\.responses\.length > 0 \|\| Boolean\(enquiry\.respondedAt\);/);
+});
+
+test("enquiry actions restore compact buttons, reduce the upper gap and retain their handlers without a divider", () => {
+  const { EnquiryCard } = harness(themes.light);
+  const enquiry = { status: "NEW", enquirerName: "Tenant", message: "An enquiry", createdAt: "2026-10-07", expiresAt: "2026-11-06", sentiment: null, responses: [] };
+  const onRespond = () => {}, onSchedule = () => {}, onAssign = () => {}, onActions = () => {};
+  const collect = (tree, type) => {
+    const found = [];
+    function walk(node) {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!node || typeof node !== "object") return;
+      if (node.type === type) found.push(node);
+      walk(node.props?.children);
+    }
+    walk(tree); return found;
+  };
+  for (const extra of [{}, { onAssign }, { enquiry: { ...enquiry, sentiment: "NOT_INTERESTED" } }, { enquiry: { ...enquiry, status: "EXPIRED" } }]) {
+    const tree = EnquiryCard({ enquiry, hasVisit: false, onRespond, onSchedule, onActions, ...extra });
+    const footer = collect(tree, "View").find((node) => collect(node, "ActionLogButton").length && !collect(node.props.children, "EnquiryMessagePreview").length);
+    assert.ok(footer);
+    assert.equal(footer.props.style.borderTopWidth ?? 0, 0);
+    assert.equal(footer.props.style.paddingTop, 0);
+    assert.equal(footer.props.style.paddingBottom, spacing.md);
+    for (const button of collect(footer, "ActionButton")) {
+      assert.equal(button.props.compact, true);
+      const expected = { Respond: onRespond, "Schedule visit": onSchedule, Assign: onAssign, Actions: onActions }[button.props.label];
+      assert.equal(button.props.onPress, expected);
+      assert.equal(button.props.disabled, extra.enquiry?.status === "EXPIRED");
+    }
+  }
 });

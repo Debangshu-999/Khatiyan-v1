@@ -1,3 +1,6 @@
+import { LoadFailed } from "@/components/load-failed";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
+import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { AlertTriangle, CircleAlert, type LucideProps } from "lucide-react-native";
@@ -64,9 +67,12 @@ function addDays(date: string, days: number) {
  */
 export default function OwnerBookingOnboardingScreen() {
   const router = useGuardedRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const propertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId) ?? "";
-  const [tab, setTab] = useState<Tab>("TODAY");
+  const initialTab: Tab = params.tab === "MISSED" ? "MISSED" : "TODAY";
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [page, setPage] = useState(0);
+  useQuickActionIntent({ "booking-onboarding": () => { setTab(initialTab); setPage(0); } }, Boolean(propertyId));
   const [closing, setClosing] = useState<BookingRequestListItem | null>(null);
   const [moving, setMoving] = useState<BookingRequestListItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -101,7 +107,7 @@ export default function OwnerBookingOnboardingScreen() {
       />
 
       {list.isLoading ? <SkeletonList rows={3} /> : null}
-      {list.isError ? <NoticeBar message={errorMessage(list.error)} title="Could not load bookings" tone="danger" /> : null}
+      {list.isError ? <LoadFailed error={list.error} onReload={() => void list.refetch()} /> : null}
       {list.currentData && items.length === 0 ? (
         <EmptyState
           artworkNode={<BookingsIcon size={64} />}
@@ -277,7 +283,7 @@ function MoveRoomSheet({ item, onClose, propertyId }: { item: BookingRequestList
   }
 
   return (
-    <SheetShell onClose={onClose} title="Change room">
+    <SheetShell size="tall" onClose={onClose} title="Change room">
       <Text style={[type.description, { color: colors.muted }]}>
         {otherTypes ? "Rooms of other types with a bed free today." : `Rooms like Room ${item.roomNumber} with a bed free today. The agreed rent stays.`}
       </Text>

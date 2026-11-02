@@ -2,6 +2,7 @@ package com.khatiyan.d_modules.food.api.dto;
 
 import java.util.Set;
 
+import com.khatiyan.d_modules.food.model.FoodDishType;
 import com.khatiyan.d_modules.food.model.FoodQuantityUnit;
 import com.khatiyan.d_modules.property.model.MealType;
 
@@ -23,6 +24,13 @@ public record SaveFoodItemRequest(
          * menu, so it would sit in the catalogue as something the owner could
          * see but never use.
          */
-        @NotEmpty Set<MealType> mealTags
+        @NotEmpty Set<MealType> mealTags,
+        /** Common, drink, veg or non veg. Guessed from the name when left out. */
+        FoodDishType dishType
 ) {
+
+    public SaveFoodItemRequest(String name, String description, String imageUrl, String imagePublicId,
+            FoodQuantityUnit quantityUnit, Set<MealType> mealTags) {
+        this(name, description, imageUrl, imagePublicId, quantityUnit, mealTags, null);
+    }
 }

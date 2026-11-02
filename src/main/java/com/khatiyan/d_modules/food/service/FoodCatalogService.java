@@ -90,6 +90,7 @@ public class FoodCatalogService {
                 request.imagePublicId(),
                 request.quantityUnit(),
                 request.mealTags());
+        item.setDishType(request.dishType());
         return FoodItemResponse.from(itemRepository.save(item));
     }
 
@@ -117,6 +118,7 @@ public class FoodCatalogService {
                 request.imagePublicId(),
                 request.quantityUnit(),
                 request.mealTags());
+        item.setDishType(request.dishType());
         return FoodItemResponse.from(item);
     }
 
@@ -234,6 +236,7 @@ public class FoodCatalogService {
                 propertyId,
                 property.foodIncluded(),
                 property.foodIncluded() && moduleSettingService.isEnabled(propertyId),
+                property.foodIncluded() && moduleSettingService.isAttendanceEnabled(propertyId),
                 property.includedMeals(),
                 itemRepository.countByPropertyIdAndActiveTrue(propertyId),
                 profileRepository.countByPropertyIdAndActiveTrue(propertyId),

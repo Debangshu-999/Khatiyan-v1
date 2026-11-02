@@ -19,6 +19,7 @@ export function SelectField<Value extends string>({
   disabled,
   error,
   label,
+  labelOnBorder = false,
   onChange,
   options,
   placeholder = "Select an option",
@@ -27,6 +28,8 @@ export function SelectField<Value extends string>({
   disabled?: boolean;
   error?: string;
   label: string;
+  /** The label sits in the field's top border instead of above it. Needs a page the colour of the field. */
+  labelOnBorder?: boolean;
   onChange: (value: Value) => void;
   options: SelectOption<Value>[];
   placeholder?: string;
@@ -38,7 +41,7 @@ export function SelectField<Value extends string>({
 
   return (
     <View style={{ gap: spacing.xs }}>
-      <Text style={[type.label, { color: colors.muted }]}>{label}</Text>
+      {labelOnBorder ? null : <Text style={[type.label, { color: colors.muted }]}>{label}</Text>}
       <AnimatedPressable
         accessibilityLabel={`${label}: ${current ? current.label : placeholder}`}
         accessibilityRole="button"
@@ -59,6 +62,25 @@ export function SelectField<Value extends string>({
           paddingRight: spacing.sm,
         }}
       >
+        {labelOnBorder ? (
+          // Same label as NotchedInput. The fill is on the wrapper, so the text's opacity cannot let the border through.
+          <View pointerEvents="none" style={{ backgroundColor: colors.surface, left: 10, position: "absolute", top: -9 }}>
+            <Text
+              numberOfLines={1}
+              style={{
+                color: error ? colors.danger : colors.ink,
+                fontFamily: fonts.sansBold,
+                fontSize: 11,
+                letterSpacing: 0.3,
+                lineHeight: 16,
+                opacity: error ? 1 : 0.65,
+                paddingHorizontal: 5,
+              }}
+            >
+              {label}
+            </Text>
+          </View>
+        ) : null}
         <Text
           numberOfLines={1}
           style={{ color: current ? colors.ink : colors.muted, flex: 1, fontFamily: current ? fonts.sansSemiBold : fonts.sans, fontSize: 15 }}

@@ -1,14 +1,15 @@
 import { useState, type ComponentType, type ReactNode } from "react";
-import { Platform, Text, View } from "react-native";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { Text, View } from "react-native";
 import { CalendarDays, X, type LucideProps } from "lucide-react-native";
 
+import { CalendarPicker } from "@/components/calendar-picker";
+import { istToday } from "@/features/analytics/period";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /** The oldest birth date the picker will offer. */
-const EARLIEST = new Date(1920, 0, 1);
+const EARLIEST = "1920-01-01";
 
 /**
  * Date of birth, as a picker rather than a typed string.
@@ -113,42 +114,15 @@ export function DateOfBirthField({
       </View>
 
       {open ? (
-        <DateTimePicker
-          display={Platform.OS === "ios" ? "spinner" : "default"}
-          maximumDate={new Date()}
-          minimumDate={EARLIEST}
-          mode="date"
-          onChange={(event: DateTimePickerEvent, selected?: Date) => {
-            // Android fires once and dismisses itself; iOS keeps the spinner up
-            // and reports every scroll, so it is closed by the caller's own
-            // interaction rather than here.
-            if (Platform.OS === "android") {
-              setOpen(false);
-            }
-            if (event.type === "dismissed" || !selected) {
-              return;
-            }
-            // Formatted from the LOCAL date parts, not toISOString(). The latter
-            // converts to UTC first, so a date picked in IST before 5:30am comes
-            // back as the previous day.
-            const month = String(selected.getMonth() + 1).padStart(2, "0");
-            const day = String(selected.getDate()).padStart(2, "0");
-            onChange(`${selected.getFullYear()}-${month}-${day}`);
-          }}
-          value={valid ?? new Date(2000, 0, 1)}
+        <CalendarPicker
+          // Nobody opening this was born this month, so it starts somewhere near.
+          initialMonth="2000-01"
+          maximum={istToday()}
+          minimum={EARLIEST}
+          onClose={() => setOpen(false)}
+          onPick={onChange}
+          value={valid ? value : null}
         />
-      ) : null}
-
-      {/* iOS keeps the spinner mounted, so it needs a way out that is not a
-          date selection — otherwise the only way to dismiss it is to pick one. */}
-      {open && Platform.OS === "ios" ? (
-        <AnimatedPressable
-          accessibilityRole="button"
-          onPress={() => setOpen(false)}
-          style={{ alignItems: "center", paddingVertical: spacing.xs }}
-        >
-          <Text style={{ color: colors.primary, fontFamily: fonts.sansSemiBold, fontSize: 14 }}>Done</Text>
-        </AnimatedPressable>
       ) : null}
     </View>
   );

@@ -1,9 +1,9 @@
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useState } from "react";
 import { ScrollView, Switch, Text, View } from "react-native";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ChevronRight, EyeOff, Globe, Pencil } from "lucide-react-native";
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { PropertyArtwork } from "@/components/artwork-icon";
@@ -16,7 +16,7 @@ import { useFormErrors } from "@/features/forms/use-form-errors";
 import { Card } from "@/components/card";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
-import { HelpModalClose } from "@/components/help-modal-header";
+import { GotItButton, ModalTitleRule } from "@/components/modal-title-rule";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -34,7 +34,9 @@ import { PropertyContactsSection } from "@/features/property/property-contacts-s
 import {
   BookingsIcon,
   EnquiriesIcon,
+  FacilitiesIcon,
   ItemCatalogueIcon,
+  DamagesIcon,
   ManageListingIcon,
   NearbyLocationsIcon,
   PropertyBoardIcon,
@@ -76,11 +78,12 @@ type PropertyRoute =
   | "/owner-food"
   | "/owner-nearby-places"
   | "/owner-property-visits"
-  | "/owner-exit-policies";
+  | "/owner-exit-policies"
+  | "/owner-damages";
 
 export default function OwnerPropertyScreen() {
   const router = useGuardedRouter();
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const [facilitiesOpen, setFacilitiesOpen] = useState(false);
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
@@ -101,6 +104,11 @@ export default function OwnerPropertyScreen() {
     skip: !selectedProperty,
   });
   const openEnquiryCount = openEnquiryCountQuery.data ?? 0;
+
+  const loadFailed = loadFailure(propertiesQuery, roomsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
@@ -126,16 +134,15 @@ export default function OwnerPropertyScreen() {
 
       {selectedProperty ? (
         <>
-          <Card>
+          <Card style={{ marginTop: -spacing.xs, paddingTop: spacing.md }}>
             {/* The property mark beside its own name, as on the Home selector.
                 This card IS the property; every other card on the screen is a
                 part of it, and the glyph is what says which is which. */}
             <View style={{ gap: spacing.xs }}>
-              <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, justifyContent: "center" }}>
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
                 <View style={{ backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
                   <Text style={[type.eyebrow, { color: colors.inkSoft }]}>{selectedProperty.referenceCode}</Text>
                 </View>
-                <Text style={[type.caption, { color: colors.muted }]}>·</Text>
                 <View style={{ backgroundColor: colors.warningSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
                   <Text style={[type.caption, { color: colors.accent }]}>{humanizeToken(selectedProperty.type)}</Text>
                 </View>
@@ -151,7 +158,7 @@ export default function OwnerPropertyScreen() {
                     <Circle cx={12} cy={10} r={3} fill="#FFFFFF" />
                   </Svg>
                 </View>
-                <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
+                <Text style={[type.body, { color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13, lineHeight: 18 }]}>
                   {[selectedProperty.address, selectedProperty.area, selectedProperty.city, selectedProperty.state, selectedProperty.pincode].filter(Boolean).join(", ")}
                 </Text>
               </View>
@@ -212,7 +219,7 @@ export default function OwnerPropertyScreen() {
             <AnimatedPressable accessibilityRole="button" accessibilityLabel="View facilities" onPress={() => setFacilitiesOpen(true)}>
               <Card>
                 <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-                  <MaterialCommunityIcons name="home-city" color="#000000" size={32} />
+                  <FacilitiesIcon size={36} />
                   <Text style={[type.display, { color: colors.ink, flex: 1, fontSize: 17, lineHeight: 23 }]}>View facilities</Text>
                   <View
                     style={{
@@ -232,17 +239,6 @@ export default function OwnerPropertyScreen() {
           ) : null}
 
           <Section title="Property workspace">
-            {permissionsReady && isPropertyOwner ? (
-              <ActionCard
-                borderRadius={12}
-                icon={BookingsIcon}
-                iconSize={58}
-                showArrow={false}
-                title="Bookings"
-                description="Review post-visit requests and set the terms and team who handle them."
-                onPress={() => open(router, "/owner-bookings")}
-              />
-            ) : null}
             <ActionCard
               borderRadius={12}
               icon={ManageListingIcon}
@@ -253,16 +249,6 @@ export default function OwnerPropertyScreen() {
               onPress={() => open(router, "/owner-manage-listing")}
             />
             <ActionCard
-              badge={openEnquiryCount}
-              borderRadius={12}
-              icon={EnquiriesIcon}
-              iconSize={58}
-              showArrow={false}
-              title="Enquiries"
-              description="Review questions from interested people and respond from the property enquiry inbox."
-              onPress={() => open(router, "/owner-enquiries")}
-            />
-            <ActionCard
               borderRadius={12}
               icon={RoomsAndBedsIcon}
               iconSize={58}
@@ -270,6 +256,27 @@ export default function OwnerPropertyScreen() {
               title="Rooms & beds"
               description="Create rooms single or in bulk, edit, set status and manage occupancy."
               onPress={() => open(router, "/owner-rooms")}
+            />
+            {/* Room types and move-in checklists pick from this catalogue;
+                settlement charges use its damage levels. */}
+            <ActionCard
+              borderRadius={12}
+              icon={ItemCatalogueIcon}
+              iconSize={58}
+              showArrow={false}
+              title="Item catalogue & Damages"
+              description="Everything a room can have, by room and bathroom, and what each damage level costs."
+              onPress={() => open(router, "/owner-exit-policies")}
+            />
+            {/* Damage found in the rooms, charged to their tenants, and repaired (user, 2026-10-29). */}
+            <ActionCard
+              borderRadius={12}
+              icon={DamagesIcon}
+              iconSize={58}
+              showArrow={false}
+              title="Damages & Repairs"
+              description="Record damage to a room's items, bill it to the tenant, and mark it repaired or replaced."
+              onPress={() => open(router, "/owner-damages")}
             />
             <ActionCard
               borderRadius={12}
@@ -289,6 +296,27 @@ export default function OwnerPropertyScreen() {
               description="See what tenants find around the property, then curate the landmarks and services."
               onPress={() => open(router, "/owner-nearby-places")}
             />
+            {permissionsReady && isPropertyOwner ? (
+              <ActionCard
+                borderRadius={12}
+                icon={BookingsIcon}
+                iconSize={58}
+                showArrow={false}
+                title="Bookings"
+                description="Review post-visit requests and set the terms and team who handle them."
+                onPress={() => open(router, "/owner-bookings")}
+              />
+            ) : null}
+            <ActionCard
+              badge={openEnquiryCount}
+              borderRadius={12}
+              icon={EnquiriesIcon}
+              iconSize={58}
+              showArrow={false}
+              title="Enquiries"
+              description="Review questions from interested people and respond from the property enquiry inbox."
+              onPress={() => open(router, "/owner-enquiries")}
+            />
             <ActionCard
               borderRadius={12}
               icon={PropertyVisitsIcon}
@@ -297,17 +325,6 @@ export default function OwnerPropertyScreen() {
               title="Visiting Hours"
               description="Set the time slots, day by day, when tenants can book a visit to the property."
               onPress={() => open(router, "/owner-property-visits")}
-            />
-            {/* What a room can have and what damage to it costs: room types pick from it,
-                move-in checklists show it, settlement charges by it (user, 2026-10-29). */}
-            <ActionCard
-              borderRadius={12}
-              icon={ItemCatalogueIcon}
-              iconSize={58}
-              showArrow={false}
-              title="Item catalogue & Damages"
-              description="Everything a room can have, by room and bathroom, and what each damage level costs."
-              onPress={() => open(router, "/owner-exit-policies")}
             />
           </Section>
 
@@ -318,12 +335,13 @@ export default function OwnerPropertyScreen() {
         <BottomSheetModal navigationBarTranslucent statusBarTranslucent onRequestClose={() => setFacilitiesOpen(false)}>
           {(dismiss) => (
             <View style={{ flex: 1, justifyContent: "flex-end" }}>
-              <HelpModalClose onClose={() => dismiss()} />
               <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: spacing.lg, gap: spacing.md, maxHeight: "76%" }}>
-                <ModalTitle style={[type.display, { color: colors.ink, fontSize: 22, textAlign: "center" }]}>Facilities</ModalTitle>
+                <ModalTitle style={[type.display, { alignSelf: "center", color: colors.ink, fontSize: 22, textAlign: "center" }]}>Facilities</ModalTitle>
+                <ModalTitleRule />
                 <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1, width: "100%" }} contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: spacing.md }}>
                   <FacilityOverviewGrid variant="cards" collapsible={false} facilities={[...selectedProperty.facilities, ...selectedProperty.customFacilities]} />
                 </ScrollView>
+                <GotItButton onPress={() => dismiss()} />
               </View>
             </View>
           )}
@@ -538,7 +556,7 @@ function EditListingDetailsSheet({
   }
 
   return (
-    <SheetShell onClose={onClose} title="Edit listing details">
+    <SheetShell size="tall" onClose={onClose} title="Edit listing details">
       <FormInput
         error={form.errors.headline}
         label="Headline"

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
 import { Text, View } from "react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -70,12 +71,7 @@ export default function TenancyFoodMenuScreen() {
       <DayStrip onSelect={setDay} selected={day} week={week} />
 
       {query.isError ? (
-        <EmptyState
-          compact
-          description="Pull down to try again."
-          icon={foodIcon("alert-circle-outline")}
-          title="Could not load this menu"
-        />
+        <LoadFailed error={query.error} onReload={() => void query.refetch()} />
       ) : null}
 
       {!query.isFetching && !query.isError && entries.length === 0 ? (

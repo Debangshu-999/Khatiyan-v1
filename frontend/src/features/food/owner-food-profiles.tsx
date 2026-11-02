@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Text, View } from "react-native";
 
+import { softShadow } from "@/theme/shadows";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -10,7 +11,7 @@ import { FoodProfilesSkeleton } from "@/components/skeletons";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ConfirmDialog, FormInput, NoticeBar } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput } from "@/features/owner/owner-ui";
 import { FOOD_CATEGORY_OPTIONS, FoodProfileMark, FoodStatusChip, NoDescription, foodIcon } from "@/features/food/food-ui";
 import { SingleOptionPicker } from "@/components/option-picker";
 import { FoodProfileSubscribersSheet } from "@/features/food/owner-food-subscribers";
@@ -85,12 +86,6 @@ export function FoodProfilesTab({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <NoticeBar
-        message="A profile is one set of meals. Tenants pick exactly one, and the kitchen cooks each profile separately."
-        title="How profiles work"
-        tone="info"
-      />
-
       {loading && profiles.length === 0 ? <FoodProfilesSkeleton rows={2} /> : null}
 
       {!loading && profiles.length === 0 ? (
@@ -177,11 +172,13 @@ function ProfileCard({
   return (
     <View
       style={{
+        backgroundColor: colors.surface,
         borderColor: colors.border,
         borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.md,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
@@ -286,7 +283,23 @@ function FoodProfileSheet({
   }
 
   return (
-    <SheetShell animated onClose={onClose} title={profile ? "Edit food profile" : "Create food profile"}>
+    // As tall as the form, with its button fixed under it (user, 2026-11-01).
+    <SheetShell
+      animated
+      contentMaxSize="tall"
+      footer={
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton
+            disabled={saving || form.blocked}
+            label={saving ? "Saving…" : profile ? "Save changes" : "Create profile"}
+            onPress={() => void submit()}
+          />
+        </View>
+      }
+      onClose={onClose}
+      size="content"
+      title={profile ? "Edit food profile" : "Create food profile"}
+    >
       <FormInput
         error={form.errors.name}
         label="Name"
@@ -325,13 +338,6 @@ function FoodProfileSheet({
         placeholder="Pure vegetarian meals, no onion or garlic"
         value={description}
       />
-      <View style={{ flexDirection: "row" }}>
-        <ActionButton
-          disabled={saving || form.blocked}
-          label={saving ? "Saving…" : profile ? "Save changes" : "Create profile"}
-          onPress={() => void submit()}
-        />
-      </View>
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
     </SheetShell>
   );

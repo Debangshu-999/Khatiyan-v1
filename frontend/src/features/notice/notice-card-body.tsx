@@ -28,12 +28,15 @@ export function NoticeCardBody({
   onPress,
   surface,
   title,
+  titleTrailing,
 }: {
   attachmentCount?: number;
   body: string;
   onPress?: () => void;
   surface?: string;
   title: string;
+  /** Sits at the end of the title's row, for a card with no row above its title. */
+  titleTrailing?: React.ReactNode;
 }) {
   const { colors, type } = useTheme();
   const fadeTo = surface ?? colors.surface;
@@ -41,9 +44,12 @@ export function NoticeCardBody({
 
   const content = (
     <>
-      <FitText numberOfLines={2} style={[type.display, { color: colors.ink, fontSize: 21, lineHeight: 26 }]}>
-        {title}
-      </FitText>
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+        <FitText numberOfLines={2} style={[type.display, { color: colors.ink, flex: 1, fontSize: 21, lineHeight: 26 }]}>
+          {title}
+        </FitText>
+        {titleTrailing}
+      </View>
 
       <View style={{ maxHeight: BODY_PREVIEW_HEIGHT, overflow: "hidden" }}>
         <Text

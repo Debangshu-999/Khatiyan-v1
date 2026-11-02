@@ -1,3 +1,6 @@
+import { SheetShell } from "@/components/sheet-shell";
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useMemo, useState } from "react";
 import { Image, ScrollView, Text, View } from "react-native";
@@ -115,6 +118,15 @@ export function PaymentDetailsSheet({
   const referenceText = payment?.referenceText ?? null;
   const hasProof = Boolean(referenceText) || proofImageUrls.length > 0;
 
+  const loadFailed = loadFailure(query);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title="Payment details">
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
+  }
+
   return (
     <>
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
@@ -146,8 +158,8 @@ export function PaymentDetailsSheet({
                 {cycle.referenceCode}
               </ModalTitle>
             </View>
-            <IconButton accessibilityLabel="Close payment details" filled icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
 
           <ScrollView
             contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}

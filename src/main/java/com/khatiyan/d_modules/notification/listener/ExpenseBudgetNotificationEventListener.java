@@ -1,8 +1,8 @@
 package com.khatiyan.d_modules.notification.listener;
 
+import com.khatiyan.c_shared.money.Money;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -28,7 +28,6 @@ import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 @Component
 public class ExpenseBudgetNotificationEventListener {
 
-    private static final Locale INR = new Locale("en", "IN");
 
     private final NotificationModule notificationModule;
     private final PropertyModule propertyModule;
@@ -117,6 +116,6 @@ public class ExpenseBudgetNotificationEventListener {
     }
 
     private static String formatPaise(long paise) {
-        return String.format(INR, "₹%,d", paise / 100);
+        return "₹" + Money.indianGrouped(paise / 100);
     }
 }

@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { Check, Mail, MessageSquare, Phone } from "lucide-react-native";
+import { Mail, MessageSquare, Phone } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { SheetShell } from "@/components/sheet-shell";
-import { AnimatedPressable } from "@/components/animated-pressable";
 import { ConsentTick } from "@/features/compliance/clickwrap-consent";
 import { ActionButton } from "@/features/owner/owner-ui";
+import { formatIndianPhone } from "@/features/owner/phone-display";
 import {
   describeChannelName,
   describeEmailChannelGapShort,
@@ -23,11 +23,9 @@ import { FitText } from "@/components/fit-text";
  * The agreement an enquirer makes before a property can be given a way to
  * contact them.
  *
- * <p>Two controls doing two different jobs. The selector says WHICH details
- * would be shared, and the tick is the agreement to share them. Folding them
- * into one — a single "share my phone" switch — would make picking a channel
- * and consenting to it the same gesture, which is how consent stops being a
- * decision and becomes a side effect of the thing you were going to do anyway.
+ * <p>The list says what would be shared, and the one tick is the agreement to
+ * share it (user, 2026-11-02: with phone the only choice beside chat, a box on
+ * its row and the agreement were two ticks for one decision).
  *
  * <p>The tick opens unticked and stays that way. A pre-ticked box is a default
  * nobody chose, which is exactly what this modal exists to replace.
@@ -41,31 +39,16 @@ export function EnquiryConsentModal({
   onClose: () => void;
   onGranted: () => void;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, type } = useTheme();
   const [save, saveState] = useUpdateEnquiryChannelConsentsMutation();
   const [error, setError] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
 
-  // Anything already granted starts ticked, so re-opening this from account
-  // settings shows the current state rather than a blank slate that would read
-  // as "you have nothing" to someone who has something.
-  //
-  // Locked rows are never in here. Chat is drawn ticked from its own flag, and
-  // putting it in the picked set would send it to a server that refuses it.
-  const [picked, setPicked] = useState<EnquiryResponseChannel[]>(() =>
-    consents.channels.filter((option) => option.granted && !option.locked).map((option) => option.channel),
-  );
-
-  // The server is the source of truth for what CAN be picked. If it comes back
-  // with email newly unavailable, a stale pick would sit checked on a row the
-  // save is going to refuse.
-  useEffect(() => {
-    const usable = new Set(
-      consents.channels.filter((option) => option.available && !option.locked).map((option) => option.channel),
-    );
-    setPicked((current) => current.filter((channel) => usable.has(channel)));
-  }, [consents.channels]);
-
+  // With phone the only channel to choose beyond chat, there is nothing to pick: the one tick
+  // agrees to share what is listed above it (user, 2026-11-02).
+  const shareable = consents.channels
+    .filter((option) => option.available && !option.locked)
+    .map((option) => option.channel);
   const emailGap = useMemo(() => describeEmailChannelGapShort(consents.emailChannelState), [consents.emailChannelState]);
 
   // The tick alone. Needing a channel picked as well left the button dead with
@@ -73,12 +56,6 @@ export function EnquiryConsentModal({
   // disabled control that will not say what it wants is worse than one that
   // answers when pressed.
   const ready = agreed;
-
-  function toggle(channel: EnquiryResponseChannel) {
-    setPicked((current) =>
-      current.includes(channel) ? current.filter((each) => each !== channel) : [...current, channel],
-    );
-  }
 
   async function submit() {
     if (!ready) {
@@ -88,12 +65,12 @@ export function EnquiryConsentModal({
     // wired, an enquiry with no phone and no email is one nobody can reply to,
     // so it is stopped here rather than at send time with the message half
     // written.
-    if (picked.length === 0) {
-      setError("Pick at least one way for them to reply, otherwise nobody can answer your enquiry.");
+    if (shareable.length === 0) {
+      setError("Add a phone number to your account so they can reply to your enquiry.");
       return;
     }
     try {
-      await save({ agreed, channels: picked }).unwrap();
+      await save({ agreed, channels: shareable }).unwrap();
       onGranted();
     } catch (caught) {
       setError(readErrorMessage(caught) ?? "Could not save that. Try again.");
@@ -124,7 +101,7 @@ export function EnquiryConsentModal({
    * for a drag to fight.
    */
   return (
-    <SheetShell dismissOnDrag onClose={onClose} title="Communication permissions">
+    <SheetShell contentMaxSize="tall" dismissOnDrag onClose={onClose} size="content" title="Contact permission">
       <View
         style={{
           borderColor: colors.border,
@@ -137,22 +114,19 @@ export function EnquiryConsentModal({
           <ChannelRow
             first={index === 0}
             key={option.channel}
-            onToggle={() => toggle(option.channel)}
             option={option}
-            picked={picked.includes(option.channel)}
             unavailableNote={option.channel === "EMAIL" ? emailGap : null}
           />
         ))}
       </View>
 
-      {/* No card around this one. The selector above is a bounded group of
-          choices and earns its border, but the agreement is a single line you
-          tick — boxing it made two panels of equal weight and buried which one
-          was the decision. */}
+      {/* No card around this one. The list above is a bounded group and earns its
+          border, but the agreement is a single line you tick — boxing it made two
+          panels of equal weight and buried which one was the decision. */}
       <View style={{ flexDirection: "row" }}>
         <ConsentTick checked={agreed} onToggle={() => setAgreed((current) => !current)} />
         <Text style={[type.caption, { color: colors.inkSoft, flex: 1, lineHeight: 19, marginLeft: spacing.sm }]}>
-          I agree to share the contact details I picked with the property I enquire to.
+          I agree to share the contact details above with the property I enquire to.
         </Text>
       </View>
 
@@ -177,37 +151,27 @@ export function EnquiryConsentModal({
  * one screen where someone decides whether to hand it over, and a decision about
  * a value you cannot see is not much of a decision.
  *
- * <p>A locked row has no tick box and does not respond to a press (user,
- * 2026-10-18: a tick beside something that is on by default read as a choice).
- * Chat is the only one: it shares nothing, so there is nothing to agree to and
- * nothing to withdraw. Its line says "In the app, by default". It is shown rather than assumed because "they can always reach me in
- * the app" is the reassurance that makes declining phone a reasonable choice.
+ * <p>Chat shares nothing, so there is nothing to agree to and nothing to withdraw.
+ * Its line says "In the app, by default". It is shown rather than assumed because
+ * "they can always reach me in the app" is the reassurance that makes declining
+ * phone a reasonable choice.
  */
 function ChannelRow({
   first,
-  onToggle,
   option,
-  picked,
   unavailableNote,
 }: {
   first: boolean;
-  onToggle: () => void;
   option: EnquiryChannelOption;
-  picked: boolean;
   unavailableNote: string | null;
 }) {
   const { colors, fonts, type } = useTheme();
   const Icon = ICONS[option.channel];
-  const checked = option.locked || picked;
-  const pressable = option.available && !option.locked;
+  const isPhone = option.channel === "CALL_BACK";
 
   return (
     <View style={{ borderTopColor: colors.border, borderTopWidth: first ? 0 : 1 }}>
-      <AnimatedPressable
-        accessibilityRole={option.locked ? "text" : "checkbox"}
-        accessibilityState={option.locked ? undefined : { checked, disabled: !pressable }}
-        disabled={!pressable}
-        onPress={onToggle}
+      <View
         style={{
           alignItems: "center",
           flexDirection: "row",
@@ -221,23 +185,7 @@ function ChannelRow({
           paddingVertical: spacing.xs,
         }}
       >
-        {/* No box and no gap where one would be: Chat starts at the left edge (user, 2026-10-18). */}
-        {option.locked ? null : <View
-          style={{
-            alignItems: "center",
-            backgroundColor: checked ? colors.primary : "transparent",
-            borderColor: checked ? colors.primary : colors.borderStrong,
-            borderRadius: 6,
-            borderWidth: 2,
-            height: 22,
-            justifyContent: "center",
-            width: 22,
-          }}
-        >
-          {checked ? <Check color={colors.onPrimary} size={14} strokeWidth={3} /> : null}
-        </View>}
-
-        <Icon color={colors.inkSoft} size={17} strokeWidth={2.2} style={{ marginLeft: option.locked ? 0 : spacing.sm }} />
+        <Icon color={colors.inkSoft} size={17} strokeWidth={2.2} />
 
         <View style={{ flex: 1, marginLeft: spacing.sm }}>
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
@@ -253,7 +201,7 @@ function ChannelRow({
               type.caption,
               {
                 color: colors.muted,
-                fontFamily: option.channel === "CALL_BACK" ? fonts.mono : undefined,
+                fontFamily: isPhone ? fonts.sansMedium : undefined,
                 // Was the column's `gap: 2`, moved onto the child with every
                 // other gap in this file.
                 marginTop: 2,
@@ -262,10 +210,10 @@ function ChannelRow({
           >
             {option.locked
               ? "In the app, by default"
-              : (option.target ?? unavailableNote ?? "Not available on your account")}
+              : ((option.target && isPhone ? formatIndianPhone(option.target) : option.target) ?? unavailableNote ?? "Not available on your account")}
           </FitText>
         </View>
-      </AnimatedPressable>
+      </View>
     </View>
   );
 }

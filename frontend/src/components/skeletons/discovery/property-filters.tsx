@@ -17,7 +17,6 @@ export function PropertyFiltersSkeleton({ sections = 3 }: { sections?: number })
       {Array.from({ length: sections }, (_, index) => (
         <View key={index} style={{ gap: spacing.md }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            <Skeleton height={48} radius={999} width={48} />
             <View style={{ flex: 1, gap: spacing.xs }}>
               <Skeleton height={16} width="46%" />
               <Skeleton height={12} width="72%" />

@@ -2,6 +2,7 @@ import { Text, View } from "react-native";
 import { CalendarCheck, CircleCheck, CircleX, Clock3, Undo2, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
+import { cardText } from "@/components/card-name-row";
 import { BookingTokenStatusIcon } from "@/components/booking-vector-icons";
 import { BOOKING_STATUS, BOOKING_TOKEN_STATUS } from "@/features/booking/booking-ui";
 import type { BookingStatus, BookingTokenStatus } from "@/store/services/booking-api";
@@ -55,7 +56,7 @@ function chip(theme: Theme, accessibilityLabel: string, Icon: ComponentType<Luci
   const [backgroundColor, color] = palette[tone];
   return <View accessibilityLabel={accessibilityLabel} style={{ alignItems: "center", alignSelf: "flex-start", backgroundColor, borderRadius: 999, flexDirection: "row", gap: 5, paddingHorizontal: 10, paddingVertical: 7 }}>
     <Icon color={color} size={15} strokeWidth={2.2} />
-    <Text style={{ color, fontFamily: fonts.sansSemiBold, fontSize: 12 }}>{label}</Text>
+    <Text style={{ color, fontFamily: fonts.sansSemiBold, fontSize: cardText(12) }}>{label}</Text>
   </View>;
 }
 

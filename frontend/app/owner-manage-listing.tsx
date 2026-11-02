@@ -1,3 +1,4 @@
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -16,6 +17,11 @@ export default function OwnerManageListingScreen() {
   const selectedProperty = resolveSelectedProperty(propertiesQuery.data ?? [], selectedPropertyId);
   const { canManage } = usePropertyPermissions(selectedProperty?.id);
   const canManageSettings = canManage("PROPERTY_SETTINGS");
+
+  const loadFailed = loadFailure(propertiesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>

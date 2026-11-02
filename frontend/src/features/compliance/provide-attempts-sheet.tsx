@@ -3,6 +3,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { Info, ShieldCheck, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
@@ -94,6 +95,15 @@ export function ProvideAttemptsSheet({
     }
   }
 
+  const loadFailed = loadFailure(checksQuery);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title="Provided verification">
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
+  }
+
   return (
     <SheetShell onClose={onClose} title="Provided verification">
       <View style={{ gap: spacing.md }}>
@@ -138,16 +148,16 @@ export function ProvideAttemptsSheet({
 
         <VerificationOrderSummary onAttemptsChange={setAttempts} order={order} />
 
-        <ActionButton
-          disabled={chosen.length === 0 || provideState.isLoading}
-          label={provideState.isLoading ? "Adding…" : "Add attempts"}
-          onPress={() => void add()}
-        />
         {!checksQuery.isLoading && given.length > 0 && !anyToppable ? (
           <Text style={[type.modalDescription, { color: colors.muted, textAlign: "center" }]}>
             No check needs more attempts right now.
           </Text>
         ) : null}
+        <ActionButton
+          disabled={chosen.length === 0 || provideState.isLoading}
+          label={provideState.isLoading ? "Adding…" : "Add attempts"}
+          onPress={() => void add()}
+        />
       </View>
 
       {refusal ? <AlertModal message={refusal} onClose={() => setRefusal(null)} /> : null}

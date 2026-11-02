@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { DigestMoveInsEmptyIcon } from "@/components/tenancy-line-icons";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -65,7 +66,12 @@ export default function OwnerMoveInsTodayScreen() {
 
       {tenanciesQuery.isLoading ? <OwnerDataListSkeleton bodyLines={2} rows={2} /> : null}
 
-      {!tenanciesQuery.isLoading && startingToday.length === 0 ? (
+      {/* A refusal must not read as "Nobody moved in today". */}
+      {tenanciesQuery.isError ? (
+        <LoadFailed error={tenanciesQuery.error} onReload={() => void tenanciesQuery.refetch()} />
+      ) : null}
+
+      {!tenanciesQuery.isLoading && !tenanciesQuery.isError && startingToday.length === 0 ? (
         <EmptyState
           artworkNode={<DigestMoveInsEmptyIcon size={64} />}
           title="Nobody moved in today"

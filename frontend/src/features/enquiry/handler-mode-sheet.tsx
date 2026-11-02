@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import { Check } from "lucide-react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
@@ -76,6 +77,15 @@ export function HandlerModeSheet({ onClose, propertyId }: { onClose: () => void;
     } catch (error) {
       setRefusal(errorMessage(error));
     }
+  }
+
+  const loadFailed = loadFailure(settingsQuery);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title="Assigning enquiries">
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
   }
 
   if (refusal) {

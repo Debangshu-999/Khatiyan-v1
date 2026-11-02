@@ -4,6 +4,8 @@ import { useLocalSearchParams } from "expo-router";
 
 import { Banknote, BedDouble, CalendarClock, Clock3 } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
@@ -96,9 +98,7 @@ export default function OwnerUpcomingCyclesScreen() {
           ) : null}
 
           {upcomingQuery.isError ? (
-            <Text style={[type.caption, { color: colors.danger }]}>
-              Could not load upcoming cycles. Pull to retry.
-            </Text>
+            <LoadFailed error={upcomingQuery.error} onReload={() => void upcomingQuery.refetch()} />
           ) : null}
         </>
       )}
@@ -168,16 +168,16 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
         </View>
 
         <View style={{ flex: 1, gap: 2 }}>
-          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+          <CardNameRow rowStyle={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
             <FitText
-              style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 17, }}
+              style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: cardText(17), }}
               numberOfLines={1}
             >
               {cardName(item.tenantName || "Tenant")}
             </FitText>
-            {item.tenancyEndDate != null ? <StatusPill label="On notice" tone="warning" /> : null}
-          </View>
-          <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+            <CardStatus>{item.tenancyEndDate != null ? <StatusPill label="On notice" tone="warning" /> : null}</CardStatus>
+          </CardNameRow>
+          <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: colors.muted }]}>
             {item.tenancyReferenceCode}
           </FitText>
 
@@ -185,12 +185,12 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
             {item.roomNumber ? (
               <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
                 <BedDouble color={colors.muted} size={14} strokeWidth={2.1} />
-                <Text style={[type.caption, { color: colors.ink }]}>Room {item.roomNumber}</Text>
+                <Text style={[smallerCardText(type.caption), { color: colors.ink }]}>Room {item.roomNumber}</Text>
               </View>
             ) : null}
             <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
               <Banknote color={colors.muted} size={14} strokeWidth={2.1} />
-              <Text style={[type.caption, { color: colors.ink }]}>{formatMoneyPaise(item.baseAmountPaise)} / month</Text>
+              <Text style={[smallerCardText(type.caption), { color: colors.ink }]}>{formatMoneyPaise(item.baseAmountPaise)} / month</Text>
             </View>
           </View>
         </View>
@@ -216,7 +216,7 @@ function UpcomingCycleRow({ item }: { item: UpcomingBillingCycle }) {
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <DueChip days={days} suppressed={endsBeforeNextCycle} />
         {endsBeforeNextCycle ? (
-          <Text style={[type.description, { color: colors.muted, flex: 1, textAlign: "right" }]}>
+          <Text style={[smallerCardText(type.description), { color: colors.muted, flex: 1, textAlign: "right" }]}>
             Tenancy ends {formatFullDate(item.tenancyEndDate as string)} — before this cycle.
           </Text>
         ) : null}

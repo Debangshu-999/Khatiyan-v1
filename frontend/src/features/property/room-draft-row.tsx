@@ -1,5 +1,5 @@
 import { Text, View } from "react-native";
-import { ChevronDown, ChevronUp } from "lucide-react-native";
+import { ChevronDown, ChevronUp, Info } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -55,8 +55,8 @@ export function draftNumber(draft: RoomDraft) {
  * <p>Used twice. In a custom list every row owns all of it, because a list is
  * for the floor that is NOT uniform — two singles, a double and a dormitory is
  * an ordinary landing, and a series cannot say that. Adding a single room asks
- * exactly the same questions, so it renders the same fields `standalone`,
- * without the card and the collapse that only a list needs.
+ * exactly the same questions, so `standalone` separates its room details and
+ * amenities into two cards, without the collapse that only a list needs.
  *
  * <p>In a list, one row is open at a time: ten rooms of open form is a wall to
  * scroll past, and the row being filled loses its heading above the fold.
@@ -86,7 +86,7 @@ export function RoomDraftRow({
   onToggle: () => void;
   /** False for the last remaining row — a list of none is not a list. */
   removable: boolean;
-  /** Fields alone: no card, no heading, no collapse. */
+  /** One room, without the list heading or collapse. */
   standalone?: boolean;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -94,10 +94,13 @@ export function RoomDraftRow({
   const mold = molds.find((option) => option.id === draft.moldId) ?? null;
   const number = draftNumber(draft);
   const faulted = errors ? Object.values(errors).some(Boolean) : false;
+  // Only Add room changes its field shape; Edit room keeps its section-band design.
+  const fieldRadius = standalone && !headingBands ? 8 : 14;
 
   const details = (
     <View style={{ gap: spacing.md }}>
       <MoldPicker
+        radius={fieldRadius}
         error={errors?.mold}
         hideLabel={headingBands}
         molds={molds}
@@ -123,6 +126,7 @@ export function RoomDraftRow({
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1 }}>
           <FormInput
+            radius={fieldRadius}
             autoCapitalize="characters"
             disabled={!mold}
             label="Prefix"
@@ -133,6 +137,7 @@ export function RoomDraftRow({
         </View>
         <View style={{ flex: 1 }}>
           <FormInput
+            radius={fieldRadius}
             autoCapitalize="characters"
             disabled={!mold}
             error={errors?.number}
@@ -149,6 +154,7 @@ export function RoomDraftRow({
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1 }}>
           <FormInput
+            radius={fieldRadius}
             disabled={!mold}
             error={errors?.floor}
             keyboardType="number-pad"
@@ -162,6 +168,7 @@ export function RoomDraftRow({
         </View>
         <View style={{ flex: 1 }}>
           <FormInput
+            radius={fieldRadius}
             disabled={!mold}
             error={errors?.rent}
             keyboardType="decimal-pad"
@@ -214,10 +221,22 @@ export function RoomDraftRow({
         </View>
       );
     }
-    // One room, one card. The fields used to sit bare on the page, which left
-    // the screen as a column of inputs with nothing saying where the room
-    // begins and the page ends.
-    return <Card>{fields}</Card>;
+    return (
+      <View style={{ gap: spacing.lg }}>
+        <Card>{details}</Card>
+        <Card>
+          {mold ? amenityFields : (
+            <View style={{ gap: spacing.md }}>
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>Amenities</Text>
+              <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 8, flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
+                <Info color={colors.muted} size={18} strokeWidth={2} />
+                <Text style={[type.description, { color: colors.muted, flex: 1 }]}>Select a room type.</Text>
+              </View>
+            </View>
+          )}
+        </Card>
+      </View>
+    );
   }
 
   return (

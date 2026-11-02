@@ -50,7 +50,7 @@ class AuthStateCacheIntegrationTest {
         userId = tx.execute(status -> users.save(User.create(phone, "Cache Test", UserRole.USER)).getId());
         jti = UUID.randomUUID();
         Instant now = Instant.now();
-        tx.executeWithoutResult(status -> sessions.open(userId, jti, "Pixel 8", "phone", now, now.plus(Duration.ofHours(1))));
+        tx.executeWithoutResult(status -> sessions.open(userId, jti, "Pixel 8", "phone", now));
     }
 
     @AfterEach

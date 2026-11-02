@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { BedDouble, CalendarDays, CalendarX, Clock3, IndianRupee, MessageCircle, RotateCcw, UserRound } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailedCard } from "@/components/load-failed";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { FilteredQueue } from "@/components/filtered-queue";
@@ -17,8 +19,7 @@ import { BOOKING_STATUS, OPEN_BOOKING_STATUSES, PAST_BOOKING_STATUSES, bookingDa
 import { istToday } from "@/features/analytics/period";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { InitialsAvatar } from "@/features/enquiry/enquiry-tags";
-import { errorMessage } from "@/features/forms/server-error";
-import { ActionButton, NoticeBar, formatMoneyPaise } from "@/features/owner/owner-ui";
+import { ActionButton, formatMoneyPaise } from "@/features/owner/owner-ui";
 import { BookingsIcon } from "@/features/property/property-control-icons";
 import { useAccumulatedPages } from "@/hooks/use-accumulated-pages";
 import {
@@ -30,6 +31,7 @@ import {
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { cardName } from "@/lib/person-name";
 
 type Scope = "ALL" | "MINE";
@@ -78,6 +80,10 @@ export function BookingRequestList({ propertyId, filter, owner, onOpen, loadMore
   const [status, setStatus] = useState<"ALL" | BookingStatus>("ALL");
   const [searchDraft, setSearchDraft] = useState("");
   const [page, setPage] = useState(0);
+  useQuickActionIntent({
+    "record-token": () => { setScope("MINE"); setStatus("AWAITING_TOKEN"); setPage(0); },
+    "cancel-booking": () => { setScope("MINE"); setStatus("ALL"); setPage(0); },
+  }, filter === "OPEN" && !confirmedOnly && !attention);
   // Typed freely, asked for once the typing pauses.
   const search = useDebouncedValue(searchDraft.trim(), 350);
   const past = filter === "HISTORY";
@@ -106,10 +112,7 @@ export function BookingRequestList({ propertyId, filter, owner, onOpen, loadMore
 
   const rows = <>
     {!data && !list.isError ? <SkeletonList rows={3} body={2} action /> : null}
-    {list.isError && !data ? <>
-      <NoticeBar title="Could not load bookings" message={errorMessage(list.error)} tone="danger" />
-      <View style={{ flexDirection: "row" }}><ActionButton label="Try again" icon={RotateCcw} onPress={() => void list.refetch()} variant="secondary" /></View>
-    </> : null}
+    {list.isError && !data ? <LoadFailedCard error={list.error} onReload={() => void list.refetch()} /> : null}
     {/* On the Bookings screen the list is one section under the cards, so its empty state stays small. On the
         history and the confirmed screens the list is the whole page, and an empty one stands in the middle of
         it (user, 2026-10-11). */}
@@ -187,33 +190,33 @@ export function BookingCard({ item, showHandler = true, canOpen = true, onChat, 
   // A confirmed booking stays CONFIRMED until someone converts it or records that they did not arrive.
   const pastDue = item.status === "CONFIRMED" && item.moveInDate < istToday();
   return <Card style={{ gap: spacing.sm, padding: spacing.md }}>
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginBottom: 4 }}>
+    <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginBottom: 4 }}>
       <InitialsAvatar name={item.tenantName} />
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-        <FitText numberOfLines={1} minimumFontScale={0.8} style={[type.display, { color: colors.ink, fontSize: 18 }]}>{cardName(item.tenantName)}</FitText>
-        <FitText selectable numberOfLines={1} minimumFontScale={0.8} style={[type.description, { color: colors.muted }]}>{item.referenceCode}</FitText>
+        <FitText numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(18) }]}>{cardName(item.tenantName)}</FitText>
+        <FitText selectable numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.description), { color: colors.muted }]}>{item.referenceCode}</FitText>
       </View>
-      <OwnerBookingStatus short status={item.status} />
-    </View>
+      <CardStatus><OwnerBookingStatus short status={item.status} /></CardStatus>
+    </CardNameRow>
     <View style={{ flexDirection: "row", gap: 8 }}>
       <View style={{ flex: 1, minWidth: 0 }}><BookingInfoBand icon={BedDouble} iconGap={6}>
-        <FitText numberOfLines={1} minimumFontScale={0.8} style={[type.body, { color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 13 }]}>Room {item.roomNumber}</FitText>
+        <FitText numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.body), { color: colors.ink, fontFamily: fonts.sansMedium, fontSize: cardText(13) }]}>Room {item.roomNumber}</FitText>
       </BookingInfoBand></View>
       <View style={{ flex: 1.5, minWidth: 0 }}><BookingInfoBand icon={CalendarDays} iconGap={6}>
-        <FitText numberOfLines={1} minimumFontScale={0.8} style={[type.body, { color: colors.ink, fontFamily: fonts.sansMedium }]}>Move-in: {bookingDateLabel(item.moveInDate)}</FitText>
+        <FitText numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.body), { color: colors.ink, fontFamily: fonts.sansMedium }]}>Move-in: {bookingDateLabel(item.moveInDate)}</FitText>
       </BookingInfoBand></View>
     </View>
     {/* Whose it is, where somebody has it: "you" to its own handler, the name to anyone else (user, 2026-10-11).
         With nobody, the status already says it is waiting. */}
-    {showHandler && item.handlerName ? <BookingInfoBand icon={UserRound}><FitText numberOfLines={1} style={[type.description, { color: colors.muted, fontFamily: fonts.sansMedium }]}>Handled by {item.handledByReader ? "you" : item.handlerName}</FitText></BookingInfoBand> : null}
+    {showHandler && item.handlerName ? <BookingInfoBand icon={UserRound}><FitText numberOfLines={1} style={[smallerCardText(type.description), { color: colors.muted, fontFamily: fonts.sansMedium }]}>Handled by {item.handledByReader ? "you" : item.handlerName}</FitText></BookingInfoBand> : null}
     <BookingInfoBand icon={IndianRupee}>
-      {note ? <Text style={[type.description, { color: colors.muted, fontFamily: fonts.sansMedium }]}>{note}</Text> : null}
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 17 }}>{formatMoneyPaise(item.currentRentPaise)} / month</Text>
+      {note ? <Text style={[smallerCardText(type.description), { color: colors.muted, fontFamily: fonts.sansMedium }]}>{note}</Text> : null}
+      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(17) }}>{formatMoneyPaise(item.currentRentPaise)} / month</Text>
     </BookingInfoBand>
     {/* Confirmed, and its move-in day has gone by with nobody moved in (user, 2026-10-27). */}
-    {pastDue ? <BookingInfoBand icon={CalendarX} tone="danger"><Text style={[type.body, { color: colors.danger, fontFamily: fonts.sansSemiBold }]}>Booking past due</Text></BookingInfoBand> : null}
+    {pastDue ? <BookingInfoBand icon={CalendarX} tone="danger"><Text style={[smallerCardText(type.body), { color: colors.danger, fontFamily: fonts.sansSemiBold }]}>Booking past due</Text></BookingInfoBand> : null}
     {/* The request's own clock, while it is still being answered. */}
-    {negotiating ? <BookingInfoBand icon={Clock3}><Text style={[type.description, { color: colors.muted, fontFamily: fonts.sansMedium }]}>{bookingExpiresInLabel(item.expiresAt)}</Text></BookingInfoBand> : null}
+    {negotiating ? <BookingInfoBand icon={Clock3}><Text style={[smallerCardText(type.description), { color: colors.muted, fontFamily: fonts.sansMedium }]}>{bookingExpiresInLabel(item.expiresAt)}</Text></BookingInfoBand> : null}
     {/* Chat beside the main button, on every card of a booking made in the app, confirmed or ended
         included (user, 2026-10-27). */}
     {canOpen || (onChat && item.canChat) ? <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: 4 }}>

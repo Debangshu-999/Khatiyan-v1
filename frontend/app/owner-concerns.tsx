@@ -1,3 +1,6 @@
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { ModalTitle } from "@/components/modal-title";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
@@ -6,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useFocusEffect } from "expo-router";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { Activity, AlertCircle, ArrowUp, CheckCircle2, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
+import { Activity, ArrowUp, CheckCircle2, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
 
 import { Image, type ImageSourcePropType } from "react-native";
 
@@ -112,6 +115,13 @@ export default function OwnerConcernsScreen() {
   // an emptiness that looks like a bug.
   const { canManage } = usePropertyPermissions(selectedProperty?.id);
   const canWorkConcerns = canManage("CONCERNS");
+  useQuickActionIntent({
+    "take-concern": () => { setQueueTab("property"); setPropertyTab("all"); },
+    "assign-concern": () => { setQueueTab("property"); setPropertyTab("all"); },
+    "start-concern": () => { setQueueTab("mine"); setMyTab("review"); },
+    "update-concern": () => { setQueueTab("mine"); setMyTab("all"); },
+    "resolve-concern": () => { setQueueTab("mine"); setMyTab("progress"); },
+  }, Boolean(selectedProperty && canWorkConcerns));
   const undertakenQuery = useListUndertakenConcernsQuery(undefined, {
     skip: !selectedProperty || !canWorkConcerns,
   });
@@ -200,6 +210,11 @@ export default function OwnerConcernsScreen() {
       pathname: "/owner-concern-detail",
       params: { concernId: concern.id, mode, propertyId: concern.propertyId },
     });
+  }
+
+  const loadFailed = loadFailure(propertiesQuery, availableQuery, escalatedQuery, undertakenQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (
@@ -531,8 +546,8 @@ function HistoryModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Property history</Text>
               <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Resolved concerns</ModalTitle>
             </View>
-            <IconButton accessibilityLabel="Close property history" filled icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
           {query.isFetching && !pageData ? (
             <OwnerConcernQueueSkeleton />
           ) : (

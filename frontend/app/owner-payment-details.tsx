@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Switch, Text, View } from "react-native";
 import { CircleCheck } from "lucide-react-native";
 
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
@@ -234,6 +235,11 @@ export default function OwnerPaymentDetailsScreen() {
   // asynchronously — so before it lands `propertyId` is null and this screen
   // told an owner who HAS one selected to go and select one. The shape first,
   // and the empty state only once we know it is true.
+  const loadFailed = loadFailure(detailsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   if (!hydrated) {
     return (
       <ScreenScrollView

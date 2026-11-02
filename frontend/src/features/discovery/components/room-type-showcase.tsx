@@ -8,15 +8,15 @@ import { PickerOptionRow } from "@/components/picker-option-row";
 import { SheetShell } from "@/components/sheet-shell";
 import { ROOM_AMENITY_ICONS } from "@/features/property/room-amenity-icons";
 import { ROOM_AMENITIES, ROOM_TYPES, type RoomMold, type RoomType } from "@/store/services/property-api";
-import { useSoftShadow } from "@/theme/shadows";
+import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { formatMoneyPaise, humanizeToken } from "../discovery-format";
 import { FitText } from "@/components/fit-text";
 
 const AMENITY_LABELS: Record<string, string> = {
-  ATTACHED_TOILET: "Attached toilet",
-  COMMON_TOILET: "Common toilet",
+  ATTACHED_TOILET: "Attached washroom",
+  COMMON_TOILET: "Common washroom",
   BEDDING: "Bedding",
   CUPBOARD: "Cupboard",
   GEYSER: "Geyser",
@@ -41,6 +41,7 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
           borderWidth: 1,
           gap: spacing.xs,
           padding: spacing.xl,
+          ...softShadow(colors.shadow, 4, 12),
         }}
       >
         <ImageOff color={colors.kicker} size={28} strokeWidth={1.7} />
@@ -81,6 +82,7 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
           flexDirection: "row",
           minHeight: 54,
           paddingHorizontal: spacing.md,
+          ...softShadow(colors.shadow, 4, 12),
         }}
       >
         <Text style={{ color: colors.text, flex: 1, fontFamily: fonts.sansBold, fontSize: 16 }}>
@@ -127,7 +129,6 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
 }
 
 function RoomVariantCard({ room }: { room: RoomMold }) {
-  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const images = room.images.map((image) => image.url).filter(Boolean);
@@ -258,7 +259,7 @@ function MissingVariant({ conditioning }: { conditioning: "AC" | "NON_AC"; occup
     <View
       style={{
         alignItems: "center",
-        backgroundColor: colors.surfaceRaised,
+        backgroundColor: colors.surface,
         borderColor: colors.border,
         borderCurve: "continuous",
         borderRadius: radii.card,
@@ -266,6 +267,7 @@ function MissingVariant({ conditioning }: { conditioning: "AC" | "NON_AC"; occup
         flexDirection: "row",
         gap: spacing.md,
         padding: spacing.md,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <Variant color={colors.kicker} size={30} strokeWidth={1.7} />

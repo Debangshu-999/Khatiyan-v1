@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import { ArrowUpRight, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { useSoftShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -25,14 +26,19 @@ type ActionCardProps = {
   onPress?: () => void;
   /** Keep navigation behavior while allowing a card group to omit the corner affordance. */
   showArrow?: boolean;
+  /** Lifts the card off the page with the same shadow as `Card`. */
+  raised?: boolean;
+  /** A short note under the title rather than a paragraph. */
+  smallDescription?: boolean;
   tone?: "default" | "primary";
 };
 
 // Press-target card with a tracked-out kicker, a serif title, and a quiet
 // affordance arrow at the corner so it reads as navigable without a noisy
 // "Open" button.
-export function ActionCard({ badge, borderRadius, description, flush, icon: Icon, iconSize = 22, meta, onPress, showArrow = true, title, tone = "default" }: ActionCardProps) {
+export function ActionCard({ badge, borderRadius, description, flush, icon: Icon, iconSize = 22, meta, onPress, raised, showArrow = true, smallDescription, title, tone = "default" }: ActionCardProps) {
   const { colors, fonts, type } = useTheme();
+  const softShadow = useSoftShadow();
   const badgeLabel = badge != null && badge > 0 ? (badge > 99 ? "99+" : String(badge)) : null;
   const isPrimary = tone === "primary";
   const backgroundColor = isPrimary ? colors.accentSoft : colors.surface;
@@ -80,7 +86,13 @@ export function ActionCard({ badge, borderRadius, description, flush, icon: Icon
         </View>
       </View>
 
-      <Text style={[type.description, { color: isPrimary ? colors.inkSoft : colors.muted }]}>
+      <Text
+        style={[
+          type.description,
+          { color: isPrimary ? colors.inkSoft : colors.muted },
+          smallDescription ? { fontSize: 12, lineHeight: 17 } : null,
+        ]}
+      >
         {description}
       </Text>
     </>
@@ -96,6 +108,7 @@ export function ActionCard({ badge, borderRadius, description, flush, icon: Icon
           borderRadius: borderRadius ?? 20,
           borderWidth: flush ? 0 : 1,
           padding: spacing.lg,
+          ...(raised ? softShadow(colors.shadow, 4, 12) : null),
           ...(Icon ? { alignItems: "flex-start", flexDirection: "row" as const, gap: spacing.md } : { gap: spacing.sm }),
         }}
       >

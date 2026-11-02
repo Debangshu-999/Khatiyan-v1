@@ -1,8 +1,11 @@
+import { InitialsAvatar } from "@/features/enquiry/enquiry-tags";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Animated, PanResponder, Text, View } from "react-native";
-import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, LogOut, Phone, UserRound, XCircle } from "lucide-react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Animated, Image, PanResponder, Text, View } from "react-native";
+import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, LogOut, Phone, XCircle, type LucideProps } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { ActionButton } from "@/features/owner/owner-ui";
@@ -60,11 +63,11 @@ export function TenancyListTabs({
 }
 
 /**
- * The tenant identity block is the card's explicit navigation target. Keeping
- * the profile action named avoids making the destructive card surface itself
- * tappable, while the larger block remains easy to hit.
+ * Who the stay is for: name, the tenancy's code under it (user, 2026-11-01), then
+ * the phone. Still opens the profile, for the pending card, which has no View
+ * profile button.
  */
-function TenantNameButton({ name, onPress, phone }: { name: string; onPress: () => void; phone: string | null }) {
+function TenantNameButton({ code, name, onPress, phone }: { code: string; name: string; onPress: () => void; phone: string | null }) {
   const { colors, fonts, type } = useTheme();
 
   return (
@@ -73,25 +76,22 @@ function TenantNameButton({ name, onPress, phone }: { name: string; onPress: () 
       accessibilityRole="button"
       hitSlop={8}
       onPress={onPress}
-      style={{ alignSelf: "flex-start", gap: spacing.xs }}
+      style={{ alignSelf: "flex-start", gap: 2 }}
     >
       <FitText
         numberOfLines={1}
-        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 21, lineHeight: 26 }}
+        style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(21), lineHeight: 24 }}
       >
         {cardName(name)}
+      </FitText>
+      <FitText numberOfLines={1} selectable style={[smallerCardText(type.description), { color: colors.muted }]}>
+        {code}
       </FitText>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
         <Phone color={colors.inkSoft} size={15} strokeWidth={2.1} />
         <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 1 }]}>
           {phone ? formatIndianPhone(phone) : "Phone unavailable"}
         </FitText>
-      </View>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 16 }}>
-          View profile
-        </Text>
-        <ArrowRight color={colors.primary} size={14} strokeWidth={2.3} />
       </View>
     </AnimatedPressable>
   );
@@ -170,31 +170,16 @@ export function ActiveTenancyCard({
   const shownChips = timingChipOnly && endsChip ? [endsChip] : statusChips;
 
   return (
-    <Card style={{ borderRadius: radii.card }}>
+    // The tighter padding the booking cards use, so the top is compact (user, 2026-11-01).
+    <Card style={{ borderRadius: radii.card, padding: spacing.md }}>
       <View style={{ gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: spacing.sm,
-            justifyContent: "space-between",
-          }}
-        >
-          <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flexShrink: 1 }]}>
-            {tenancy.referenceCode}
-          </FitText>
-          <TenancyStatusCarousel chips={shownChips} />
-        </View>
-
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-          <View style={{ alignItems: "center", justifyContent: "center", paddingTop: 2, width: 48 }}>
-            <UserRound color={colors.ink} size={38} strokeWidth={1.7} />
+        <CardNameRow rowStyle={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+          <TenantAvatar name={tenancy.tenantName} photoUrl={tenancy.tenantPhotoUrl} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <TenantNameButton code={tenancy.referenceCode} name={tenantName} onPress={onOpen} phone={tenancy.tenantPhone} />
           </View>
-          <View style={{ flex: 1 }}>
-            <TenantNameButton name={tenantName} onPress={onOpen} phone={tenancy.tenantPhone} />
-          </View>
-        </View>
+          <CardStatus><TenancyStatusCarousel chips={shownChips} /></CardStatus>
+        </CardNameRow>
 
         <View style={{ backgroundColor: colors.border, height: 1 }} />
 
@@ -233,31 +218,28 @@ export function ActiveTenancyCard({
           ) : null}
           {agreementExpiresAt ? (
             // Centred in the space under the buttons (user, 2026-10-28): the row's gap plus this
-            // equals the card's own bottom padding, spacing.lg.
-            <View style={{ alignItems: "center", flexDirection: "row", gap: 5, marginTop: spacing.lg - spacing.xs }}>
+            // equals the card's own bottom padding, spacing.md.
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 5, marginTop: spacing.md - spacing.xs }}>
               <Clock3 color={colors.warningText} size={13} strokeWidth={2.3} />
-              <Text style={[type.caption, { color: colors.warningText }]}>{expiresInLabel(agreementExpiresAt)}</Text>
+              <Text style={[smallerCardText(type.caption), { color: colors.warningText }]}>{expiresInLabel(agreementExpiresAt)}</Text>
             </View>
           ) : null}
         </View>
-      ) : canEndTenancy ? (
-        <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
-          <View style={{ flexDirection: "row" }}>
+      ) : awaitingAgreement ? null : (
+        // View profile alone until the stay can be ended, then End tenancy beside it on the right (user, 2026-11-01).
+        <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
+          <ActionButton icon={FilledPersonIcon} label="View profile" onPress={onOpen} />
+          {canEndTenancy && canEnd ? (
             <ActionButton
-              disabled={!canEnd || ending}
+              disabled={ending}
               icon={LogOut}
               label={ending ? "Ending…" : "End tenancy"}
               onPress={onEndTenancy}
               variant="dangerFilled"
             />
-          </View>
-          {!canEnd ? (
-            <Text style={[type.description, { color: colors.muted }]}>
-              {endDate ? `Can be ended on ${formatDate(endDate)}.` : "Available once an end date is set."}
-            </Text>
           ) : null}
         </View>
-      ) : null}
+      )}
     </Card>
   );
 }
@@ -432,6 +414,28 @@ function TenancyStatusCarousel({ chips }: { chips: TenancyCardStatusChip[] }) {
   );
 }
 
+/** A solid person mark for View profile (user, 2026-11-01): lucide only draws outlines. */
+function FilledPersonIcon({ color, size }: LucideProps) {
+  return <MaterialCommunityIcons color={color} name="account" size={typeof size === "number" ? size : 18} />;
+}
+
+/** The tenant's profile photo, or their initials without one or if it will not load (user, 2026-11-01). */
+export function TenantAvatar({ name, photoUrl }: { name: string | null; photoUrl: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (!photoUrl || failed) {
+    return <InitialsAvatar name={name} />;
+  }
+  return (
+    <Image
+      accessibilityIgnoresInvertColors
+      onError={() => setFailed(true)}
+      resizeMode="cover"
+      source={{ uri: photoUrl }}
+      style={{ borderRadius: 999, height: 42, width: 42 }}
+    />
+  );
+}
+
 export function TenancyStatusChip({ chip, fill = false }: { chip: TenancyCardStatusChip; fill?: boolean }) {
   return chip.kind === "tenancy" ? (
     <TenancyStatusBadge fill={fill} status={chip.status} />
@@ -489,7 +493,7 @@ function TenancyStatusBadge({ fill = false, status }: { fill?: boolean; status: 
       }}
     >
       <Icon color={display.color} size={13} strokeWidth={2.3} />
-      <Text style={{ color: display.color, fontFamily: fonts.sansBold, fontSize: 11 }}>
+      <Text style={{ color: display.color, fontFamily: fonts.sansBold, fontSize: cardText(11) }}>
         {tenancyStatusLabel(status)}
       </Text>
     </View>
@@ -516,7 +520,7 @@ function TenancyTimingBadge({ fill = false, label, tone }: { fill?: boolean; lab
       }}
     >
       <Clock3 color={color} size={13} strokeWidth={2.3} />
-      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: 11 }}>{label}</Text>
+      <Text style={{ color, fontFamily: fonts.sansBold, fontSize: cardText(11) }}>{label}</Text>
     </View>
   );
 }

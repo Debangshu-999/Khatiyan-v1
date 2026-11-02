@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { Modal, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { ChevronDown, Info } from "lucide-react-native";
 
+import { LoadFailedCard } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { InfoModal } from "@/components/info-modal";
 import { GhostText, useIsSkeleton } from "@/components/skeleton-boundary";
@@ -88,14 +89,7 @@ export function ChartCard({
       ) : status === "NO_DATA" ? (
         <Text style={[type.caption, { color: colors.muted }]}>{emptyText}</Text>
       ) : (
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <Text style={[type.caption, { color: colors.muted }]}>Couldn't load this card</Text>
-          {onRetry ? (
-            <AnimatedPressable accessibilityRole="button" hitSlop={8} onPress={onRetry}>
-              <Text style={[type.caption, { color: colors.primary, fontFamily: fonts.sansSemiBold }]}>Try again</Text>
-            </AnimatedPressable>
-          ) : null}
-        </View>
+        <LoadFailedCard onReload={() => onRetry?.()} />
       )}
 
       {footnote && !skeleton && status === "OK" ? (

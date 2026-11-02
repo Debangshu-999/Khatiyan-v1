@@ -196,7 +196,7 @@ export function PayBillSheet({
   ) : null;
 
   return (
-    <SheetShell onClose={onClose} title={claimMethod ? "Raise a claim" : `Pay ${formatMoneyPaise(amountPaise)}`}>
+    <SheetShell size="tall" onClose={onClose} title={claimMethod ? "Raise a claim" : `Pay ${formatMoneyPaise(amountPaise)}`}>
       {claimMethod ? (
         <RaiseClaimCard
           billingCycleId={billingCycleId}

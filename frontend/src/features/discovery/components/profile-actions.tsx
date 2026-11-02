@@ -26,10 +26,8 @@ export const PROFILE_ACTIONS_HEIGHT = 60;
 
 /**
  * The property profile's three actions, in one row (user, 2026-10-17):
- * Enquire, Visit and Booking. The row floats at the bottom centre of the
- * profile, clear of the tab bar, and when the page reaches its end it rests
- * just below Contacts. Both are drawn from here, and the sheets behind the
- * buttons are mounted once.
+ * Enquire, Visit and Booking, in a fixed footer (user, 2026-11-02). The sheets
+ * behind the buttons are mounted once.
  *
  * <p>Who sees what: nothing for someone who manages the place. Someone who
  * stays there may enquire, and books no visit or stay there, which the server

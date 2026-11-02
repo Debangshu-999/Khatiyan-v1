@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Text, View, type ViewStyle } from "react-native";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { CalendarDays, ChevronDown, ChevronUp } from "lucide-react-native";
 
+import { CalendarPicker } from "@/components/calendar-picker";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { FieldError } from "@/components/field-error";
 import { SheetShell } from "@/components/sheet-shell";
@@ -34,17 +34,13 @@ function RangeDateField({ label, max, min, onChange, value }: { label: string; m
         <Text style={{ color: value ? colors.ink : colors.muted, fontFamily: fonts.sans, fontSize: 13 }}>{value ? formatDateRange(value, value) : "Pick a date"}</Text>
       </AnimatedPressable>
       {open ? (
-        <DateTimePicker
-          display="default"
-          maximumDate={new Date(`${max}T12:00:00`)}
-          minimumDate={min ? new Date(`${min}T12:00:00`) : undefined}
-          mode="date"
-          onChange={(event: DateTimePickerEvent, picked?: Date) => {
-            setOpen(false);
-            if (event.type === "dismissed" || !picked) return;
-            onChange(isoOf(picked));
-          }}
-          value={value ? new Date(`${value}T12:00:00`) : new Date(`${max}T12:00:00`)}
+        <CalendarPicker
+          initialMonth={max.slice(0, 7)}
+          maximum={max}
+          minimum={min ?? undefined}
+          onClose={() => setOpen(false)}
+          onPick={onChange}
+          value={value}
         />
       ) : null}
     </View>

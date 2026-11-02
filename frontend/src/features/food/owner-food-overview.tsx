@@ -1,9 +1,11 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Switch, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
+import { softShadow } from "@/theme/shadows";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { IconSwitch } from "@/components/icon-switch";
 import { MetricTile } from "@/components/metric-tile";
 import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
 import { radii, spacing } from "@/theme/spacing";
@@ -59,7 +61,7 @@ export function ManageFoodCard({
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
-        overflow: "hidden",
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ gap: spacing.md, padding: spacing.lg }}>
@@ -69,22 +71,18 @@ export function ManageFoodCard({
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15.5, lineHeight: 20 }}>
-              Manage meals with Khatiyan
+              Manage Meals
             </Text>
           </View>
-          <FoodStatusChip
-            icon={enabled ? "check-circle" : "minus-circle-outline"}
-            label={enabled ? "On" : "Off"}
-            tone={enabled ? "success" : "neutral"}
+          <IconSwitch
+            accessibilityLabel="Manage Meals"
+            busy={busy}
+            disabled={readOnly}
+            enabled={enabled}
+            onChange={onToggle}
+            raised
+            renderIcon={(color) => <MaterialCommunityIcons color={color} name="silverware-fork-knife" size={13} />}
           />
-        </View>
-
-        <View style={{ backgroundColor: colors.neutralSoft, borderCurve: "continuous", borderRadius: radii.card, padding: spacing.md }}>
-          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 12.5, lineHeight: 18 }}>
-            {enabled
-              ? "Plan menus, manage subscriptions and prepare cooking quantities in one place."
-              : "Turn on food tools to plan menus, manage subscriptions and prepare cooking quantities."}
-          </Text>
         </View>
 
         {meals && meals.length > 0 ? (
@@ -99,33 +97,6 @@ export function ManageFoodCard({
             </View>
           </View>
         ) : null}
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: enabled ? colors.primarySoft : colors.surfaceRaised,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            flexDirection: "row",
-            gap: spacing.sm,
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm,
-          }}
-        >
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>Food management</Text>
-            <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5, lineHeight: 16 }}>
-              {enabled ? "Khatiyan is managing this property's meals" : "Currently managed outside Khatiyan"}
-            </Text>
-          </View>
-          <Switch
-            accessibilityLabel="Manage meals with Khatiyan"
-            disabled={busy || readOnly}
-            onValueChange={onToggle}
-            thumbColor={colors.surface}
-            trackColor={{ false: colors.neutralSoft, true: colors.primary }}
-            value={enabled}
-          />
-        </View>
       </View>
     </View>
   );
@@ -480,12 +451,12 @@ function useNotServingToday(propertyId: string, date: string | undefined, meals:
   return served.reduce((total, meal) => total + (byMeal[meal].data?.unavailableItems.length ?? 0), 0);
 }
 
-// Blue, and a size under the rail's 38pt default (user, 2026-10-02).
+// Black (user, 2026-11-01), and a size under the rail's 38pt default (user, 2026-10-02).
 const FOOD_STAT_ICON_SIZE = 30;
 function foodStatIcon(name: React.ComponentProps<typeof MaterialCommunityIcons>["name"]) {
   return function FoodStatIcon(_props: LucideProps) {
     const { colors } = useTheme();
-    return <MaterialCommunityIcons name={name} color={colors.primary} size={FOOD_STAT_ICON_SIZE} />;
+    return <MaterialCommunityIcons name={name} color={colors.ink} size={FOOD_STAT_ICON_SIZE} />;
   };
 }
 

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { CalendarDays, Clock3, Hourglass, RotateCcw } from "lucide-react-native";
+import { CalendarDays, Clock3, Hourglass } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { Card } from "@/components/card";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenHeader } from "@/components/screen-header";
@@ -11,12 +13,11 @@ import { SkeletonCard, SkeletonList } from "@/components/skeletons/primitives";
 import { OwnerBookingStatus } from "@/features/booking/owner-booking-status";
 import { BookingInfoBand } from "@/features/booking/tenant-booking-parts";
 import { InitialsAvatar } from "@/features/enquiry/enquiry-tags";
-import { errorMessage } from "@/features/forms/server-error";
 import { LeadKindChip, LeadRepeatNote } from "@/features/lead/lead-card";
 import { CLOSE_REASON_LABEL, leadBand, leadDay, leadMoment, leadTimeline, slotTime } from "@/features/lead/lead-display";
 import { useLeadsProperty } from "@/features/lead/use-leads-property";
 import { useRouteGate } from "@/features/owner/route-gates";
-import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
+import { ActionButton } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useGetLeadQuery, type Lead, type LeadBooking, type LeadDetail, type LeadEnquiry, type LeadVisit } from "@/store/services/lead-api";
 import { spacing } from "@/theme/spacing";
@@ -62,10 +63,7 @@ export default function OwnerLeadDetailScreen() {
     <ScreenScrollView surface={colors.background} safeAreaEdges={["top", "bottom"]} contentContainerStyle={{ paddingBottom: canFollowUp ? footerHeight + spacing.lg : spacing.xl }} onRefresh={() => void query.refetch()}>
       <ScreenHeader title="Lead" italicTail="details." subtitle={lead ? `${lead.prospectName ?? "Someone"}${scope.property ? ` at ${scope.property.name}` : ""}.` : "Everything this lead has, in one place."} />
       {!detail && !query.isError ? <View accessibilityLabel="Loading lead details" style={{ gap: spacing.md }}><SkeletonCard /><SkeletonList rows={3} body={2} /></View> : null}
-      {query.isError ? <>
-        <NoticeBar tone="danger" title="Could not load this lead" message={errorMessage(query.error)} />
-        <View style={{ flexDirection: "row" }}><ActionButton label="Try again" icon={RotateCcw} onPress={() => void query.refetch()} variant="secondary" /></View>
-      </> : null}
+      {query.isError ? <LoadFailed error={query.error} onReload={() => void query.refetch()} /> : null}
       {detail ? <LeadDetails detail={detail} onOpenBooking={openBooking} /> : null}
     </ScreenScrollView>
     {lead && canFollowUp ? <PinnedFooter onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}>
@@ -93,13 +91,13 @@ function LeadDetails({ detail, onOpenBooking }: { detail: LeadDetail; onOpenBook
 
   return <>
     <Card style={{ gap: spacing.xs, padding: spacing.md, paddingBottom: lead.handlerName ? spacing.sm : spacing.xs }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-          <Text style={[type.description, { color: colors.muted }]}>Ref</Text>
-          <FitText selectable numberOfLines={1} minimumFontScale={0.65} style={[type.display, { color: colors.ink, fontSize: 21 }]}>{lead.referenceCode}</FitText>
+          <Text style={[smallerCardText(type.description), { color: colors.muted }]}>Ref</Text>
+          <FitText selectable numberOfLines={1} minimumFontScale={0.65} style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(21) }]}>{lead.referenceCode}</FitText>
         </View>
-        <LeadKindChip kind={lead.kind} />
-      </View>
+        <CardStatus><LeadKindChip kind={lead.kind} /></CardStatus>
+      </CardNameRow>
       {lead.handlerName ? <Text style={[type.description, { color: colors.muted }]}>Handled by {lead.handlerName}</Text> : null}
       {lead.closeReason && lead.kind !== "CONVERTED" ? <Text style={[type.description, { color: colors.muted }]}>Ended: {CLOSE_REASON_LABEL[lead.closeReason]}</Text> : null}
     </Card>

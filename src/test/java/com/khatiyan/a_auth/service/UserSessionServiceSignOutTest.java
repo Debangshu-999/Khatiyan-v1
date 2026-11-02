@@ -41,7 +41,7 @@ class UserSessionServiceSignOutTest {
     void setUp() {
         repository = mock(UserSessionRepository.class);
         authStateCache = mock(AuthStateCache.class);
-        service = new UserSessionService(repository, authStateCache, mock(ApplicationEventPublisher.class), 4);
+        service = new UserSessionService(repository, authStateCache, mock(ApplicationEventPublisher.class), 4, 30);
     }
 
     private UserSession liveSession(UUID owner, UUID jti) {

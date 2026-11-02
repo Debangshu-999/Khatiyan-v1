@@ -102,6 +102,7 @@ function barHarness({ prevented = false } = {}) {
   const h = hooks(); const calls = [], subscriptions = [];
   const Component = component("app/(tabs)/_layout.tsx", "BottomTabBar", {
     ...h.react, useTheme: () => theme, useSafeAreaInsets: () => ({ bottom: 20 }), View: "View", BottomNavigationTab: "BottomNavigationTab",
+    BlurView: "BlurView", StyleSheet: { absoluteFill: {} }, pinnedFooterEdge: () => ({ borderTopLeftRadius: 18, borderTopRightRadius: 18 }),
     AccessibilityInfo: { isReduceMotionEnabled: () => Promise.resolve(true), addEventListener: (event, listener) => {
       const subscription = { event, listener, removed: false, remove() { this.removed = true; } }; subscriptions.push(subscription); return subscription;
     } }, selectHaptic: () => calls.push("haptic"),
@@ -118,6 +119,10 @@ test("animated bottom tabs preserve hidden routes, prevention, haptics and prope
   const tabs = nodes(tree, "BottomNavigationTab"); assert.equal(tabs.length, 2);
   tabs[1].props.onPress(); assert.equal(h.calls.at(-1), "owner"); assert.equal(h.calls[1], "haptic");
   assert.equal(tree.props.style.paddingBottom, 20);
+  // Rounded on top and clipped, with glass the screen slides under (user, 2026-11-01).
+  assert.equal(tree.props.style.borderTopLeftRadius, 18);
+  assert.equal(tree.props.style.overflow, "hidden");
+  assert.equal(nodes(tree, "BlurView").length, 1);
   const blocked = barHarness(); const disabled = nodes(blocked.render(blocked.Component, { ...blocked.props, blockedRoutes: ["owner"] }), "BottomNavigationTab")[1];
   assert.equal(disabled.props.disabled, true); disabled.props.onPress(); assert.equal(blocked.calls.length, 0);
   const prevented = barHarness({ prevented: true }); nodes(prevented.render(prevented.Component, prevented.props), "BottomNavigationTab")[1].props.onPress();
@@ -134,7 +139,7 @@ test("reduced-motion preference checks cannot update an unmounted tab bar", asyn
 });
 
 const picker = component("app/(tabs)/index.tsx", "OwnerPropertyPicker", {
-  useTheme: () => theme, spacing, radii, tabShadow: () => ({}), PROPERTY_CARD_ART: "property-art",
+  useTheme: () => theme, spacing, radii, softShadow: () => ({}), PROPERTY_CARD_ART: "property-art",
   AnimatedPressable: "AnimatedPressable", FitText: "Text", Text: "Text", View: "View", Image: "Image", PropertyArtwork: "PropertyArtwork", Ionicons: "Ionicons", ChevronUp: "ChevronUp", ChevronDown: "ChevronDown",
 });
 const property = { id: "p1", name: "Sample property", address: "A very long street and building address that should stay clear of the disclosure button", city: "Kolkata", state: "West Bengal", pincode: "700091" };

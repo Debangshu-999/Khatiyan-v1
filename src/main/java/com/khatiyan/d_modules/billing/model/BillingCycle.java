@@ -549,6 +549,20 @@ public class BillingCycle extends BaseEntity {
         this.paidAt = paidAt;
     }
 
+    /**
+     * A bill the deposit covered in full: nothing is left to collect, so it is
+     * paid with no payment against it (2026-10-31).
+     */
+    public void settleFromDeposit(Instant paidAt) {
+        ensureNotPaidOrCancelled();
+        if (totalAmountPaise != 0) {
+            throw new ValidationException("Only a bill with nothing left on it settles from the deposit");
+        }
+
+        this.status = BillingCycleStatus.PAID;
+        this.paidAt = paidAt;
+    }
+
     public void cancel() {
         ensureNotPaidOrCancelled();
         this.status = BillingCycleStatus.CANCELLED;

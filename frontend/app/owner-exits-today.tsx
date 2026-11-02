@@ -1,4 +1,6 @@
 import { LogOut } from "lucide-react-native";
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { DigestMoveOutsEmptyIcon } from "@/components/tenancy-line-icons";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
@@ -51,7 +53,8 @@ type MoveOut = { tenancy: TenancySummary; ended: boolean; reason: string };
 export default function OwnerExitsTodayScreen() {
   const router = useGuardedRouter();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
-  const properties = useListMyPropertiesQuery().data ?? [];
+  const propertiesQuery = useListMyPropertiesQuery();
+  const properties = propertiesQuery.data ?? [];
   const property =
     properties.find((candidate) => candidate.id === selectedPropertyId) ??
     (properties.length === 1 ? properties[0] : null);
@@ -98,6 +101,11 @@ export default function OwnerExitsTodayScreen() {
   }, [roomsQuery.data]);
 
   const loading = tenanciesQuery.isLoading || requestsQuery.isLoading;
+
+  const loadFailed = loadFailure(propertiesQuery, tenanciesQuery, requestsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
@@ -147,18 +155,18 @@ function MoveOutCard({
   return (
     <Card>
       <View style={{ gap: spacing.md }}>
-        <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
+        <CardNameRow rowStyle={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
           <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-            <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
+            <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(16) }}>
               {cardName(tenancy.tenantName?.trim() || "Unnamed tenant")}
             </FitText>
-            <Text style={[type.caption, { color: colors.muted }]}>
+            <Text style={[smallerCardText(type.caption), { color: colors.muted }]}>
               {[roomLabel, tenancy.referenceCode].filter(Boolean).join(" · ")}
             </Text>
           </View>
           {/* Every card here ends today, so only an ended one is marked (user, 2026-10-28). */}
-          {ended ? <StatusPill label="ENDED" tone="neutral" /> : null}
-        </View>
+          <CardStatus>{ended ? <StatusPill label="ENDED" tone="neutral" /> : null}</CardStatus>
+        </CardNameRow>
         {/* The tenancy cards' own button: red fill, white text, the logout mark (user, 2026-10-28). */}
         {canEnd && !ended ? (
           <View style={{ flexDirection: "row" }}>

@@ -1,10 +1,9 @@
-import { ModalTitle } from "@/components/modal-title";
-import { CenterModal } from "@/components/center-modal";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useMemo, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { X } from "lucide-react-native";
-import { Modal, ScrollView, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { Check } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -47,7 +46,8 @@ import {
   type SaveFoodMenuEntryBody,
 } from "@/store/services/food-api";
 import type { MealType } from "@/store/services/property-api";
-import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
+import { softShadow } from "@/theme/shadows";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 
@@ -127,6 +127,11 @@ export default function OwnerFoodMenuScreen() {
     );
   }
 
+  const loadFailed = loadFailure(overviewQuery, menuQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
@@ -136,7 +141,7 @@ export default function OwnerFoodMenuScreen() {
         title="Weekly"
       />
 
-      <DayStrip onSelect={setDay} selected={day} variant="contained" week={week} />
+      <DayStrip onSelect={setDay} selected={day} variant="bubbles" week={week} />
 
       {stale.length > 0 ? (
         <NoticeBar
@@ -258,6 +263,8 @@ function MealSection({
         // the moment they are empty.
         minHeight: 210,
         padding: spacing.lg,
+        backgroundColor: colors.surface,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
@@ -284,13 +291,15 @@ function MealSection({
           </Text>
         </View>
       ) : (
-        entries.map((entry) => (
+        // One pale blue card for the meal's dishes, with a line between them (user, 2026-11-01).
+        <View style={{ backgroundColor: colors.primarySoft, borderCurve: "continuous", borderRadius: radii.card }}>
+        {entries.map((entry, index) => (
           <View
             key={entry.id}
             style={{
               alignItems: "center",
-              backgroundColor: colors.surfaceRaised,
-              borderRadius: radii.sm,
+              borderTopColor: colors.borderStrong,
+              borderTopWidth: index === 0 ? 0 : 1,
               flexDirection: "row",
               gap: spacing.sm,
               padding: spacing.sm,
@@ -312,7 +321,8 @@ function MealSection({
               </View>
             ) : null}
           </View>
-        ))
+        ))}
+        </View>
       )}
 
       {!readOnly && !stranded ? (
@@ -388,7 +398,7 @@ type Field = "item" | "base" | "repeat" | "repeatPercent" | "buffer" | "batch";
 /**
  * Picks several dishes for one meal at once.
  *
- * <p>A central dialog of pictures rather than a list of names in a dropdown.
+ * <p>A bottom sheet of pictures rather than a list of names in a dropdown.
  * Kitchens plan a meal as a set — rice AND dal AND a sabzi — and adding them
  * one at a time meant reopening the same sheet three times. The picture is what
  * makes a row scannable when a property has twenty items.
@@ -418,6 +428,7 @@ function FoodItemPickerDialog({
   const [selected, setSelected] = useState<string[]>([]);
   const [create, createState] = useCreateFoodMenuEntryMutation();
   const opErrors = useFormErrors<never>();
+  const allPicked = items.length > 0 && selected.length === items.length;
 
   function toggle(itemId: string) {
     setSelected((current) =>
@@ -457,148 +468,113 @@ function FoodItemPickerDialog({
   }
 
   return (
-    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.overlay,
-          flex: 1,
-          justifyContent: "center",
-          paddingHorizontal: spacing.lg,
-        }}
-      >
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderCurve: "continuous",
-            borderRadius: 14,
-            maxHeight: "80%",
-            maxWidth: DIALOG_MAX_WIDTH,
-            overflow: "hidden",
-            width: "100%",
-          }}
-        >
-          {/* Close is the cross, not a Cancel down beside the confirm. A
-              dismiss sitting next to the action halves the width of the button
-              that actually does something, and the app closes every other sheet
-              by the same grey disc. */}
-          <View
-            style={{
-              alignItems: "flex-start",
-              flexDirection: "row",
-              gap: spacing.sm,
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.lg,
-            }}
-          >
-            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
-                Add to {MEAL_LABEL[meal].toLowerCase()}
-              </ModalTitle>
-              <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
-                {DAY_LABEL[day]} · tap to pick as many as you need
-              </Text>
-            </View>
-            <AnimatedPressable
-              accessibilityLabel="Close"
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={onClose}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.surfaceSunken,
-                borderRadius: 999,
-                height: 32,
-                justifyContent: "center",
-                width: 32,
-              }}
-            >
-              <X color={colors.ink} size={16} strokeWidth={2.4} />
-            </AnimatedPressable>
-          </View>
-
-          {items.length === 0 ? (
-            <Text
-              style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted,
-                padding: spacing.lg }}
-            >
-              Nothing left to add to {MEAL_LABEL[meal].toLowerCase()}. Either everything tagged for it is already
-              here, or no food item is tagged for this meal yet — tag one on the Food items tab.
-            </Text>
-          ) : (
-            <ScrollView
-              contentContainerStyle={{ gap: spacing.xs, padding: spacing.lg }}
-              showsVerticalScrollIndicator
-            >
-              {items.map((item) => {
-                const picked = selected.includes(item.id);
-                return (
-                  <AnimatedPressable
-                    accessibilityLabel={item.name}
-                    accessibilityState={{ selected: picked }}
-                    key={item.id}
-                    onPress={() => toggle(item.id)}
-                    style={{
-                      alignItems: "center",
-                      // The one sanctioned pale blue fill: a selected row in a
-                      // multi-select list, marked by the fill alone with no
-                      // border change and no checkbox.
-                      backgroundColor: picked ? colors.primarySoft : colors.surface,
-                      borderColor: picked ? colors.primarySoft : colors.border,
-                      borderRadius: radii.card,
-                      borderWidth: 1,
-                      flexDirection: "row",
-                      gap: spacing.sm,
-                      padding: spacing.sm,
-                    }}
-                  >
-                    <FoodItemThumb imageUrl={item.imageUrl} size={48} />
-                    <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-                      <FitText
-                        numberOfLines={1}
-                        style={{
-                          color: picked ? colors.primaryDeep : colors.ink,
-                          fontFamily: fonts.sansBold,
-                          fontSize: 14,
-                        }}
-                      >
-                        {item.name}
-                      </FitText>
-                      <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5 }}>
-                        Measured in {FOOD_UNIT_LABEL[item.quantityUnit]}
-                      </Text>
-                    </View>
-                  </AnimatedPressable>
-                );
-              })}
-            </ScrollView>
-          )}
-
-          {/* No rule above it. The list scrolls under the action, the way the
-              app's pinned footers work — a hairline here cut the dialog into
-              two stacked boxes instead of one surface. */}
-          <View style={{ flexDirection: "row", paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, paddingTop: spacing.sm }}>
-            <ActionButton
-              disabled={selected.length === 0 || createState.isLoading}
-              label={
-                createState.isLoading
-                  ? "Adding…"
-                  : selected.length === 0
-                    ? "Add"
-                    : selected.length === 1
-                      ? "Add 1 item"
-                      : `Add ${selected.length} items`
-              }
-              onPress={() => void add()}
-            />
-          </View>
+    // Bottom up at 65%: Select all, then the dishes with a line between them and a
+    // checkbox each, on the sheet itself with no card (user, 2026-11-01).
+    <SheetShell
+      animated
+      footer={
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton
+            disabled={selected.length === 0 || createState.isLoading}
+            label={
+              createState.isLoading
+                ? "Adding…"
+                : selected.length === 0
+                  ? "Add"
+                  : selected.length === 1
+                    ? "Add 1 item"
+                    : `Add ${selected.length} items`
+            }
+            onPress={() => void add()}
+          />
         </View>
-      </View>
+      }
+      onClose={onClose}
+      size="picker"
+      title={`Add to ${MEAL_LABEL[meal].toLowerCase()}`}
+    >
+      {items.length > 0 ? (
+        <AnimatedPressable
+          accessibilityLabel="Select all"
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: allPicked }}
+          onPress={() => setSelected(allPicked ? [] : items.map((item) => item.id))}
+          style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}
+        >
+          <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13 }}>Select all</Text>
+          <SquareCheckbox checked={allPicked} />
+        </AnimatedPressable>
+      ) : null}
+
+      {items.length === 0 ? (
+        <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
+          Nothing left to add to {MEAL_LABEL[meal].toLowerCase()}. Either everything tagged for it is already
+          here, or no food item is tagged for this meal yet — tag one on the Food items tab.
+        </Text>
+      ) : (
+        <View>
+          {items.map((item, index) => {
+            const picked = selected.includes(item.id);
+            return (
+              <AnimatedPressable
+                accessibilityLabel={item.name}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: picked }}
+                key={item.id}
+                onPress={() => toggle(item.id)}
+                style={{
+                  alignItems: "center",
+                  borderTopColor: colors.border,
+                  borderTopWidth: index === 0 ? 0 : 1,
+                  flexDirection: "row",
+                  gap: spacing.sm,
+                  paddingVertical: spacing.sm,
+                }}
+              >
+                <FoodItemThumb imageUrl={item.imageUrl} size={48} />
+                <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                  <FitText
+                    numberOfLines={1}
+                    style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}
+                  >
+                    {item.name}
+                  </FitText>
+                  <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 11.5 }}>
+                    Measured in {FOOD_UNIT_LABEL[item.quantityUnit]}
+                  </Text>
+                </View>
+                <SquareCheckbox checked={picked} />
+              </AnimatedPressable>
+            );
+          })}
+        </View>
+      )}
 
       {opErrors.serverError ? (
         <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />
       ) : null}
-    </CenterModal>
+    </SheetShell>
+  );
+}
+
+/** A square tick box: blue with a white tick when on, an empty outline when off. */
+function SquareCheckbox({ checked }: { checked: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: checked ? colors.primary : colors.surface,
+        borderColor: checked ? colors.primary : colors.borderStrong,
+        borderRadius: 5,
+        borderWidth: 1.5,
+        height: 20,
+        justifyContent: "center",
+        width: 20,
+      }}
+    >
+      {checked ? <Check color={colors.onPrimary} size={14} strokeWidth={3} /> : null}
+    </View>
   );
 }
 
@@ -719,7 +695,24 @@ function MenuEntrySheet({
   }
 
   return (
-    <SheetShell animated onClose={onClose} title={`${MEAL_LABEL[entry.mealType]} · ${DAY_LABEL[day]}`}>
+    // As tall as what is open, so it grows with Fine-tune and shrinks back, with
+    // Save fixed under it (user, 2026-11-01).
+    <SheetShell
+      animated
+      contentMaxSize="tall"
+      footer={
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton
+            disabled={saving || form.blocked}
+            label={saving ? "Saving…" : entry ? "Save changes" : "Add to menu"}
+            onPress={() => void submit()}
+          />
+        </View>
+      }
+      onClose={onClose}
+      size="content"
+      title={`${MEAL_LABEL[entry.mealType]} · ${DAY_LABEL[day]}`}
+    >
       {/* The dish is fixed. Swapping one item for another is a removal and an
           addition, not an edit — and the picker that used to sit here was the
           only reason this sheet needed the whole catalogue loaded. */}
@@ -774,9 +767,10 @@ function MenuEntrySheet({
       </View>
 
       {tuning ? (
-        <View style={{ gap: spacing.md }}>
+        // Pulled up under its header, against the sheet's own gap (user, 2026-11-01).
+        <View style={{ gap: spacing.md, marginTop: -spacing.sm }}>
           <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
-            All four are optional. Leave them blank to cook exactly the per-person portion.
+            All four are optional. Leave them blank to cook exactly the per-person portion. Second serving and How many tenants repeat must be filled together if fine-tuning.
           </Text>
           <FormInput
             error={form.errors.repeat}
@@ -824,21 +818,8 @@ function MenuEntrySheet({
             placeholder={bulk ? "5" : "500"}
             value={batch}
           />
-          {bulk ? (
-            <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5, lineHeight: 17 }}>
-              Buffer and batch size are in {bulkLabel}. Everything else is in {unit}.
-            </Text>
-          ) : null}
         </View>
       ) : null}
-
-      <View style={{ flexDirection: "row" }}>
-        <ActionButton
-          disabled={saving || form.blocked}
-          label={saving ? "Saving…" : entry ? "Save changes" : "Add to menu"}
-          onPress={() => void submit()}
-        />
-      </View>
 
       {explaining ? (
         <ConfirmDialog

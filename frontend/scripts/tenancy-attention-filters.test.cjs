@@ -37,7 +37,7 @@ function compile(source, globals = {}, dependencies = {}) {
 }
 const theme = { colors: { ink: "ink", inkSoft: "inkSoft", muted: "muted" }, fonts: {} };
 const ui = Object.fromEntries([
-  "CenterModal", "View", "ModalTitle", "IconButton", "PickerOptionRow", "X", "CheckCircle2",
+  "CenterModal", "View", "ModalTitle", "IconButton", "HelpModalClose", "StayStatusMark", "BillStatusMark", "PickerOptionRow", "X", "CheckCircle2",
   "AlertTriangle", "Clock3", "CircleAlert", "CalendarClock", "CalendarX2", "ExitTenancyIcon",
   "UpcomingExitsIcon", "Check", "ScreenScrollView", "ScreenHeader", "EmptyState", "FilterPillRow",
   "OwnerActionCenterSkeleton", "MovingBorder", "ActionRow", "Banknote", "ShieldAlert", "AlertCircle",
@@ -72,24 +72,20 @@ for (const [file, component, options, selected] of [
   const dialog = compile(`${declaration(file, options)}\n${declaration(file, component)}\nexports.render = ${component};`, {
     ...shared, tenancyStatusLabel: (status) => ({ ACTIVE: "Active", ON_NOTICE: "On notice", PENDING_EXIT: "Pending exit", PENDING_ACCEPTANCE: "Pending agreement", SCHEDULED: "Booked" })[status],
   });
-  test(`${component}: All status spans the row; six remaining options form two columns`, () => {
+  test(`${component}: one option a row, each with its coloured mark`, () => {
     const tree = dialog.render({ value: selected, onClose() {}, onSelect() {} });
-    const grid = nodes(tree).find((node) => node.props?.style?.flexWrap === "wrap");
-    assert.equal(grid.props.style.flexDirection, "row");
-    const cells = grid.props.children;
-    assert.equal(cells.length, 7);
-    assert.equal(cells[0].props.style.width, "100%");
-    assert.equal(cells[0].props.children.props.label, "All status");
-    cells.slice(1).forEach((cell) => assert.equal(cell.props.style.width, "50%"));
-    assert.equal(nodes(tree).filter((node) => node.type === "PickerOptionRow" && node.props.selected).length, 1);
+    const rows = nodes(tree).filter((node) => node.type === "PickerOptionRow");
+    assert.equal(rows.length, 7);
+    assert.equal(rows[0].props.label, "All status");
+    rows.forEach((row) => assert.ok(/StatusMark$/.test(row.props.icon.type)));
+    assert.ok(!nodes(tree).some((node) => node.props?.style?.flexWrap === "wrap"));
+    assert.equal(rows.filter((node) => node.props.selected).length, 1);
     if (file === tenancyFile) assert.ok(!nodes(tree).some((node) => node.props?.label === "Booked"));
   });
-  test(`${component}: right-aligned close dismisses without selecting; options select then dismiss`, () => {
+  test(`${component}: the corner cross dismisses without selecting; options select then dismiss`, () => {
     const events = [];
     const tree = dialog.render({ value: selected, onClose: () => events.push("close"), onSelect: (value) => events.push(value) });
-    const header = nodes(tree).find((node) => Array.isArray(node.props?.children) && node.props.children.some((child) => child?.type === "ModalTitle"));
-    assert.equal(header.props.style.justifyContent, "space-between");
-    nodes(tree).find((node) => node.type === "IconButton").props.onPress();
+    nodes(tree).find((node) => node.type === "HelpModalClose").props.onClose();
     assert.deepEqual(events, ["close"]);
     events.length = 0;
     nodes(tree).find((node) => node.type === "PickerOptionRow" && node.props.selected).props.onPress();

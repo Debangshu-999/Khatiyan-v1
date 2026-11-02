@@ -33,7 +33,7 @@ export function TenantPicker({
   const { colors, type } = useTheme();
 
   return (
-    <SheetShell dismissOnDrag onClose={onClose} title="Message a tenant">
+    <SheetShell size="tall" dismissOnDrag onClose={onClose} title="Message a tenant">
       {tenants.length === 0 ? (
         <Text style={[type.modalDescription, { color: colors.muted, paddingVertical: spacing.md }]}>
           There are no active tenants on this property yet.

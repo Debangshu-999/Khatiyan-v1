@@ -18,11 +18,15 @@ export function NotchedInput({
   keyboardType,
   label,
   maxLength,
+  multiline,
   onChangeText,
   placeholder,
   prefix,
+  required,
   value,
 }: {
+  /** Several lines in a taller box, for a note (2026-10-29). */
+  multiline?: boolean;
   editable?: boolean;
   /** The colour behind the field, which the notch cuts the border with. Defaults to a card's surface. */
   ground?: string;
@@ -34,6 +38,8 @@ export function NotchedInput({
   onChangeText?: (value: string) => void;
   placeholder?: string;
   prefix?: string;
+  /** Shows the required mark in the notch and includes it in the input's accessible label. */
+  required?: boolean;
   value: string;
 }) {
   const { colors, fonts } = useTheme();
@@ -44,7 +50,7 @@ export function NotchedInput({
   return (
     <View
       style={{
-        alignItems: "center",
+        alignItems: multiline ? "flex-start" : "center",
         backgroundColor: fill,
         borderColor,
         borderCurve: "continuous",
@@ -53,7 +59,7 @@ export function NotchedInput({
         flexDirection: "row",
         gap: spacing.xs,
         marginTop: label ? 6 : 0,
-        minHeight: 50,
+        minHeight: multiline ? 112 : 50,
         paddingHorizontal: spacing.md,
       }}
     >
@@ -74,6 +80,7 @@ export function NotchedInput({
             }}
           >
             {label}
+            {required ? <Text accessibilityElementsHidden importantForAccessibility="no" style={{ color: colors.danger }}>{" *"}</Text> : null}
           </Text>
         </View>
       ) : null}
@@ -81,9 +88,11 @@ export function NotchedInput({
         <Text style={{ color: editable ? colors.ink : colors.muted, fontFamily: fonts.sansBold, fontSize: 14 }}>{prefix}</Text>
       ) : null}
       <AppTextInput
+        accessibilityLabel={label ? `${label}${required ? ", required" : ""}` : undefined}
         editable={editable}
         keyboardType={keyboardType}
         maxLength={maxLength}
+        multiline={multiline}
         onBlur={() => setFocused(false)}
         onChangeText={onChangeText}
         onFocus={() => setFocused(true)}
@@ -96,6 +105,7 @@ export function NotchedInput({
           fontFamily: fonts.sansMedium,
           fontSize: 15,
           paddingVertical: spacing.sm,
+          ...(multiline ? { minHeight: 96, paddingTop: spacing.md, textAlignVertical: "top" as const } : null),
         }}
         underlineColorAndroid="transparent"
         value={value}

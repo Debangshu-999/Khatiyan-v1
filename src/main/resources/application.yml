@@ -256,9 +256,17 @@ app:
     # How long a minted signature stays usable. Long enough for a slow upload to
     # start, short enough that a leaked one is worthless by the time it is found.
     signature-ttl-seconds: ${CLOUDINARY_SIGNATURE_TTL_SECONDS:600}
+  food:
+    ratings:
+      # One AI analysis a week per property.
+      weekly-analysis-limit: ${FOOD_RATINGS_WEEKLY_ANALYSIS_LIMIT:true}
   jwt:
     secret: ${JWT_SECRET}
-    access-token-expiry-minutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES:60}
+    # Short, as a stolen one works until it expires (user, 2026-11-02). The app renews
+    # it with a refresh token, without anyone noticing.
+    access-token-expiry-minutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES:15}
+    # A session unused this long ends. Each renewal starts the count again.
+    refresh-token-expiry-days: ${JWT_REFRESH_TOKEN_EXPIRY_DAYS:30}
 
   auth:
     # Concurrent signed-in devices per account. Checked AFTER credentials are

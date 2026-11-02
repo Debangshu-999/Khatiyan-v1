@@ -1,4 +1,6 @@
 import { ActivityIndicator, Text, View } from "react-native";
+import { PriorityChip } from "@/features/notice/notice-ui";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Bell, Megaphone } from "lucide-react-native";
 
@@ -22,6 +24,11 @@ export default function PropertyNoticesScreen() {
   const router = useGuardedRouter();
   const noticesQuery = useListMyVisibleNoticesQuery();
   const notices = [...(noticesQuery.data ?? [])].sort(compareNoticePriority);
+
+  const loadFailed = loadFailure(noticesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
     <ScreenScrollView>
@@ -75,7 +82,7 @@ function NoticeCard({ notice }: { notice: NoticeSummary }) {
             <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker, flex: 1 }]}>
               {formatDate(notice.publishedAt)}
             </Text>
-            <StatusPill label={humanizeToken(notice.priority)} tone={urgent ? "primary" : "neutral"} />
+            <PriorityChip priority={notice.priority} />
           </View>
           <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
             {notice.title}

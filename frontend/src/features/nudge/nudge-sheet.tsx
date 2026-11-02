@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Keyboard, Text, View } from "react-native";
 import { Clock, Send, User, type LucideProps } from "lucide-react-native";
 
+import { LoadFailedCard } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
@@ -105,9 +106,7 @@ export function NudgeSheet({ onClose, propertyId }: { onClose: () => void; prope
           ) : null}
 
           {!loading && candidatesQuery.isError && candidates.length === 0 ? (
-            <Text style={[type.modalDescription, { color: colors.muted, paddingVertical: spacing.md }]}>
-              Could not load the tenants. Close this and try again.
-            </Text>
+            <LoadFailedCard error={candidatesQuery.error} onReload={() => void candidatesQuery.refetch()} />
           ) : null}
 
           {!loading && !candidatesQuery.isError && matches.length === 0 ? (

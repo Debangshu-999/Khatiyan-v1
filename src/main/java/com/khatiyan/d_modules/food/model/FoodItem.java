@@ -76,6 +76,10 @@ public class FoodItem extends BaseEntity {
     @Column(name = "meal_type", nullable = false, length = 20)
     private Set<MealType> mealTags = EnumSet.noneOf(MealType.class);
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dish_type", nullable = false, length = 20)
+    private FoodDishType dishType;
+
     @Column(name = "is_active", nullable = false)
     private boolean active;
 
@@ -106,6 +110,7 @@ public class FoodItem extends BaseEntity {
         this.propertyId = propertyId;
         this.createdByUserId = createdByUserId;
         update(name, description, imageUrl, imagePublicId, quantityUnit, mealTags);
+        this.dishType = FoodDishType.guess(name);
         this.active = true;
     }
 
@@ -121,6 +126,13 @@ public class FoodItem extends BaseEntity {
         return new FoodItem(
                 propertyId, createdByUserId, name, description,
                 imageUrl, imagePublicId, quantityUnit, mealTags);
+    }
+
+    /** Left as it is when nothing was chosen. */
+    public void setDishType(FoodDishType dishType) {
+        if (dishType != null) {
+            this.dishType = dishType;
+        }
     }
 
     public void update(

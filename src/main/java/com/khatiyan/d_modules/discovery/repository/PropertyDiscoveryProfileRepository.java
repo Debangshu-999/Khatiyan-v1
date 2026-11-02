@@ -79,4 +79,35 @@ public interface PropertyDiscoveryProfileRepository extends JpaRepository<Proper
             @Param("maxLatitude") double maxLatitude,
             @Param("minLongitude") double minLongitude,
             @Param("maxLongitude") double maxLongitude);
+
+    /** Where one visible, coordinated property is. */
+    interface VisiblePropertyPoint {
+        UUID getPropertyId();
+
+        Double getLatitude();
+
+        Double getLongitude();
+    }
+
+    /** Visible, coordinated properties inside a bounding box, on the same index as the distances above. */
+    @Query(nativeQuery = true, value = """
+            SELECT p.id AS "propertyId",
+                   CAST(p.latitude AS float8) AS "latitude",
+                   CAST(p.longitude AS float8) AS "longitude"
+            FROM property.properties p
+            JOIN discovery.property_discovery_profiles dp
+              ON dp.property_id = p.id
+             AND dp.is_active = TRUE
+             AND dp.public_visible = TRUE
+            WHERE p.is_active = TRUE
+              AND p.latitude IS NOT NULL
+              AND p.longitude IS NOT NULL
+              AND p.latitude BETWEEN :minLatitude AND :maxLatitude
+              AND p.longitude BETWEEN :minLongitude AND :maxLongitude
+            """)
+    List<VisiblePropertyPoint> findVisiblePropertyPoints(
+            @Param("minLatitude") double minLatitude,
+            @Param("maxLatitude") double maxLatitude,
+            @Param("minLongitude") double minLongitude,
+            @Param("maxLongitude") double maxLongitude);
 }

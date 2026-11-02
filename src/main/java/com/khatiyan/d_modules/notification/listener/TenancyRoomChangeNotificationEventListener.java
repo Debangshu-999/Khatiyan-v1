@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.notification.listener;
 
+import com.khatiyan.c_shared.money.Money;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -250,7 +251,6 @@ public class TenancyRoomChangeNotificationEventListener {
     }
 
     private static String rupees(long paise) {
-        return "₹" + java.text.NumberFormat.getIntegerInstance(java.util.Locale.forLanguageTag("en-IN"))
-                .format(paise / 100);
+        return "₹" + Money.indianGrouped(paise / 100);
     }
 }

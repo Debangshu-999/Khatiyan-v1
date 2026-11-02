@@ -1,3 +1,8 @@
+import type { ComponentType } from "react";
+import { CalendarClock, Radio, type LucideProps } from "lucide-react-native";
+import { AllMark } from "@/features/owner/status-filter-marks";
+import { HelpModalClose } from "@/components/help-modal-header";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
@@ -30,8 +35,7 @@ import {
   noticeLane,
   priorityLabel,
   type CardFact,
-  type NoticeLane,
-} from "@/features/notice/notice-ui";
+  type NoticeLane, PriorityMark } from "@/features/notice/notice-ui";
 import { CountTabPills } from "@/components/filter-bubbles";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
@@ -57,6 +61,7 @@ import {
 } from "@/store/services/notice-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
+import { useSoftShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 
@@ -247,6 +252,11 @@ export default function OwnerNoticesScreen() {
     }
   }
 
+  const loadFailed = loadFailure(propertiesQuery, publishedQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       {/* No back button and no eyebrow, so the header is the title and the
@@ -279,11 +289,22 @@ export default function OwnerNoticesScreen() {
             onChangeText={setSearch}
             placeholder="Search notices"
             trailing={
-              <IconButton
+              <AnimatedPressable
                 accessibilityLabel="Filter notices by priority"
-                icon={SlidersHorizontal}
+                accessibilityRole="button"
+                accessibilityState={{ selected: priority !== "ALL" }}
                 onPress={() => setFiltersOpen(true)}
-              />
+                style={{
+                  alignItems: "center",
+                  backgroundColor: priority === "ALL" ? colors.surfaceSunken : colors.primary,
+                  borderRadius: 999,
+                  height: 34,
+                  justifyContent: "center",
+                  width: 34,
+                }}
+              >
+                <SlidersHorizontal color={priority === "ALL" ? colors.ink : colors.onPrimary} size={17} strokeWidth={2.3} />
+              </AnimatedPressable>
             }
             value={search}
           />
@@ -308,12 +329,15 @@ export default function OwnerNoticesScreen() {
             <BoardTotals live={counts.live} recurring={counts.recurring} scheduled={counts.scheduled} />
           )}
 
-          <ActionButton
-            disabled={!canManageNotices}
-            icon={Plus}
-            label="Create notice"
-            onPress={() => router.push("/owner-notice-create")}
-          />
+          {/* In a row: the button is flex 1, and bare in this column it grows tall. */}
+          <View style={{ flexDirection: "row" }}>
+            <ActionButton
+              disabled={!canManageNotices}
+              icon={Plus}
+              label="Create notice"
+              onPress={() => router.push("/owner-notice-create")}
+            />
+          </View>
 
           {/* Says what narrowed the list, and undoes it. A tab shows its own
               state in the pill row, but a priority chosen behind the filter
@@ -438,45 +462,40 @@ const BOARD_TABS: { label: string; value: BoardTab }[] = [
  * answers neither.
  */
 function BoardTotals({ live, recurring, scheduled }: { live: number; recurring: number; scheduled: number }) {
-  const { colors } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", gap: spacing.sm }}>
+      <TotalsCard icon={Radio} label="Live" value={live} />
+      <TotalsCard icon={CalendarClock} label="Scheduled" value={scheduled} />
+      <TotalsCard icon={Repeat2} label="Recurring" value={recurring} />
+    </View>
+  );
+}
+
+function TotalsCard({ icon: Icon, label, value }: { icon: ComponentType<LucideProps>; label: string; value: number }) {
+  const { colors, fonts, type } = useTheme();
 
   return (
     <View
       style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
+        alignItems: "center",
+        backgroundColor: colors.primarySoft,
         borderCurve: "continuous",
         borderRadius: radii.card,
-        borderWidth: 1,
-        flexDirection: "row",
+        flex: 1,
+        gap: 2,
+        minWidth: 0,
         paddingVertical: spacing.md,
       }}
     >
-      <TotalsColumn label="Live" value={live} />
-      <TotalsRule />
-      <TotalsColumn label="Scheduled" value={scheduled} />
-      <TotalsRule />
-      <TotalsColumn label="Recurring" value={recurring} />
-    </View>
-  );
-}
-
-function TotalsColumn({ label, value }: { label: string; value: number }) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View style={{ alignItems: "center", flex: 1, gap: 2 }}>
-      <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, fontVariant: ["tabular-nums"] }}>
+      <View style={{ alignItems: "center", backgroundColor: colors.surface, borderRadius: 999, height: 36, justifyContent: "center", width: 36 }}>
+        <Icon color={colors.primary} size={20} strokeWidth={2} />
+      </View>
+      <FitText numberOfLines={1} style={[type.caption, { color: colors.primary, fontFamily: fonts.sansSemiBold, marginTop: 2 }]}>{label}</FitText>
+      <Text style={{ color: colors.primaryDeep, fontFamily: fonts.display, fontSize: 24, fontVariant: ["tabular-nums"] }}>
         {value}
       </Text>
     </View>
   );
-}
-
-function TotalsRule() {
-  const { colors } = useTheme();
-  return <View style={{ backgroundColor: colors.border, marginVertical: 2, width: 1 }} />;
 }
 
 function NoticeCard({
@@ -599,24 +618,31 @@ function BoardCard({
   subtitle: string;
   title: string;
 }) {
+  const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
 
   const body = (
     <>
-      <LaneBadge lane={lane} />
-
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ flex: 1, gap: 3 }}>
-          <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
-            {title}
-          </FitText>
-          <FitText numberOfLines={2} style={[type.description, { color: colors.muted }]}>
-            {subtitle}
-          </FitText>
-        </View>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+        <LaneBadge lane={lane} />
         {/* Only where there is somewhere to go. A chevron on a card that does
             not open is an arrow pointing at nothing. */}
-        {onPress ? <ChevronRight color={colors.kicker} size={20} strokeWidth={2.2} /> : null}
+        {onPress ? (
+          <View style={{ alignItems: "center", borderColor: colors.borderStrong, borderRadius: 999, borderWidth: 1, justifyContent: "center", paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
+            <ChevronRight color={colors.ink} size={16} strokeWidth={2.4} />
+          </View>
+        ) : null}
+      </View>
+
+      <View style={{ gap: 3 }}>
+        <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>
+          {title}
+        </FitText>
+        {/* Plain text, not FitText: that shrinks a long message until it fits, and a
+            preview only needs to cut off (user, 2026-10-31). */}
+        <Text numberOfLines={2} style={[type.description, { color: colors.muted }]}>
+          {subtitle}
+        </Text>
       </View>
 
       <FactRow left={metaLeft} right={metaRight} />
@@ -637,6 +663,7 @@ function BoardCard({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
+    ...softShadow(colors.shadow, 4, 12),
   };
 
   if (!onPress) {
@@ -714,6 +741,7 @@ function PriorityFilterDialog({
             overflow: "hidden",
             width: "100%",
           }}>
+          <HelpModalClose corner onClose={onClose} />
           <View
             style={{
               alignItems: "center",
@@ -724,18 +752,18 @@ function PriorityFilterDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Filter by priority
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
 
           {/* The same row every other picker in the app uses. Its hairline runs
               above each option INCLUDING the first, which is what separates the
               list from the heading above it. */}
-          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xs }}>
+          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md }}>
             {PRIORITY_FILTERS.map((option) => (
               <PickerOptionRow
+                icon={option.value === "ALL" ? <AllMark /> : <PriorityMark priority={option.value} size={18} />}
                 key={option.value}
                 label={option.label}
                 onPress={() => {

@@ -35,6 +35,9 @@ public final class MealScheduleRules {
     /** A meal can be delayed until this long before it starts, and no later. */
     public static final Duration DELAY_CUTOFF = Duration.ofMinutes(10);
 
+    /** A meal pass still scans this long after the meal ends, for whoever is already in line. */
+    public static final Duration ATTENDANCE_GRACE = Duration.ofMinutes(10);
+
     /**
      * The timetable a property has until its owner saves one. Rows are stored
      * only once saved, so these are the times for every property that never
@@ -180,6 +183,19 @@ public final class MealScheduleRules {
     public static boolean beforeCutoff(MealSlot slot, LocalTime now) {
         return slot.status() == MealStatus.UPCOMING
                 && minutesOfDay(now) < minutesOfDay(slot.start()) - DELAY_CUTOFF.toMinutes();
+    }
+
+    /**
+     * Whether a meal's passes can be scanned: from its start, delay included,
+     * until 10 minutes after its end (user, 2026-11-01). After that a late
+     * arrival is the property's to sort out and nothing is recorded.
+     */
+    public static boolean attendanceOpen(MealSlot slot, LocalTime now) {
+        return switch (slot.status()) {
+            case UPCOMING -> false;
+            case SERVING -> true;
+            case DONE -> minutesOfDay(now) < minutesOfDay(slot.end()) + ATTENDANCE_GRACE.toMinutes();
+        };
     }
 
     public static String label(MealType meal) {

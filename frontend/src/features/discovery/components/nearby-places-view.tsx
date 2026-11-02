@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Image, Text, View } from "react-native";
 import { MapPinned, Search, X } from "lucide-react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
 import { CountTabPills } from "@/components/filter-bubbles";
@@ -117,6 +118,11 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
   // is a reset worth offering.
   const narrowed = Boolean(filter) || recommendedOnly;
 
+  const loadFailed = loadFailure(tenantSearch, adminSearch);
+  if (loadFailed) {
+    return <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />;
+  }
+
   return (
     <View style={{ gap: spacing.md }}>
       {/* Smart search */}
@@ -124,8 +130,8 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
         style={{
           alignItems: "center",
           backgroundColor: colors.surfaceRaised,
-          borderColor: colors.border,
-          borderRadius: 12,
+          borderColor: `${colors.ink}80`,
+          borderRadius: 10,
           borderWidth: 1,
           flexDirection: "row",
           gap: spacing.sm,

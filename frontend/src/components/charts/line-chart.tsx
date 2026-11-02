@@ -19,12 +19,14 @@ export type LineBucket = { key: string; label: string; value: number | null };
  * of the axis labels. Past five buckets the plot scrolls sideways.
  */
 export function LineChart({
+  axisWidth = 44,
   accessibilityLabel,
   buckets,
   color: lineColor,
   formatTick,
   formatValue,
   reference,
+  scale,
 }: {
   accessibilityLabel: string;
   buckets: LineBucket[];
@@ -37,18 +39,22 @@ export function LineChart({
    * period's average, so a point's own figure is not mistaken for it.
    */
   reference?: { label: string; value: number };
+  /** Room for the y axis labels. Narrower where they are short, so the plot starts further left. */
+  axisWidth?: number;
+  /** A fixed y axis, for a figure with its own range such as a rating out of 5. Worked out from the values otherwise. */
+  scale?: { max: number; min: number; ticks: number[] };
 }) {
   const { colors, fonts } = useTheme();
   const palette = useChartPalette();
   const [selected, setSelected] = useState<string | null>(null);
   const height = 160;
-  const left = 44;
+  const left = axisWidth;
   const top = 22;
   const bottom = 26;
   const baseline = height - bottom;
   const plot = baseline - top;
   const values = buckets.map((bucket) => bucket.value);
-  const { max, min, ticks } = signedScale([...values.filter((value): value is number => value !== null), ...(reference ? [reference.value] : [])]);
+  const { max, min, ticks } = scale ?? signedScale([...values.filter((value): value is number => value !== null), ...(reference ? [reference.value] : [])]);
   const span = max - min || 1;
   const y = (value: number) => baseline - ((value - min) / span) * plot;
   const lastIndex = values.reduce<number>((last, value, index) => (value !== null ? index : last), -1);

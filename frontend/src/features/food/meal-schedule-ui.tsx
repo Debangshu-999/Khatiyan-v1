@@ -183,7 +183,7 @@ function MealNoticesAdvisory({
 }
 
 /** A time you tap to change, opening the native time picker. */
-function TimeField({ label, onChange, value }: { label: string; onChange: (value: Date) => void; value: Date }) {
+function TimeField({ boldLabel = false, label, onChange, value }: { boldLabel?: boolean; label: string; onChange: (value: Date) => void; value: Date }) {
   const { colors, fonts, type } = useTheme();
   const [open, setOpen] = useState(false);
 
@@ -197,7 +197,7 @@ function TimeField({ label, onChange, value }: { label: string; onChange: (value
 
   return (
     <View style={{ flex: 1, gap: spacing.xxs }}>
-      <Text style={[type.caption, { color: colors.kicker }]}>{label}</Text>
+      <Text style={boldLabel ? { color: colors.kicker, fontFamily: fonts.sansBold, fontSize: 13 } : [type.caption, { color: colors.kicker }]}>{label}</Text>
       <Pressable
         accessibilityLabel={`${label}, ${formatMealTime(toHhmm(value))}`}
         accessibilityRole="button"
@@ -362,10 +362,11 @@ export function DelayMealSheet({
   }
 
   return (
-    <SheetShell animated onClose={onClose} title={`Delay ${MEAL_LABEL[slot.mealType].toLowerCase()}`}>
+    <SheetShell animated contentMaxSize="tall" onClose={onClose} size="content" title={`Delay ${MEAL_LABEL[slot.mealType].toLowerCase()}`}>
       <View style={{ flexDirection: "row" }}>
         <TimeField
-          label="NEW START TIME"
+          boldLabel
+          label="New start time"
           onChange={(value) => {
             setPicked(value);
             form.clearField("time");

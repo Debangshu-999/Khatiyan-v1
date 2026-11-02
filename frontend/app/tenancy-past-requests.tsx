@@ -1,3 +1,6 @@
+import { HelpModalClose } from "@/components/help-modal-header";
+import { FilterMark } from "@/features/owner/status-filter-marks";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useMemo, useState } from "react";
@@ -166,6 +169,11 @@ export default function TenancyPastRequestsScreen() {
     setPicker(null);
   }
 
+  const loadFailed = loadFailure(exitQuery, roomChangeQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
@@ -328,6 +336,7 @@ function FilterPickerDialog({
             overflow: "hidden",
             width: "100%",
           }}>
+          <HelpModalClose corner onClose={onClose} />
           <View
             style={{
               alignItems: "center",
@@ -341,15 +350,15 @@ function FilterPickerDialog({
             <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               {title}
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
           <ScrollView
-            contentContainerStyle={{ paddingBottom: spacing.sm, paddingHorizontal: spacing.lg }}
+            contentContainerStyle={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}
             showsVerticalScrollIndicator={false}
             style={{ maxHeight: 440 }}
           >
             {options.map((option) => (
               <PickerOptionRow
+                icon={<FilterMark value={option.value} />}
                 key={option.value}
                 label={option.label}
                 onPress={() => onSelect(option.value)}
@@ -471,7 +480,7 @@ function DateFilterDialog({
           </View>
 
           <ScrollView
-            contentContainerStyle={{ paddingBottom: spacing.sm, paddingHorizontal: spacing.lg }}
+            contentContainerStyle={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}
             showsVerticalScrollIndicator={false}
             style={{ marginTop: spacing.sm, maxHeight: 340 }}
           >

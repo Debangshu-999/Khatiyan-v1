@@ -1,6 +1,6 @@
 package com.khatiyan.d_modules.compliance.service;
 
-import java.text.NumberFormat;
+import com.khatiyan.c_shared.money.Money;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -461,7 +461,7 @@ public class MainClauseTemplates {
     }
 
     private static String rupees(long paise) {
-        return "₹" + NumberFormat.getIntegerInstance(Locale.forLanguageTag("en-IN")).format(paise / 100);
+        return "₹" + Money.indianGrouped(paise / 100);
     }
 
     /**

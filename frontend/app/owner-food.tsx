@@ -1,9 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { useRouter } from "expo-router";
 import { View } from "react-native";
+import { CircleHelp } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { EmptyState } from "@/components/empty-state";
+import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 import { PinnedFooter, PINNED_FOOTER_CLEARANCE } from "@/components/pinned-footer";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -13,7 +17,7 @@ import { useToast } from "@/components/toast";
 import { useAvailableAccounts } from "@/features/account/accounts";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ConfirmDialog, NoticeBar, ViewOnlyChip } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, IconButton, NoticeBar, ViewOnlyChip } from "@/features/owner/owner-ui";
 import { usePropertyPermissions } from "@/features/owner/use-property-permissions";
 import { foodIcon } from "@/features/food/food-ui";
 import {
@@ -23,7 +27,8 @@ import {
   MealsDoneForToday,
   canStillDelay,
 } from "@/features/food/meal-schedule-ui";
-import { FoodItemsTab } from "@/features/food/owner-food-items";
+import { MealAttendanceCard, MealRatingsLink } from "@/features/food/meal-attendance-ui";
+import { FoodItemsSearch, FoodItemsTab, type ItemStatusFilter } from "@/features/food/owner-food-items";
 import { FoodProfilesTab } from "@/features/food/owner-food-profiles";
 import {
   CookingPreview,
@@ -40,6 +45,7 @@ import {
   useListFoodProfileSubscriberCountsQuery,
   useListFoodSubscribersQuery,
   useSetFoodModuleEnabledMutation,
+  useSetMealAttendanceEnabledMutation,
   type FoodProfile,
 } from "@/store/services/food-api";
 import { spacing } from "@/theme/spacing";
@@ -47,16 +53,35 @@ import { spacing } from "@/theme/spacing";
 type Tab = "overview" | "items" | "profiles";
 
 /** Keep one safe-area scroll view mounted while property and food data resolve. */
-function FoodScreenFrame({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+function FoodScreenFrame({ children, footer, listUnderFooter = false, onFooterHeight, stickyHeaderIndices }: {
+  children: ReactNode;
+  footer?: ReactNode;
+  /**
+   * A list runs under the footer, so the room under it counts when deciding if the
+   * page fits. Otherwise a list that only fits by reaching behind the footer locks
+   * in place, with its last card hidden (user, 2026-11-01).
+   */
+  listUnderFooter?: boolean;
+  onFooterHeight?: (height: number) => void;
+  stickyHeaderIndices?: number[];
+}) {
+  // Its real height plus a gap, so the last card stops clear of it on any phone.
+  const [footerRoom, setFooterRoom] = useState(PINNED_FOOTER_CLEARANCE);
   return (
     <View style={{ flex: 1 }}>
       <ScreenScrollView
-        contentContainerStyle={{ paddingBottom: footer ? PINNED_FOOTER_CLEARANCE : undefined }}
+        bottomPaddingCovered={listUnderFooter}
+        contentContainerStyle={{ paddingBottom: footer ? footerRoom : undefined }}
         safeAreaEdges={["top", "bottom"]}
+        stickyHeaderIndices={stickyHeaderIndices}
       >
         {children}
       </ScreenScrollView>
-      {footer ? <PinnedFooter>{footer}</PinnedFooter> : null}
+      {footer ? <PinnedFooter onLayout={(event) => {
+        const { height } = event.nativeEvent.layout;
+        setFooterRoom(height + spacing.md);
+        onFooterHeight?.(height);
+      }}>{footer}</PinnedFooter> : null}
     </View>
   );
 }
@@ -84,9 +109,19 @@ export default function OwnerFoodScreen() {
 
   const [tab, setTab] = useState<Tab>("overview");
   const [visitedTabs, setVisitedTabs] = useState({ items: false, profiles: false });
+  useQuickActionIntent({
+    "edit-menu": () => { setTab("profiles"); setVisitedTabs((current) => ({ ...current, profiles: true })); },
+    "add-menu-item": () => { setTab("profiles"); setVisitedTabs((current) => ({ ...current, profiles: true })); },
+  }, Boolean(property));
   const [itemCreateRequest, setItemCreateRequest] = useState(0);
   const [profileCreateRequest, setProfileCreateRequest] = useState(0);
   const [confirmOff, setConfirmOff] = useState(false);
+  const [profilesHelp, setProfilesHelp] = useState(false);
+  const [notOfferedFooter, setNotOfferedFooter] = useState(0);
+  // Here rather than in the Items tab, because the screen draws the docked search.
+  const [itemSearch, setItemSearch] = useState("");
+  const [itemStatus, setItemStatus] = useState<ItemStatusFilter>("ALL");
+  const [itemFiltersOpen, setItemFiltersOpen] = useState(false);
   const opErrors = useFormErrors<never>();
 
   const overviewQuery = useGetFoodOverviewQuery(propertyId, { skip: !propertyId });
@@ -106,6 +141,8 @@ export default function OwnerFoodScreen() {
   useEffect(() => {
     setTab("overview");
     setVisitedTabs({ items: false, profiles: false });
+    setItemSearch("");
+    setItemStatus("ALL");
   }, [propertyId]);
 
   // Overview owns module startup. The heavier lists are requested only when
@@ -123,7 +160,13 @@ export default function OwnerFoodScreen() {
 
   // The server's meal day (2026-09-28): which meal is next, its time and any
   // delay. Null next meal once the day's last one is over, until midnight.
-  const scheduleQuery = useGetMealScheduleQuery(propertyId, { skip: !propertyId || !managed });
+  // Polled like the forecast screen, so the card moves on by itself when a meal
+  // starts or ends while this screen is open (user, 2026-11-01).
+  const scheduleQuery = useGetMealScheduleQuery(propertyId, {
+    pollingInterval: 30_000,
+    skip: !propertyId || !managed,
+    skipPollingIfUnfocused: true,
+  });
   const schedule = scheduleQuery.data;
   const upcoming = schedule?.nextMeal ?? null;
   const forecastQuery = useGetCookingForecastQuery(
@@ -136,6 +179,16 @@ export default function OwnerFoodScreen() {
   const [delayOpen, setDelayOpen] = useState(false);
 
   const [setEnabled, setEnabledState] = useSetFoodModuleEnabledMutation();
+  const [setAttendance, setAttendanceState] = useSetMealAttendanceEnabledMutation();
+
+  async function toggleAttendance(next: boolean) {
+    try {
+      await setAttendance({ enabled: next, propertyId }).unwrap();
+      toast.ok(next ? "Meal attendance is on from the next meal" : "Meal attendance is off");
+    } catch (error) {
+      opErrors.failFromServer(errorMessage(error));
+    }
+  }
 
   async function toggleModule(next: boolean) {
     if (!next) {
@@ -171,8 +224,17 @@ export default function OwnerFoodScreen() {
       italicTail="management."
       subtitle={property ? [property.name, property.area].filter(Boolean).join(", ") : undefined}
       title="Meal"
+      // On the Profiles tab, what the notice used to say (user, 2026-11-01).
+      trailing={managed && tab === "profiles"
+        ? <IconButton accessibilityLabel="How profiles work" icon={CircleHelp} onPress={() => setProfilesHelp(true)} />
+        : undefined}
     />
   );
+
+  const loadFailed = loadFailure(overviewQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   if (!property) {
     return (
@@ -201,28 +263,38 @@ export default function OwnerFoodScreen() {
   // would be refused.
   if (overview && !overview.foodAvailableInProperty) {
     return (
-      <FoodScreenFrame>
+      // Fixed to the screen's bottom, so nothing here scrolls (user, 2026-11-01).
+      <FoodScreenFrame
+        onFooterHeight={setNotOfferedFooter}
+        footer={
+          <View style={{ gap: spacing.sm }}>
+            <NoticeBar
+              message="Property settings decides whether this property serves food and which meals. Add a meal there and this screen opens up."
+              title="Where this is set"
+              tone="info"
+            />
+            {canManage("PROPERTY_SETTINGS") ? (
+              <View style={{ flexDirection: "row" }}>
+                <ActionButton
+                  icon={foodIcon("cog-outline")}
+                  label="Go to Property settings"
+                  onPress={() => router.push("/owner-edit-property")}
+                  variant="secondary"
+                />
+              </View>
+            ) : null}
+          </View>
+        }
+      >
         {header}
         <EmptyState
           description="This property is listed as not providing food, so there is nothing to manage here."
+          // Keyed, so it measures again once the footer's height is known.
+          footerHeight={notOfferedFooter}
+          key={notOfferedFooter}
           icon={foodIcon("silverware-clean")}
           title="Food is not offered here"
         />
-        <NoticeBar
-          message="Property settings decides whether this property serves food and which meals. Add a meal there and this screen opens up."
-          title="Where this is set"
-          tone="info"
-        />
-        {canManage("PROPERTY_SETTINGS") ? (
-          <View style={{ flexDirection: "row" }}>
-            <ActionButton
-              icon={foodIcon("cog-outline")}
-              label="Go to Property settings"
-              onPress={() => router.push("/owner-edit-property")}
-              variant="secondary"
-            />
-          </View>
-        ) : null}
       </FoodScreenFrame>
     );
   }
@@ -234,6 +306,7 @@ export default function OwnerFoodScreen() {
   // meal has a saved time, the overview stays on the setup steps.
   const timingsSet = schedule ? schedule.timings.every((timing) => timing.saved) : true;
   const setupIncomplete = managed && ((overview?.activeItems ?? 0) === 0 || !timingsSet);
+  const itemSearchDocked = managed && tab === "items" && (itemsQuery.data?.length ?? 0) > 0;
   const footerMode = !readOnly && managed
     ? tab === "items"
       ? "items"
@@ -265,7 +338,8 @@ export default function OwnerFoodScreen() {
   ) : undefined;
 
   return (
-    <FoodScreenFrame footer={footer}>
+    // The search is the third child on the Items tab: header, tabs, then it.
+    <FoodScreenFrame footer={footer} listUnderFooter stickyHeaderIndices={itemSearchDocked ? [2] : undefined}>
         {header}
 
       {/* The module switch is the one thing that outranks the tabs: with it off
@@ -303,6 +377,15 @@ export default function OwnerFoodScreen() {
             />
           </View>
 
+          {itemSearchDocked ? (
+            <FoodItemsSearch
+              onFilter={() => setItemFiltersOpen(true)}
+              onSearch={setItemSearch}
+              search={itemSearch}
+              status={itemStatus}
+            />
+          ) : null}
+
           {tab === "overview" && overview ? (
             <View style={{ gap: spacing.sm }}>
               <ManageFoodCard
@@ -326,6 +409,13 @@ export default function OwnerFoodScreen() {
               ) : (
                 <>
                   <FoodStats date={schedule?.date} overview={overview} propertyId={propertyId} />
+                  <MealAttendanceCard
+                    busy={setAttendanceState.isLoading}
+                    enabled={overview.attendanceEnabled}
+                    onToggle={(next) => void toggleAttendance(next)}
+                    readOnly={readOnly}
+                  />
+                  <MealRatingsLink propertyId={propertyId} />
                   {upcoming ? (
                     <CookingPreview
                       forecast={forecastQuery.data}
@@ -354,10 +444,15 @@ export default function OwnerFoodScreen() {
               <FoodItemsTab
                 availableMeals={overview?.availableMeals ?? []}
                 createRequest={itemCreateRequest}
+                filtersOpen={itemFiltersOpen}
                 items={itemsQuery.data ?? []}
                 loading={itemsQuery.isLoading}
+                onCloseFilters={() => setItemFiltersOpen(false)}
+                onStatus={setItemStatus}
                 propertyId={propertyId}
                 readOnly={readOnly}
+                search={itemSearch}
+                status={itemStatus}
               />
             </View>
           ) : null}
@@ -378,6 +473,19 @@ export default function OwnerFoodScreen() {
           ) : null}
         </>
       )}
+
+      {profilesHelp ? (
+        <HowItWorksSheet
+          eyebrow="Profiles"
+          onClose={() => setProfilesHelp(false)}
+          steps={[
+            { body: "A profile is one set of meals.", title: "One set of meals" },
+            { body: "Tenants pick exactly one.", title: "Tenants pick one" },
+            { body: "The kitchen cooks each profile separately.", title: "Cooked separately" },
+          ]}
+          title="How profiles work"
+        />
+      ) : null}
 
       {confirmOff ? (
         <ConfirmDialog

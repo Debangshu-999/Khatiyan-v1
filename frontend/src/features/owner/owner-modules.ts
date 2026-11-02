@@ -105,7 +105,8 @@ export const OWNER_MODULES: OwnerModule[] = [
     // "Meals" once pinned (user, 2026-10-04). It was "Food preference".
     pinnedTitle: "Meals",
     route: "/owner-food",
-    title: "Meal management",
+    // The card only (user, 2026-11-01). The screen's own header stays "Meal management".
+    title: "Meals",
   },
   {
     artwork: require("../../../assets/icons/workspace/notice-module.png"),

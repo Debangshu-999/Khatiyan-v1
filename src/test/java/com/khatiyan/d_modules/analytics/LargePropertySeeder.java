@@ -450,6 +450,12 @@ public final class LargePropertySeeder {
             return;
         }
         UUID property = seeded.propertyId();
+        // Written by the tests that turn meals on for a seeded property, not by the seed.
+        for (String table : List.of(
+                "food.food_meal_attendance", "food.food_meal_ratings", "food.food_meal_review_analyses", "food.food_meal_delays", "food.food_menu_entries", "food.food_items",
+                "food.food_module_settings", "property.property_included_meals")) {
+            jdbc.update("DELETE FROM " + table + " WHERE property_id = ?", property);
+        }
         jdbc.update("""
                 DELETE FROM food.food_subscription_days WHERE subscription_id IN
                     (SELECT id FROM food.food_subscriptions WHERE property_id = ?)

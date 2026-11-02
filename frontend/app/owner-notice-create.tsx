@@ -1,16 +1,26 @@
 import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { dateOfIso, isoOfDate } from "@/components/calendar-month";
+import { CalendarPicker } from "@/components/calendar-picker";
+import { PriorityMark } from "@/features/notice/notice-ui";
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
+import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
+import { Switch, Text, View } from "react-native";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import Svg, { Circle } from "react-native-svg";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { CalendarClock, Check, Info, Megaphone, Plus, Repeat2, Save, Send } from "lucide-react-native";
+import { CalendarDays, Clock3, Info, Megaphone, Plus, Repeat2, Save, Send } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { DeleteIcon } from "@/components/delete-icon";
+import { FitText } from "@/components/fit-text";
 import { EmptyState } from "@/components/empty-state";
+import { NotchedInput } from "@/components/notched-input";
 import { SingleOptionPicker } from "@/components/option-picker";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { ScreenHeader } from "@/components/screen-header";
 import { SheetShell } from "@/components/sheet-shell";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
 import { AlertModal } from "@/components/alert-modal";
@@ -19,7 +29,7 @@ import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
 import { AttachmentSection, useNoticeAttachments } from "@/features/notice/notice-attachments";
-import { ActionButton, ChoiceButton, FormInput, humanizeToken } from "@/features/owner/owner-ui";
+import { ActionButton, ChoiceButton, RequiredMark, humanizeToken } from "@/features/owner/owner-ui";
 import { useAppSelector } from "@/store/hooks";
 import {
   type CreateNoticePayload,
@@ -32,6 +42,7 @@ import {
 } from "@/store/services/notice-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
+import { useSoftShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 
 const PRIORITIES: NoticePriority[] = ["NORMAL", "IMPORTANT", "URGENT", "EMERGENCY"];
@@ -103,6 +114,7 @@ export default function OwnerNoticeCreateScreen() {
 
   // Configuration section
   const [recurring, setRecurring] = useState(false);
+  useQuickActionIntent({ "repeat-notice": () => setRecurring(true) }, !isEditingTemplate);
   const [frequency, setFrequency] = useState<RecurringNoticeFrequency>("DAILY");
   const [daysOfWeek, setDaysOfWeek] = useState<DayOfWeekName[]>([]);
   const [daysOfMonth, setDaysOfMonth] = useState<number[]>([]);
@@ -185,6 +197,10 @@ export default function OwnerNoticeCreateScreen() {
     if (event.type !== "set" || !selected || !target) {
       return;
     }
+    applyPicked(target, selected);
+  }
+
+  function applyPicked(target: NonNullable<PickerTarget>, selected: Date) {
     const current = target.field === "from" ? from : target.field === "to" ? to : startDate;
     const next = mergePickedDateTime(current, selected, target.mode);
     const apply =
@@ -295,6 +311,11 @@ export default function OwnerNoticeCreateScreen() {
     });
   }
 
+  const loadFailed = loadFailure(propertiesQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       {unsaved.dialog}
@@ -302,14 +323,7 @@ export default function OwnerNoticeCreateScreen() {
       safeAreaEdges={["top"]}
       contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE, paddingTop: spacing.md }}
     >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ alignItems: "flex-start", flex: 1 }}>
-        </View>
-        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>
-          {isEditingTemplate ? "Edit Recurring" : "New Notice"}
-        </Text>
-        <View style={{ flex: 1 }} />
-      </View>
+      <ScreenHeader title={isEditingTemplate ? "Edit Recurring" : "New Notice"} />
 
       {!property && !propertiesQuery.isFetching ? (
         <EmptyState
@@ -326,29 +340,35 @@ export default function OwnerNoticeCreateScreen() {
             <View style={{ gap: spacing.md }}>
               <SectionHeading step="1" title="Message" />
 
-              <FormInput
-                error={form.errors.title}
-                label="Title"
-                onChangeText={(next) => {
-                  setTitle(next);
-                  form.clearField("title");
-                }}
-                placeholder="Notice title"
-                required
-                value={title}
-              />
-              <FormInput
-                label="Body"
-                multiline
-                error={form.errors.body}
-                onChangeText={(next) => {
-                  setBody(next);
-                  form.clearField("body");
-                }}
-                placeholder="Write the notice"
-                required
-                value={body}
-              />
+              <View style={{ gap: spacing.xs }}>
+                <NotchedInput
+                  invalid={Boolean(form.errors.title)}
+                  label="Title"
+                  onChangeText={(next) => {
+                    setTitle(next);
+                    form.clearField("title");
+                  }}
+                  placeholder="Notice title"
+                  required
+                  value={title}
+                />
+                <FieldError message={form.errors.title} />
+              </View>
+              <View style={{ gap: spacing.xs }}>
+                <NotchedInput
+                  label="Body"
+                  multiline
+                  invalid={Boolean(form.errors.body)}
+                  onChangeText={(next) => {
+                    setBody(next);
+                    form.clearField("body");
+                  }}
+                  placeholder="Write the notice"
+                  required
+                  value={body}
+                />
+                <FieldError message={form.errors.body} />
+              </View>
 
             </View>
           </Card>
@@ -384,18 +404,11 @@ export default function OwnerNoticeCreateScreen() {
           </Card>
 
           {/* Section three — when and how it runs */}
-          <Card>
+          <Card style={{ marginBottom: spacing.xl }}>
             <View style={{ gap: spacing.md }}>
               <SectionHeading step="3" title="Configuration" />
 
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: recurring }}
-                onPress={() => (setRecurring)(!recurring)}
-                // The surface stays the same whether ticked or not. Switching to
-                // a blue wash on selection made the row itself the loudest
-                // thing in the section; the tick is what changed, so the tick
-                // is what should show it.
+              <View
                 style={{
                   alignItems: "center",
                   backgroundColor: colors.surfaceRaised,
@@ -407,44 +420,39 @@ export default function OwnerNoticeCreateScreen() {
                   padding: spacing.md,
                 }}
               >
-                <Repeat2 color={recurring ? colors.primary : colors.kicker} size={18} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[type.body, { color: colors.ink, fontWeight: "800" }]}>Make it recurring</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, minHeight: 24 }}>
+                    <Text style={[type.body, { color: colors.ink, flexShrink: 1, fontWeight: "800" }]}>Make it recurring</Text>
+                    <Repeat2 color={recurring ? colors.primary : colors.kicker} size={18} />
+                  </View>
                   <Text style={[type.caption, { color: colors.muted }]}>
                     {recurring
                       ? "The times below become each day's window. It repeats until deleted."
                       : "Shows once, between the times below."}
                   </Text>
                 </View>
-                <View
-                  style={{
-                    alignItems: "center",
-                    // Blue whether ticked or not, so the box reads as the
-                    // interactive thing rather than appearing only once it has
-                    // been used.
-                    borderColor: colors.primary,
-                    borderRadius: 8,
-                    borderWidth: 1.5,
-                    height: 24,
-                    justifyContent: "center",
-                    width: 24,
-                  }}
-                >
-                  {recurring ? <Check color={colors.primary} size={15} strokeWidth={3} /> : null}
-                </View>
-              </Pressable>
+                <Switch
+                  accessibilityLabel="Make it recurring"
+                  onValueChange={setRecurring}
+                  thumbColor={colors.surface}
+                  trackColor={{ false: colors.borderStrong, true: colors.primary }}
+                  value={recurring}
+                />
+              </View>
 
               {recurring ? (
-                <View style={{ gap: spacing.xs }}>
-                  <Text style={[type.caption, { color: colors.kicker, fontWeight: "700" }]}>FREQUENCY</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.md }}>
+                  <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>Frequency</Text>
+                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
                     {FREQUENCIES.map((option) => (
-                      <ChoiceButton
-                        active={frequency === option}
-                        key={option}
-                        label={humanizeToken(option)}
-                        onPress={() => (setFrequency)(option)}
-                      />
+                      <View key={option} style={{ flex: 1 }}>
+                        <ChoiceButton
+                          active={frequency === option}
+                          soft
+                          label={humanizeToken(option)}
+                          onPress={() => (setFrequency)(option)}
+                        />
+                      </View>
                     ))}
                   </View>
                 </View>
@@ -489,18 +497,8 @@ export default function OwnerNoticeCreateScreen() {
                 />
               ) : null}
 
-              {/* Side by side once recurring: two time-only fields are a pair
-                  bounding one window, and stacking them read as two unrelated
-                  settings. A one-off keeps them stacked — those carry a full
-                  date each and do not fit a shared row. */}
-              <View
-                style={
-                  recurring
-                    ? { flexDirection: "row", gap: spacing.sm }
-                    : { gap: spacing.md }
-                }
-              >
-                <View style={recurring ? { flex: 1 } : undefined}>
+              {/* Stacked, recurring or not: side by side the two broke on a phone (user, 2026-11-01). */}
+              <View style={{ gap: spacing.md }}>
                   <DateTimeField
                     error={form.errors.from}
                     label={recurring ? "Shows from" : "Goes live"}
@@ -510,24 +508,23 @@ export default function OwnerNoticeCreateScreen() {
                     onPickTime={() => setPicker({ field: "from", mode: "time" })}
                     value={from}
                   />
-                </View>
-                <View style={recurring ? { flex: 1 } : undefined}>
                   <DateTimeField
                     error={form.errors.to}
-                    label={recurring ? "Until" : "Stops showing"}
+                    label={recurring ? "Shown until" : "Stops showing"}
                     mode={recurring ? "time" : "datetime"}
                     onClear={() => setTo(null)}
                     onPickDate={() => setPicker({ field: "to", mode: "date" })}
                     onPickTime={() => setPicker({ field: "to", mode: "time" })}
                     value={to}
                   />
-                </View>
               </View>
 
               <SingleOptionPicker
                 label="Priority"
                 onChange={setPriority}
+                optionIcon={(option) => <PriorityMark priority={option} size={18} />}
                 required
+                sheetSize="content"
                 options={PRIORITIES.map((option) => ({ label: humanizeToken(option), value: option }))}
                 value={priority}
               />
@@ -540,11 +537,21 @@ export default function OwnerNoticeCreateScreen() {
 
       {attachments.overlays}
 
-      {picker ? (
+      {picker?.mode === "time" ? (
         <DateTimePicker
-          mode={picker.mode}
+          mode="time"
           onChange={onPicked}
           value={(picker.field === "from" ? from : to) ?? new Date()}
+        />
+      ) : null}
+      {picker?.mode === "date" ? (
+        <CalendarPicker
+          onClose={() => setPicker(null)}
+          onPick={(iso) => applyPicked(picker, dateOfIso(iso))}
+          value={(() => {
+            const current = picker.field === "from" ? from : picker.field === "to" ? to : startDate;
+            return current ? isoOfDate(current) : null;
+          })()}
         />
       ) : null}
     </ScreenScrollView>
@@ -628,40 +635,71 @@ function DateTimeField({
   onPickTime: () => void;
   value: Date | null;
 }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
 
   return (
-    <View
-      style={{
-        backgroundColor: colors.surfaceRaised,
-        borderColor: error ? colors.danger : colors.border,
-        borderRadius: radii.card,
-        borderWidth: error ? 1.5 : 1,
-        gap: spacing.sm,
-        padding: spacing.md,
-      }}
-    >
+    <View style={{ gap: spacing.xs }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={[type.caption, { color: error ? colors.danger : colors.muted, fontWeight: "800" }]}>{label}</Text>
+        <Text style={[type.label, { color: error ? colors.danger : colors.muted, flexShrink: 1 }]}>
+          {label}
+          <RequiredMark required />
+        </Text>
         {value ? (
-          <Pressable accessibilityRole="button" onPress={onClear}>
-            <Text style={[type.caption, { color: colors.danger, fontWeight: "800" }]}>Clear</Text>
-          </Pressable>
+          <AnimatedPressable
+            accessibilityLabel={`Clear ${label}`}
+            accessibilityRole="button"
+            hitSlop={6}
+            onPress={onClear}
+            style={{ alignItems: "center", backgroundColor: colors.dangerSoft, borderRadius: 999, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 5 }}
+          >
+            <DeleteIcon color={colors.danger} size={13} />
+            <Text style={{ color: colors.danger, fontFamily: fonts.sansBold, fontSize: 12 }}>Clear</Text>
+          </AnimatedPressable>
         ) : null}
       </View>
-      <Text style={[type.body, { color: value ? colors.ink : colors.muted, fontWeight: "800" }]}>
-        {value ? formatByMode(value, mode) : "Not set"}
-      </Text>
+      {/* Each part shows its value and is what changes it, in place of a line above two buttons (user, 2026-11-01). */}
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         {mode !== "time" ? (
-          <ActionButton icon={CalendarClock} label="Date" onPress={onPickDate} variant="secondary" />
+          <DateTimePart icon={CalendarDays} label="Date" onPress={onPickDate} value={value ? formatByMode(value, "date") : null} />
         ) : null}
         {mode !== "date" ? (
-          <ActionButton icon={CalendarClock} label="Time" onPress={onPickTime} variant="secondary" />
+          <DateTimePart icon={Clock3} label="Time" onPress={onPickTime} value={value ? formatByMode(value, "time") : null} />
         ) : null}
       </View>
       <FieldError message={error} />
     </View>
+  );
+}
+
+function DateTimePart({ icon: Icon, label, onPress, value }: { icon: typeof CalendarDays; label: string; onPress: () => void; value: string | null }) {
+  const { colors, fonts, type } = useTheme();
+
+  return (
+    <AnimatedPressable
+      accessibilityLabel={`${label}, ${value ?? "not set"}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surfaceRaised,
+        borderColor: colors.border,
+        borderRadius: radii.card,
+        borderWidth: 1,
+        flex: 1,
+        flexDirection: "row",
+        gap: spacing.sm,
+        minHeight: 56,
+        paddingHorizontal: spacing.sm,
+      }}
+    >
+      <Icon color={colors.primary} size={18} strokeWidth={2.2} />
+      <View style={{ flex: 1 }}>
+        <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
+        <FitText numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 14 }}>
+          {value ?? "Select"}
+        </FitText>
+      </View>
+    </AnimatedPressable>
   );
 }
 
@@ -681,11 +719,12 @@ function DayOfWeekPicker({
   onToggle: (day: DayOfWeekName) => void;
   value: DayOfWeekName[];
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
+  const softShadow = useSoftShadow();
 
   return (
-    <View style={{ gap: spacing.sm }}>
-      <Text style={[type.caption, { color: error ? colors.danger : colors.muted, fontWeight: "800" }]}>
+    <View style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
+      <Text style={{ color: error ? colors.danger : colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
         Repeats on
       </Text>
       <View style={{ flexDirection: "row", gap: spacing.xs }}>
@@ -703,19 +742,21 @@ function DayOfWeekPicker({
               tapLockMs={0}
               style={{
                 alignItems: "center",
-                backgroundColor: active ? colors.primary : colors.surface,
-                borderColor: active ? colors.primary : colors.border,
+                backgroundColor: active ? colors.primarySoft : colors.surface,
+                borderColor: active ? colors.primary : colors.borderStrong,
                 borderRadius: 10,
                 borderWidth: 1,
                 flex: 1,
                 justifyContent: "center",
+                minHeight: 42,
                 paddingVertical: spacing.sm,
+                ...softShadow(colors.shadow, 2, 6, 0.75),
               }}
             >
               <Text
                 style={{
-                  color: active ? colors.onPrimary : colors.muted,
-                  fontFamily: active ? fonts.sansBold : fonts.sansMedium,
+                  color: active ? colors.primaryDeep : colors.ink,
+                  fontFamily: fonts.sansBold,
                   fontSize: 12,
                 }}
               >
@@ -759,9 +800,9 @@ function DayOfMonthPicker({
   ];
 
   return (
-    <View style={{ gap: spacing.sm }}>
+    <View style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-        <Text style={[type.caption, { color: error ? colors.danger : colors.muted, fontWeight: "800" }]}>
+        <Text style={{ color: error ? colors.danger : colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
           Repeats on days
         </Text>
         {/* The house ⓘ pattern. Only once something is chosen — there are no
@@ -800,25 +841,26 @@ function DayOfMonthPicker({
                   // in quick succession silently dropped the second tap.
                   tapLockMs={0}
                 >
-                  {/* Fixed pixels, not a percentage with aspectRatio. Yoga will
-                      not derive a height from a percentage width, so the view
-                      came out non-square on device and borderRadius turned it
-                      into a pill rather than a circle. 34 fits the narrowest
-                      column seven of these can produce. */}
+                  {/* An explicit vector circle keeps the selection independent
+                      of native View corner clipping on Android. */}
                   <View
                     style={{
                       alignItems: "center",
-                      backgroundColor: active ? colors.primary : "transparent",
                       borderRadius: 17,
                       height: 34,
                       justifyContent: "center",
                       width: 34,
                     }}
                   >
+                    {active ? (
+                      <Svg accessible={false} height={34} pointerEvents="none" width={34} style={{ left: 0, position: "absolute", top: 0 }}>
+                        <Circle cx={17} cy={17} fill={colors.primarySoft} r={17} />
+                      </Svg>
+                    ) : null}
                     <Text
                       style={{
-                        color: active ? colors.onPrimary : colors.ink,
-                        fontFamily: active ? fonts.sansBold : fonts.sansMedium,
+                        color: active ? colors.primaryDeep : colors.ink,
+                        fontFamily: fonts.sansBold,
                         fontSize: 14,
                       }}
                     >

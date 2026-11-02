@@ -1,6 +1,12 @@
 package com.khatiyan.d_modules.intelligence;
 
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
+
+import com.khatiyan.d_modules.intelligence.mealreview.MealReviewAnalyst;
 
 /**
  * The one door into the intelligence module.
@@ -17,9 +23,12 @@ import org.springframework.stereotype.Component;
 public class IntelligenceModule {
 
     private final IntelligenceProperties properties;
+    /** Absent while the module is off. */
+    private final ObjectProvider<MealReviewAnalyst> mealReviewAnalyst;
 
-    public IntelligenceModule(IntelligenceProperties properties) {
+    public IntelligenceModule(IntelligenceProperties properties, ObjectProvider<MealReviewAnalyst> mealReviewAnalyst) {
         this.properties = properties;
+        this.mealReviewAnalyst = mealReviewAnalyst;
     }
 
     /**
@@ -42,5 +51,13 @@ public class IntelligenceModule {
      */
     public boolean isSmartSearchEnabled() {
         return properties.smartSearchLive();
+    }
+
+    /**
+     * Reads a week of written meal reviews. Throws if the provider fails or says
+     * no, so the caller keeps the owner's turn. Ask {@link #isEnabled()} first.
+     */
+    public List<MealReviewReading> readMealReviews(MealReviewBrief brief, UUID actorUserId, UUID propertyId) {
+        return mealReviewAnalyst.getObject().read(brief, actorUserId, propertyId);
     }
 }

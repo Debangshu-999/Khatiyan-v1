@@ -2,6 +2,7 @@ import { useState, type ComponentType, type ReactNode } from "react";
 import { Image, Text, View, type DimensionValue } from "react-native";
 import { CalendarCheck, CircleCheck, CircleX, Clock3, ImageOff, type LucideProps } from "lucide-react-native";
 
+import { cardText } from "@/components/card-name-row";
 import { BookingTokenStatusIcon } from "@/components/booking-vector-icons";
 import { RoomAmenityRow } from "@/features/booking/booking-form-parts";
 import type { RoomAmenity } from "@/store/services/property-api";
@@ -35,7 +36,7 @@ export function TenantBookingStatus({ status }: { status: BookingStatus }) {
   const [backgroundColor, color] = palette[tone];
   return <View accessibilityLabel={`Booking status: ${label}`} style={{ alignItems: "center", alignSelf: "flex-start", backgroundColor, borderRadius: 999, flexDirection: "row", gap: 5, paddingHorizontal: 10, paddingVertical: 7 }}>
     <Icon color={color} size={15} strokeWidth={2.2} />
-    <Text style={{ color, fontFamily: fonts.sansSemiBold, fontSize: 12 }}>{label}</Text>
+    <Text style={{ color, fontFamily: fonts.sansSemiBold, fontSize: cardText(12) }}>{label}</Text>
   </View>;
 }
 

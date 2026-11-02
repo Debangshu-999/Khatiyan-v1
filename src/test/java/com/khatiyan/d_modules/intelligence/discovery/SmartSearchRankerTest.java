@@ -74,7 +74,7 @@ class SmartSearchRankerTest {
                 UUID.randomUUID(), name, null, null, "Street", area, "Kolkata", "West Bengal", "700091",
                 lat, lng, deviceKm, null, type, PgFor.ANYONE, PreferredTenantType.ANYONE, true, Set.of(),
                 true, BathroomType.COMMON, Set.of(SharingType.DOUBLE), Set.of(PropertyFacility.WIFI), Set.of(),
-                depositPaise, null, false, null, null, null, List.of());
+                depositPaise, null, false, null, null, null, List.of(), null);
     }
 
     private static List<String> names(List<Scored> scored) {

@@ -1,3 +1,4 @@
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Modal, ScrollView, Text, View } from "react-native";
@@ -72,17 +73,6 @@ export function PropertyBoardHero() {
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={{ gap: spacing.xxs }}>
-        <Text style={[type.brand, { color: colors.ink, fontSize: 27, lineHeight: 32 }]}>
-          Property{" "}
-          <Text
-            style={[
-              type.brandItalic,
-              { color: colors.accent, fontSize: 27, lineHeight: 32 },
-            ]}
-          >
-            Board
-          </Text>
-        </Text>
         <Text style={[type.description, { color: colors.muted }]}>
           Rules, timings and important house information.
         </Text>
@@ -485,6 +475,7 @@ export function PropertyBoardItemModal({
               >
                 {item.title}
               </ModalTitle>
+              <ModalTitleRule />
               <Text
                 style={{
                   color: colors.inkSoft,

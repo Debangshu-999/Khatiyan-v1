@@ -177,16 +177,21 @@ public class BillingAnalytics {
 
     public record LabelTotal(String label, long amountPaise, int items) {}
 
-    /** One-off charges grouped by name, ignoring case and stray spaces. The first spelling seen is the one shown. */
+    /**
+     * One-off charges grouped by name, ignoring case and stray spaces. The first
+     * spelling seen is the one shown. The splits of a damage are one damage here.
+     */
     public List<LabelTotal> oneOffReasons(UUID propertyId, LocalDate from, LocalDate to) {
         return jdbc.query("""
-                SELECT MIN(TRIM(li.label)) AS label, SUM(li.amount_paise) AS amount, COUNT(*) AS items
+                SELECT MIN(name) AS label, SUM(amount_paise) AS amount, COUNT(*) AS items
+                FROM (SELECT regexp_replace(TRIM(li.label), '^(Damage DMG-.*), split [0-9]+$', '\\1') AS name, li.amount_paise
                 FROM billing.billing_cycle_line_items li
                 JOIN billing.billing_cycles c ON c.id = li.billing_cycle_id
                 WHERE c.property_id = :propertyId AND c.category = 'ONE_OFF' AND c.status <> 'CANCELLED'
                   AND c.period_start_date BETWEEN :from AND :to
                   AND li.type = 'EXTRA_CHARGE' AND COALESCE(li.status, 'ADDED') <> 'CANCELLED'
-                GROUP BY LOWER(TRIM(li.label))
+                ) charges
+                GROUP BY LOWER(name)
                 ORDER BY amount DESC, label
                 """, range(propertyId, from, to),
                 (rs, i) -> new LabelTotal(rs.getString("label"), rs.getLong("amount"), rs.getInt("items")));

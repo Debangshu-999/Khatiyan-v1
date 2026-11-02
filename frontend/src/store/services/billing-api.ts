@@ -122,13 +122,14 @@ export type BillingCycle = {
   version: number;
 };
 
-// A bill's display title: rent cycles are numbered; one-off bills (e.g. an
-// early-exit penalty) have no number and take their line-item label instead.
+// A bill's display title: numbered rent cycles, a short name for damage bills,
+// and the original charge label for other one-offs (e.g. an early-exit penalty).
 export function billTitle(cycle: Pick<BillingCycle, "cycleNumber" | "lineItems">): string {
   if (cycle.cycleNumber != null) {
     return `Cycle ${cycle.cycleNumber}`;
   }
-  return cycle.lineItems?.[0]?.label ?? "One-off bill";
+  const label = cycle.lineItems?.[0]?.label ?? "One-off bill";
+  return /^Damage DMG-\d{4}-\d+: .+ \(D[123]\)(?:, split \d+)?(?: \(from deposit\))?$/.test(label) ? "Damage bill" : label;
 }
 
 // Sort key for bills, newest first, tolerating one-off bills (null cycle number).

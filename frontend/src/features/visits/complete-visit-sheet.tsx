@@ -75,6 +75,7 @@ export function CompleteVisitSheet({ onClose, visit }: { onClose: () => void; vi
         departedAt: departed === null ? null : minutesToTime(departed),
         impression,
         partySize,
+        version: visit.version,
         visitId: visit.visitId,
       }).unwrap();
       toast.success("Visit saved.");

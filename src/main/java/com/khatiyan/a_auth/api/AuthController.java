@@ -29,6 +29,7 @@ import com.khatiyan.a_auth.api.dto.RegisterUserRequest;
 import com.khatiyan.a_auth.api.dto.RequestOtpRequest;
 import com.khatiyan.a_auth.api.dto.ResetPinRequest;
 import com.khatiyan.a_auth.api.dto.SetPinRequest;
+import com.khatiyan.a_auth.api.dto.RefreshTokenRequest;
 import com.khatiyan.a_auth.api.dto.TokenResponse;
 import com.khatiyan.a_auth.api.dto.UpdateRecoveryEmailRequest;
 import com.khatiyan.a_auth.api.dto.UpdateUserProfileRequest;
@@ -131,6 +132,14 @@ public class AuthController {
             HttpServletRequest servletRequest) {
         authService.requestEmailLoginOTP(request.email(), clientIp(servletRequest));
         return ResponseEntity.accepted().build();
+    }
+
+    /** 401 when the refresh token cannot be honoured, which the app takes as signed out. */
+    @PostMapping("/token/refresh")
+    public ResponseEntity<TokenResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+        return authService.refresh(request.refreshToken())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
     }
 
     @PostMapping("/email/login/confirm")

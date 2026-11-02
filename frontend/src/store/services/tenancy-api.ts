@@ -85,17 +85,18 @@ export type EndTenancyPayload = {
   earlyExitCharges: ExitCharge[];
   /** Null for stays with no deposit account (daily stays). */
   depositPayable: boolean | null;
+  /**
+   * Every damage record still open on the stay, in one list or the other.
+   * Billed damage never comes here, it is a Damage bill raised before the exit.
+   */
   damages: {
-    itemNames: string[];
-    customCharges: ExitCustomCharge[];
-    instrument: ExitChargeInstrument;
-    collectedVia: ExitCollectionMethod | null;
-    /**
-     * With the deposit instrument, how much the deposit takes when it cannot
-     * cover all the damage; the rest joins the move-out bill. Null for no split.
-     */
-    fromDepositPaise: number | null;
+    recordIds: string[];
+    waivedRecordIds: string[];
   } | null;
+  /** Anything that is not damage. Billed and recorded paid, never the deposit. */
+  customCharges: ExitCustomCharge[];
+  /** How the Other charges were collected. */
+  collectedVia: ExitCollectionMethod | null;
   /** Advisory: recorded as the actor's assessment, never a gate. */
   checklistConfirmed: string[];
   /**
@@ -113,6 +114,8 @@ export type TenancySummary = {
   userId: string | null;
   tenantName: string | null;
   tenantPhone: string | null;
+  /** The tenant's profile photo (2026-11-01). Null without one, or on a guest stay. */
+  tenantPhotoUrl: string | null;
   tenantPhoneVerified: boolean;
   tenantProfileCompleted: boolean;
   propertyId: string;

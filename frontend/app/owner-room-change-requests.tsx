@@ -1,3 +1,6 @@
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { type ComponentType, useMemo, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -143,6 +146,11 @@ export default function OwnerRoomChangeRequestsScreen() {
     } catch (caught) {
       setRevertError(errorMessage(caught) || "Could not return this room change for a new decision.");
     }
+  }
+
+  const loadFailed = loadFailure(propertiesQuery, requestsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
   }
 
   return (
@@ -364,8 +372,8 @@ function PastRoomChangeRequestsModal({
               <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
               <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Reviewed moves</ModalTitle>
             </View>
-            <IconButton accessibilityLabel="Close past requests" filled icon={X} onPress={() => dismiss()} />
           </View>
+          <ModalTitleRule />
           {requests.length === 0 ? (
             <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Reviewed room-change requests will appear here once you approve or reject them." />
           ) : (
@@ -431,7 +439,7 @@ function RoomChangeCard({
     <>
       <Card>
         <View style={{ gap: spacing.md }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <View
               style={{
                 alignItems: "center",
@@ -447,16 +455,16 @@ function RoomChangeCard({
             <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
               <FitText
                 numberOfLines={1}
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 25 }}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: cardText(20), lineHeight: 25 }}
               >
                 {cardName(request.tenantName ?? "Tenant")}
               </FitText>
-              <Text style={[type.caption, { color: colors.kicker, fontWeight: "800" }]}>
+              <Text style={[smallerCardText(type.caption), { color: colors.kicker, fontWeight: "800" }]}>
                 {request.referenceCode}
               </Text>
             </View>
-            <StatusBadge status={request.status} />
-          </View>
+            <CardStatus><StatusBadge status={request.status} /></CardStatus>
+          </CardNameRow>
 
           <View
             style={{
@@ -468,8 +476,8 @@ function RoomChangeCard({
           >
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
               <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>From</Text>
-                <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+                <Text style={[smallerCardText(type.eyebrow), { color: colors.kicker }]}>From</Text>
+                <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(15) }}>
                   {currentRoomLabel ?? "Current room"}
                 </FitText>
               </View>
@@ -486,10 +494,10 @@ function RoomChangeCard({
                 <ArrowRight color={colors.ink} size={16} strokeWidth={2.2} />
               </View>
               <View style={{ alignItems: "flex-end", flex: 1, gap: 2, minWidth: 0 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>To</Text>
+                <Text style={[smallerCardText(type.eyebrow), { color: colors.kicker }]}>To</Text>
                 <FitText
                   numberOfLines={1}
-                  style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15, textAlign: "right" }}
+                  style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(15), textAlign: "right" }}
                 >
                   {targetRoomLabel ?? "New room"}
                 </FitText>
@@ -650,8 +658,8 @@ function RoomChangeReviewModal({
                   {title}
                 </ModalTitle>
               </View>
-              <IconButton accessibilityLabel="Close" icon={X} onPress={() => dismiss()} />
             </View>
+            <ModalTitleRule inset={0} />
 
             <ScrollView
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}
@@ -893,7 +901,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xxs }}>
-      <Text style={[type.caption, { color: tone, fontWeight: "900" }]}>
+      <Text style={[smallerCardText(type.caption), { color: tone, fontWeight: "900" }]}>
         {status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
       </Text>
     </View>

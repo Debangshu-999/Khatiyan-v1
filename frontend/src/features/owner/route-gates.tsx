@@ -31,6 +31,10 @@ export const ROUTE_GATES: Record<string, { label: string; resource: ManagerResou
   "/owner-food": { label: "Meal management", resource: "FOOD" },
   "/owner-food-menu": { label: "Weekly food menu", resource: "FOOD" },
   "/owner-food-forecast": { label: "Cooking forecast", resource: "FOOD" },
+  // The scanner is not here on purpose: every manager can scan (user, 2026-11-01).
+  "/owner-meal-attendance": { label: "Meal attendance", resource: "FOOD" },
+  "/owner-meal-attendance-history": { label: "Meal attendance", resource: "FOOD" },
+  "/owner-meal-ratings": { label: "Meal ratings", resource: "FOOD" },
   "/owner-deposit-manager": { label: "Deposits", resource: "DEPOSITS" },
   "/owner-local-places": { label: "Nearby places", resource: "NEARBY_PLACES" },
   "/owner-notice-create": { label: "New notice", resource: "NOTICES" },

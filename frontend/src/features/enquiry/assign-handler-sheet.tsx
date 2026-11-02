@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -59,6 +60,15 @@ export function AssignHandlerSheet({
     } catch (error) {
       setRefusal(errorMessage(error));
     }
+  }
+
+  const loadFailed = loadFailure(managersQuery);
+  if (loadFailed) {
+    return (
+      <SheetShell onClose={onClose} title="Assign enquiry">
+        <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />
+      </SheetShell>
+    );
   }
 
   if (refusal) {

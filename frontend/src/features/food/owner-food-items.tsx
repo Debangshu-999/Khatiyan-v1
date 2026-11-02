@@ -1,3 +1,6 @@
+import { softShadow } from "@/theme/shadows";
+import { HelpModalClose } from "@/components/help-modal-header";
+import { FilterMark } from "@/features/owner/status-filter-marks";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -42,6 +45,7 @@ import {
   useDeleteFoodItemMutation,
   useReactivateFoodItemMutation,
   useUpdateFoodItemMutation,
+  type FoodDishType,
   type FoodItem,
   type FoodQuantityUnit,
 } from "@/store/services/food-api";
@@ -56,13 +60,69 @@ const UNITS: FoodQuantityUnit[] = ["PIECE", "SERVING", "GRAM", "KILOGRAM", "MILL
  * below them. Retirement removes an item from menu pickers without erasing its
  * catalogue history.
  */
+export type ItemStatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
+
+/**
+ * The items search, docked at the top of the Items tab while the list slides under
+ * it (user, 2026-11-01). The screen draws it, because only a direct child of the
+ * scroll view can stick. On a phone a sticky child's own style moves to a wrapper,
+ * which is fine here: it has one child and no gap.
+ */
+export function FoodItemsSearch({
+  onFilter,
+  onSearch,
+  search,
+  status,
+}: {
+  onFilter: () => void;
+  onSearch: (value: string) => void;
+  search: string;
+  status: ItemStatusFilter;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ backgroundColor: colors.surface, marginHorizontal: -spacing.lg, paddingBottom: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}>
+      <SearchField
+        onChangeText={onSearch}
+        placeholder="Search food items"
+        trailing={
+          /* A bare glyph, not a button. `IconButton` is a 46pt control with
+             its own border — inside the search field it read as a second
+             control bolted onto the box rather than part of it. Tinted blue
+             while a filter is on, which is the only cue that the list being
+             shown is not the whole list. */
+          <AnimatedPressable
+            accessibilityLabel="Filter food items by status"
+            accessibilityRole="button"
+            accessibilityState={{ selected: status !== "ALL" }}
+            hitSlop={10}
+            onPress={onFilter}
+          >
+            <SlidersHorizontal
+              color={status === "ALL" ? colors.muted : colors.primary}
+              size={18}
+              strokeWidth={2.2}
+            />
+          </AnimatedPressable>
+        }
+        value={search}
+      />
+    </View>
+  );
+}
+
 export function FoodItemsTab({
   availableMeals,
   createRequest = 0,
+  filtersOpen,
   items,
   loading,
+  onCloseFilters,
+  onStatus,
   propertyId,
   readOnly,
+  search,
+  status,
 }: {
   /**
    * The meals this property actually serves.
@@ -75,15 +135,17 @@ export function FoodItemsTab({
    */
   availableMeals: MealType[];
   createRequest?: number;
+  filtersOpen: boolean;
   items: FoodItem[];
   loading: boolean;
+  onCloseFilters: () => void;
+  onStatus: (status: ItemStatusFilter) => void;
   propertyId: string;
   readOnly: boolean;
+  search: string;
+  status: ItemStatusFilter;
 }) {
   const { colors, fonts } = useTheme();
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<ItemStatusFilter>("ALL");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [viewing, setViewing] = useState<FoodItem | null>(null);
   const [editing, setEditing] = useState<FoodItem | "new" | null>(null);
   const [retiring, setRetiring] = useState<FoodItem | null>(null);
@@ -175,34 +237,6 @@ export function FoodItemsTab({
 
   return (
     <View style={{ gap: spacing.sm }}>
-      {items.length > 0 ? (
-        <SearchField
-          onChangeText={setSearch}
-          placeholder="Search food items"
-          trailing={
-            /* A bare glyph, not a button. `IconButton` is a 46pt control with
-               its own border — inside the search field it read as a second
-               control bolted onto the box rather than part of it. Tinted blue
-               while a filter is on, which is the only cue that the list being
-               shown is not the whole list. */
-            <AnimatedPressable
-              accessibilityLabel="Filter food items by status"
-              accessibilityRole="button"
-              accessibilityState={{ selected: status !== "ALL" }}
-              hitSlop={10}
-              onPress={() => setFiltersOpen(true)}
-            >
-              <SlidersHorizontal
-                color={status === "ALL" ? colors.muted : colors.primary}
-                size={18}
-                strokeWidth={2.2}
-              />
-            </AnimatedPressable>
-          }
-          value={search}
-        />
-      ) : null}
-
       {loading && items.length === 0 ? <FoodItemsSkeleton /> : null}
 
       {!loading && items.length === 0 ? (
@@ -259,10 +293,10 @@ export function FoodItemsTab({
           confirmLabel={deactivateState.isLoading ? "Retiring…" : "Retire item"}
           destructive
           footnote="Menus that already use it must be cleared first, and you will be told which."
-          message={`${retiring.name} will be retired from this property's food catalogue.`}
+          message="This dish will be retired from this property's food catalogue."
           onCancel={() => setRetiring(null)}
           onConfirm={() => void retire(retiring)}
-          title="Retire this item?"
+          title={`Retire "${retiring.name}"`}
         />
       ) : null}
 
@@ -285,8 +319,8 @@ export function FoodItemsTab({
       {filtersOpen ? (
         <ItemStatusFilterDialog
           counts={counts}
-          onClose={() => setFiltersOpen(false)}
-          onSelect={setStatus}
+          onClose={onCloseFilters}
+          onSelect={onStatus}
           value={status}
         />
       ) : null}
@@ -299,8 +333,6 @@ export function FoodItemsTab({
     </View>
   );
 }
-
-type ItemStatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
 const ITEM_STATUS_FILTERS: { label: string; value: ItemStatusFilter }[] = [
   { label: "All items", value: "ALL" },
@@ -349,6 +381,7 @@ function ItemStatusFilterDialog({
             width: "100%",
           }}
         >
+          <HelpModalClose corner onClose={onClose} />
           <View
             style={{
               alignItems: "center",
@@ -359,14 +392,14 @@ function ItemStatusFilterDialog({
               paddingVertical: spacing.sm,
             }}
           >
-            <ModalTitle style={{ color: colors.muted, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
+            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
               Filter by status
             </ModalTitle>
-            <IconButton accessibilityLabel="Close" filled icon={X} onPress={onClose} />
           </View>
-          <View style={{ paddingBottom: spacing.xs, paddingHorizontal: spacing.lg }}>
+          <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}>
             {ITEM_STATUS_FILTERS.map((option) => (
               <PickerOptionRow
+                icon={<FilterMark value={option.value} />}
                 key={option.value}
                 label={option.label}
                 onPress={() => {
@@ -415,11 +448,13 @@ function FoodItemRow({
   return (
     <View
       style={{
+        backgroundColor: colors.surface,
         borderColor: colors.border,
         borderRadius: radii.card,
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.sm + 1,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
@@ -664,7 +699,14 @@ function FactFill({ grow, text }: { grow?: boolean; text: string }) {
   );
 }
 
-type Field = "name" | "unit" | "mealTags";
+const DISH_TYPES: { label: string; value: FoodDishType }[] = [
+  { label: "Common, like rice or raita", value: "COMMON" },
+  { label: "Drink, like tea or coffee", value: "DRINK" },
+  { label: "Veg", value: "VEG" },
+  { label: "Non veg", value: "NON_VEG" },
+];
+
+type Field = "name" | "unit" | "mealTags" | "dishType";
 
 /**
  * Create or rename a dish.
@@ -691,6 +733,7 @@ function FoodItemSheet({
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
   const [unit, setUnit] = useState<FoodQuantityUnit | null>(item?.quantityUnit ?? null);
+  const [dishType, setDishType] = useState<FoodDishType | null>(item?.dishType ?? null);
   // Seeded from what the property serves, so a tag inherited from the backfill
   // for a meal it does not offer is dropped the first time the item is saved.
   const [mealTags, setMealTags] = useState<MealType[]>(
@@ -763,6 +806,9 @@ function FoodItemSheet({
     if (!unit) {
       found.unit = "Choose how you measure it.";
     }
+    if (!dishType) {
+      found.dishType = "Choose a dish type.";
+    }
     if (mealTags.length === 0) {
       found.mealTags = "Pick at least one meal.";
     }
@@ -774,6 +820,7 @@ function FoodItemSheet({
       description: description.trim() || null,
       imagePublicId: image.publicId,
       imageUrl: image.url,
+      dishType: dishType ?? undefined,
       mealTags,
       name: trimmed,
       quantityUnit: unit,
@@ -794,7 +841,7 @@ function FoodItemSheet({
   }
 
   return (
-    <SheetShell animated onClose={onClose} title={item ? "Edit food item" : "Add food item"}>
+    <SheetShell size="tall" animated onClose={onClose} title={item ? "Edit food item" : "Add food item"}>
       <FormInput
         error={form.errors.name}
         label="Name"
@@ -828,6 +875,22 @@ function FoodItemSheet({
         showIcon={false}
         title="How do you measure this?"
         value={unit}
+      />
+      {/* How the ratings screen groups dishes. Being on several plans cannot say this:
+          paneer is often on every plan and is still a veg dish (user, 2026-11-02). */}
+      <SingleOptionPicker<FoodDishType>
+        emptyLabel="Choose a type"
+        error={form.errors.dishType}
+        label="Dish type"
+        onChange={(next) => {
+          setDishType(next);
+          form.clearField("dishType");
+        }}
+        options={DISH_TYPES}
+        required
+        showIcon={false}
+        title="What kind of dish is this?"
+        value={dishType}
       />
       {/* Multi-select: roti is dinner and breakfast. This is what the weekly
           menu's picker filters on, so an untagged item would be offered for no
@@ -894,7 +957,7 @@ function FoodItemSheet({
       </View>
 
       {pickingSource ? (
-        <SheetShell animated onClose={() => setPickingSource(false)} title="Add a photo">
+        <SheetShell size="short" animated onClose={() => setPickingSource(false)} title="Add a photo">
           <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
             A picture helps tenants recognise the dish on their menu.
           </Text>

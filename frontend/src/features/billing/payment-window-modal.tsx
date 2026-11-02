@@ -84,16 +84,11 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
                   ? `${formatMoney(rate)} per day, charged from the day after ${formatDate(cycle.rentDueDate)}. This rate was fixed when the bill went live.`
                   : `No late fee is set for this bill, so paying after ${formatDate(cycle.rentDueDate)} costs nothing extra.`
             }
+            selectable={false}
             title="IF PAID LATE?"
             tone="warning"
           />
 
-          {cycle.lateFeeAmountPaise > 0 ? (
-            <Text style={[type.modalDescription, { color: colors.muted }]}>
-              This bill has already accrued {formatMoney(cycle.lateFeeAmountPaise)} of late fee. It sits on this
-              bill as a line item and grows each night it stays overdue.
-            </Text>
-          ) : null}
         </View>
       </View>
     </CenterModal>

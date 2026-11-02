@@ -222,8 +222,8 @@ export function OwnerSummaryCardSkeleton({ progress = true }: { progress?: boole
 /** A titled digest card with the three small figures used on owner Home. */
 export function OwnerDigestCardSkeleton() {
   return (
-    <Card>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+    <Card style={{ padding: spacing.sm, gap: spacing.sm }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 36 }}>
         <Skeleton height={30} radius={9} width={30} />
         <Skeleton height={19} width="48%" />
         <View style={{ flex: 1 }} />

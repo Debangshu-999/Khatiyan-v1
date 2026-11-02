@@ -782,12 +782,14 @@ class BookingConversionIntegrationTest {
                         LocalDate.of(2000, 1, 1)),
                 LegalStatement.TENANT_ID_DECLARATION.text(), null, null,
                 new TenantDetailsInput("14 Park Street, Kolkata", "700016", LocalDate.of(2000, 1, 1), Gender.FEMALE),
-                null, null);
+                null, null,
+                com.khatiyan.d_modules.tenancy.MoveInChecklistFixtures.minimalChecklist(), null);
     }
 
     private static ConvertBookingRequest withTemplate(ConvertBookingRequest input, AgreementTemplate template) {
         return new ConvertBookingRequest(input.idCheck(), input.idCheckStatementText(), input.verification(),
-                input.device(), input.tenant(), input.earlyExitRule(), template);
+                input.device(), input.tenant(), input.earlyExitRule(), template,
+                input.moveInChecklist(), input.moveOutChecklist());
     }
 
     private BookingConversionResponse convert(UUID actor, UUID atProperty, UUID request) {

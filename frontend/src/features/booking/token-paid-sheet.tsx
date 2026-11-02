@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 
+import { LoadFailedCard } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonForm } from "@/components/skeletons/primitives";
@@ -117,12 +118,9 @@ export function BookingTokenPaidSheet({ booking, onClose, onDone }: { booking: B
   const submitProof = choice ? <View style={{ flexDirection: "row" }}><ActionButton disabled={changed} label="Submit payment proof" onPress={() => setProofFor(choice)} /></View> : null;
   const back = () => setProofFor(null);
 
-  return <SheetShell title={proofFor ? "Submit payment proof" : data ? `Pay ${formatMoneyPaise(data.amountPaise)}` : "Pay token"} onClose={() => { if (!busy.current) onClose(); }}>
+  return <SheetShell size="tall" title={proofFor ? "Submit payment proof" : data ? `Pay ${formatMoneyPaise(data.amountPaise)}` : "Pay token"} onClose={() => { if (!busy.current) onClose(); }}>
     {!data && !details.isError ? <SkeletonForm fields={3} /> : null}
-    {details.isError ? <>
-      <NoticeBar title="Could not load the token" message={errorMessage(details.error)} tone="danger" />
-      <View style={{ flexDirection: "row" }}><ActionButton label="Try again" onPress={() => void details.refetch()} /></View>
-    </> : null}
+    {details.isError ? <LoadFailedCard error={details.error} onReload={() => void details.refetch()} /> : null}
     {data && proofFor === DESK && deskMethod ? (
       // Paid at the desk: first how it was handed over, in the sheet's own picker, then that way's proof
       // (user, 2026-10-11: "inside the submit proof there should be the picker for Cash card UPI cheque").

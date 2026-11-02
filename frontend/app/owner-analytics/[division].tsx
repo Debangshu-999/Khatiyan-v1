@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { ChartColumn } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { ChartCard } from "@/components/charts/chart-card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
@@ -105,7 +106,7 @@ export default function OwnerAnalyticsDivisionScreen() {
               </View>
             </SkeletonBoundary>
           ) : query.isError || !data ? (
-            <EmptyState description="Pull down to try again." icon={ChartColumn} title="Couldn't load these insights" />
+            <LoadFailed error={query.error} onReload={() => void query.refetch()} />
           ) : (
             <DivisionSections config={config} data={data} onRetry={() => query.refetch()} />
           )}

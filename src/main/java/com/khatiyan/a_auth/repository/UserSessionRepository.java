@@ -6,11 +6,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import com.khatiyan.a_auth.model.UserSession;
+
+import jakarta.persistence.LockModeType;
 
 /**
  * Persistence for the signed-in device list.
@@ -19,6 +22,13 @@ import com.khatiyan.a_auth.model.UserSession;
 public interface UserSessionRepository extends JpaRepository<UserSession, UUID> {
 
     Optional<UserSession> findByJti(UUID jti);
+
+    /** Locked, so two uses of one refresh token cannot both rotate it. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<UserSession> findByRefreshTokenHash(String refreshTokenHash);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<UserSession> findByPreviousRefreshTokenHash(String previousRefreshTokenHash);
 
     /**
      * Has this account ever been signed in on a device calling itself this?

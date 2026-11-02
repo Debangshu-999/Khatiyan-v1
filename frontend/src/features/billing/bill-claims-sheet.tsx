@@ -1,5 +1,6 @@
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
 
+import { LoadFailedCard } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
 import { SheetShell } from "@/components/sheet-shell";
 import { ClaimCard, isOwnerVisible } from "@/features/billing/payment-claim-card";
@@ -30,21 +31,17 @@ export function BillClaimsSheet({
   const claims = (claimsQuery.data ?? []).filter(isOwnerVisible);
 
   return (
-    <SheetShell onClose={onClose} title="Payment claims">
-      <Text style={[type.modalDescription, { color: colors.muted }]}>
-        What the tenant said they paid on {cycle.referenceCode}, newest first.
-      </Text>
-
+    <SheetShell size="content" onClose={onClose} title="Payment claims">
       {claimsQuery.isLoading ? (
         <View style={{ alignItems: "center", paddingVertical: spacing.xl }}>
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : claimsQuery.isError ? (
-        <Text style={[type.caption, { color: colors.danger }]}>Could not load the claims. Close this and try again.</Text>
+        <LoadFailedCard error={claimsQuery.error} onReload={() => void claimsQuery.refetch()} />
       ) : claims.length === 0 ? (
         <EmptyState
           artwork={PAYMENT_CLAIMS_ILLUSTRATION}
-          description="When the tenant raises a claim on this bill, it shows here for you to check."
+          compact
           title="No claims yet"
         />
       ) : (

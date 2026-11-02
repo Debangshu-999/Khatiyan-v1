@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.c_shared.api.PageResponse;
+import com.khatiyan.c_shared.concurrency.VersionGuard;
 import com.khatiyan.c_shared.exception.ForbiddenException;
 import com.khatiyan.c_shared.exception.NotFoundException;
 import com.khatiyan.c_shared.exception.ValidationException;
@@ -455,6 +456,8 @@ public class VisitDayService {
                     .orElse("whoever checked them in");
             throw new ValidationException("Only " + checker + ", who checked them in, or the owner fills this in.");
         }
+        // The checker and the owner may both fill it, so an old screen must not overwrite the other (2026-11-01).
+        VersionGuard.claim(visit);
         visit.completeForm(
                 actorUserId, request.departedAt(), request.partySize(), request.impression(), Instant.now());
         return cardOf(visitRepository.saveAndFlush(visit), actorUserId);

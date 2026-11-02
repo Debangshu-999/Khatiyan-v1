@@ -36,6 +36,9 @@ import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.a_auth.api.dto.UserSummaryResponse;
 import com.khatiyan.a_auth.model.UserRole;
 import com.khatiyan.c_shared.billing.BillingCollectionTiming;
+import com.khatiyan.c_shared.concurrency.ExpectedVersion;
+import com.khatiyan.c_shared.concurrency.ExpectedVersionHolder;
+import com.khatiyan.c_shared.exception.StaleVersionException;
 import com.khatiyan.c_shared.reference.ReferenceCodeGenerator;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.billing.BillingModule;
@@ -372,6 +375,30 @@ class TenancyServiceTest {
 
         assertThat(pending.getStatus()).isEqualTo(TenancyStatus.EXITED);
         verify(eventPublisher).publishEvent(any(TenancyEndedEvent.class));
+    }
+
+    /** Rent and deposit edited from a screen that was already out of date (2026-11-01). */
+    @Test
+    void setupTermsFromAnOldVersionAreRefusedAndChangeNothing() {
+        Tenancy tenancy = Tenancy.start(TENANT_ID, PROPERTY_ID, ROOM_ID, ACTOR_ID,
+                12_000_00, 10_000_00, LocalDate.of(2026, 8, 20));
+        when(tenancyRepository.findById(tenancy.getId())).thenReturn(Optional.of(tenancy));
+
+        try {
+            ExpectedVersionHolder.set(ExpectedVersion.of(tenancy.getVersion() + 1));
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> tenancyService.updateSetupTerms(
+                    ACTOR_ID, tenancy.getId(), 13_000_00L, 11_000_00L))
+                    .isInstanceOf(StaleVersionException.class);
+            assertThat(tenancy.getRentAmountPaise()).isEqualTo(12_000_00);
+
+            // Saved at once, so the reply carries the version after this edit.
+            ExpectedVersionHolder.set(ExpectedVersion.of(tenancy.getVersion()));
+            tenancyService.updateSetupTerms(ACTOR_ID, tenancy.getId(), 13_000_00L, 11_000_00L);
+            assertThat(tenancy.getRentAmountPaise()).isEqualTo(13_000_00);
+            verify(tenancyRepository).saveAndFlush(tenancy);
+        } finally {
+            ExpectedVersionHolder.clear();
+        }
     }
 
     @Test

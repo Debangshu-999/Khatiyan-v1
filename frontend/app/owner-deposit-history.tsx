@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActivityIndicator, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { CARD_STATUS_ROW, NAME_UNDER_STATUS, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { CheckCircle2, Clock3, Landmark } from "lucide-react-native";
 
@@ -186,9 +188,7 @@ export default function OwnerDepositHistoryScreen() {
           ) : null}
 
           {depositsQuery.isError ? (
-            <Text style={[type.caption, { color: colors.danger }]}>
-              Could not load deposit history. Pull to retry.
-            </Text>
+            <LoadFailed error={depositsQuery.error} onReload={() => void depositsQuery.refetch()} />
           ) : null}
         </>
       )}
@@ -226,23 +226,24 @@ function HistoryRow({ account, onPress }: { account: DepositAccount; onPress: ()
       }}
     >
       <View style={{ flex: 1, gap: spacing.xxs }}>
-        <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+        {NAME_UNDER_STATUS ? <View style={CARD_STATUS_ROW}><BillingStatusBadge {...depositStatusBadge(account.status, colors)} /></View> : null}
+        <FitText style={[smallerCardText(type.bodyStrong), { color: colors.ink }]} numberOfLines={1}>
           {account.tenantName ?? `Tenancy ${shortId(account.tenancyId)}`}
         </FitText>
-        <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
+        <FitText style={[smallerCardText(type.caption), { color: colors.muted }]} numberOfLines={1}>
           {account.tenancyReferenceCode ?? shortId(account.id)}
         </FitText>
         {/* Its own line, labelled and bold. Trailing the reference code after a
             middot, the balance read as part of the identifier — the one number
             on the row that anybody is scanning for, formatted like metadata. */}
-        <FitText numberOfLines={1} style={[type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>
+        <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: colors.ink, fontFamily: fonts.sansBold }]}>
           Curr. Balance - {formatMoneyPaise(account.currentBalancePaise)}
         </FitText>
       </View>
       {/* The billing chip — soft tint, glyph, sentence case — not the app's
           caps-on-tint pill. A deposit's status is the same kind of thing as a
           bill's: settled, waiting, or live money on a row about money. */}
-      <BillingStatusBadge {...depositStatusBadge(account.status, colors)} />
+      {NAME_UNDER_STATUS ? null : <BillingStatusBadge {...depositStatusBadge(account.status, colors)} />}
     </AnimatedPressable>
   );
 }

@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import { useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Dimensions, Image, Text, View, type ImageSourcePropType } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
@@ -34,6 +34,11 @@ type EmptyStateProps = {
    * as the screen having failed rather than the list being empty.
    */
   compact?: boolean;
+  /**
+   * The height of a footer pinned under it. Given, it centres in the room between
+   * where it starts and that footer, rather than on the whole screen.
+   */
+  footerHeight?: number;
 };
 
 /**
@@ -47,14 +52,30 @@ type EmptyStateProps = {
  * "Property required") sitting directly above a title that said the same thing
  * in more words.
  */
-export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spacing.sm, compact, icon: Icon, title }: EmptyStateProps) {
+export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spacing.sm, compact, footerHeight, icon: Icon, title }: EmptyStateProps) {
   const { colors, fonts } = useTheme();
+  const anchor = useRef<View>(null);
+  const [centredHeight, setCentredHeight] = useState(0);
 
-  // Roughly what is left below a header, filter row and section heading.
-  const minHeight = compact ? undefined : Math.round(Dimensions.get("window").height * 0.46);
+  // In the middle of the screen itself, on every screen (user, 2026-11-01). The
+  // middle of the room below the header read as too low on a phone. From where it
+  // starts, this height puts its centre on the screen's centre. 46 percent is the
+  // floor until that is measured, and when too much sits above it to reach the centre.
+  const floor = Math.round(Dimensions.get("window").height * 0.46);
+  const minHeight = compact ? undefined : footerHeight != null ? centredHeight : Math.max(floor, centredHeight);
+
+  function measureCentre() {
+    if (compact) return;
+    anchor.current?.measureInWindow((_x, y) => {
+      const screen = Dimensions.get("window").height;
+      setCentredHeight(Math.round(footerHeight != null ? screen - footerHeight - y : screen - 2 * y));
+    });
+  }
 
   return (
     <View
+      onLayout={measureCentre}
+      ref={anchor}
       style={{
         alignItems: "center",
         gap: spacing.md,

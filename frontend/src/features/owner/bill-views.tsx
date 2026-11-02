@@ -15,8 +15,10 @@ import {
 
 import { billTitle, bookingTokenPaise, type BillingCycle } from "@/store/services/billing-api";
 import { BookingTokenNote } from "@/features/billing/booking-token-note";
+import { CardNameRow, CardStatus, NAME_UNDER_STATUS, cardText, smallerCardText } from "@/components/card-name-row";
 import { GhostText } from "@/components/skeleton-boundary";
 import { radii, spacing } from "@/theme/spacing";
+import { softShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
@@ -246,7 +248,7 @@ export function BillingStatusBadge({
       }}
     >
       <Icon color={color} size={13} strokeWidth={2.3} />
-      <FitText numberOfLines={1} style={{ color, fontFamily: fonts.sansBold, fontSize: 11 }}>
+      <FitText numberOfLines={1} style={{ color, fontFamily: fonts.sansBold, fontSize: cardText(11) }}>
         {label}
       </FitText>
     </View>
@@ -462,19 +464,19 @@ export function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
         </View>
 
         <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, flex: 1 }]}>
+          <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
+            <FitText numberOfLines={1} style={[smallerCardText(type.eyebrow), { color: colors.kicker, flex: 1 }]}>
               {cycle.referenceCode}
             </FitText>
-            <PaymentStatusBadge cycle={cycle} />
-          </View>
+            <CardStatus><PaymentStatusBadge cycle={cycle} /></CardStatus>
+          </CardNameRow>
           <FitText
             numberOfLines={1}
-            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20, lineHeight: 24 }}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: cardText(20), lineHeight: 24 }}
           >
             {cardName(tenantName)}
           </FitText>
-          <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+          <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: colors.muted }]}>
             {billTitle(cycle)} · {cycle.tenancyReferenceCode ?? shortId(cycle.tenancyId)}
           </FitText>
         </View>
@@ -487,6 +489,21 @@ export function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
       <InfoBlock label="Payment date" value={cycle.paidAt ? formatFullDate(cycle.paidAt) : "Not paid yet"} />
 
       <PaymentTimingFooter cycle={cycle} />
+    </View>
+  );
+}
+
+/** Read-only cancellation note, matching the boundary-labelled damage note. */
+export function BillCancellationReason({ reason }: { reason: string }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <View style={{ backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 8, borderWidth: 1.5, marginTop: spacing.xs, padding: spacing.md }}>
+      <View pointerEvents="none" style={{ left: 10, position: "absolute", top: -9 }}>
+        <View style={{ backgroundColor: colors.surface, height: 8.25, left: 0, position: "absolute", right: 0, top: 0 }} />
+        <View style={{ backgroundColor: colors.surfaceSunken, bottom: 0, left: 0, position: "absolute", right: 0, top: 8.25 }} />
+        <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 0.3, lineHeight: 16, paddingHorizontal: 5 }}>Reason</Text>
+      </View>
+      <Text selectable style={[type.description, { color: colors.muted }]}>{reason}</Text>
     </View>
   );
 }
@@ -506,6 +523,7 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
         borderWidth: 1,
         gap: spacing.md,
         padding: spacing.md,
+        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -516,28 +534,31 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
         <View style={{ flex: 1, gap: spacing.sm, minWidth: 0 }}>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
             <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-              <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
+              <FitText numberOfLines={1} style={[smallerCardText(type.eyebrow), { color: colors.kicker }]}>
                 {cycle.referenceCode}
               </FitText>
               <FitText
                 numberOfLines={2}
-                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, lineHeight: 25 }}
+                style={{ color: colors.ink, fontFamily: fonts.display, fontSize: cardText(21), lineHeight: 25 }}
               >
                 {cardName(tenantName)}
               </FitText>
+              <View style={{ marginTop: spacing.xs }}>
+                <BillTotal cycle={cycle} size={30} />
+              </View>
             </View>
 
             <View style={{ alignItems: "flex-end", gap: spacing.sm, marginRight: -spacing.xs }}>
-              <PaymentStatusBadge cycle={cycle} />
+              {NAME_UNDER_STATUS ? null : <PaymentStatusBadge cycle={cycle} />}
               <View style={{ alignItems: "flex-end", gap: 3 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>Due date</Text>
+                <Text style={[smallerCardText(type.eyebrow), { color: colors.kicker }]}>Due date</Text>
                 <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
                   <CalendarDays color={overdue ? colors.danger : colors.ink} size={15} strokeWidth={2.2} />
                   <Text
                     style={{
                       color: overdue ? colors.danger : colors.ink,
                       fontFamily: fonts.sansBold,
-                      fontSize: 14,
+                      fontSize: cardText(14),
                     }}
                   >
                     {formatDate(cycle.rentDueDate)}
@@ -546,8 +567,6 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
               </View>
             </View>
           </View>
-
-          <BillTotal cycle={cycle} size={30} />
         </View>
       </View>
 
@@ -561,16 +580,16 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
         ) : (
           <ReceiptText color={colors.primary} size={17} strokeWidth={2.1} />
         )}
-        <FitText numberOfLines={2} style={[type.body, { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 18 }]}>
-          {billTitle(cycle)} · {formatDate(cycle.periodStartDate)} – {formatDate(cycle.periodEndDate)}
+        <FitText numberOfLines={2} style={[smallerCardText(type.body), { color: colors.muted, flex: 1, fontSize: cardText(13), lineHeight: 18 }]}>
+          {billTitle(cycle)}
         </FitText>
+        {/* The status ends the period's row, so the card's contents start level with the icon (user, 2026-11-01). */}
+        {NAME_UNDER_STATUS ? <PaymentStatusBadge cycle={cycle} /> : null}
       </View>
 
       {/* Why it was cancelled, kept on the bill so it does not just turn grey. */}
       {cycle.status === "CANCELLED" && cycle.cancellationReason ? (
-        <Text style={[type.caption, { color: colors.muted, lineHeight: 17 }]}>
-          Cancelled: {cycle.cancellationReason}
-        </Text>
+        <BillCancellationReason reason={cycle.cancellationReason} />
       ) : null}
 
     </View>

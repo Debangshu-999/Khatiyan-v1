@@ -67,19 +67,19 @@ public class FirebaseAuthService {
     private TokenResponse tokenFor(User user) {
         JwtService.IssuedToken issued = jwtService.issue(user);
 
-        userSessionService.open(
+        String refreshToken = userSessionService.open(
                 user.getId(),
                 issued.sessionId(),
                 deviceDescriptor.label(),
                 deviceDescriptor.platform(),
-                Instant.now(),
-                issued.expiresAt());
+                Instant.now());
 
         return new TokenResponse(
                 issued.token(),
                 "Bearer",
                 jwtService.accessTokenExpirySeconds(),
-                UserSummaryResponse.from(user));
+                UserSummaryResponse.from(user),
+                refreshToken);
     }
 
     /**

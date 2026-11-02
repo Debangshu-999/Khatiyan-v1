@@ -1,5 +1,6 @@
 import { View, type TextStyle, type ViewStyle } from "react-native";
 
+import { cardText, smallerCardText } from "@/components/card-name-row";
 import { MarqueeText } from "@/components/marquee-text";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -45,10 +46,10 @@ export function StatusPill({ label, style, textStyle, tone = "neutral" }: Status
     >
       <MarqueeText
         style={[
-          type.eyebrow,
+          smallerCardText(type.eyebrow),
           {
             color: selected.text,
-            fontSize: 10.5,
+            fontSize: cardText(10.5),
             // Tracking scales with the size so the pill matches every other
             // caps label rather than sitting a touch looser than all of them.
             letterSpacing: 0.85,

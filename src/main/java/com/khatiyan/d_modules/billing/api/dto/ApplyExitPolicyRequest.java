@@ -1,6 +1,7 @@
 package com.khatiyan.d_modules.billing.api.dto;
 
 import java.util.List;
+import java.util.UUID;
 
 import com.khatiyan.d_modules.billing.model.ManualPaymentMethod;
 
@@ -14,8 +15,7 @@ import jakarta.validation.constraints.Size;
  * Every money movement the end-tenancy screen decided, applied as one unit.
  *
  * <p>This crosses from tenancy into billing as <em>intent</em>, never as priced
- * amounts: damage items arrive as names and are priced here from the property's
- * own schedule. A client that sends a stale or invented figure cannot make it
+ * amounts: damage arrives as record ids and is priced here from their shares. A client that sends a stale or invented figure cannot make it
  * stick.
  *
  * <p>Order is part of the contract. The early-exit charge is applied before
@@ -38,6 +38,15 @@ public record ApplyExitPolicyRequest(
         @Valid DamageCharge damages,
 
         /**
+         * Anything that is not damage (2026-10-31). Never the deposit: billed
+         * and recorded paid, and collecting it is the owner's responsibility.
+         */
+        @Valid List<CustomCharge> customCharges,
+
+        /** How the Other charges were collected. Null falls back to cash. */
+        ManualPaymentMethod collectedVia,
+
+        /**
          * Whether the remaining deposit is refundable. Null only for stays that
          * have no deposit account at all — daily stays.
          */
@@ -56,6 +65,15 @@ public record ApplyExitPolicyRequest(
          */
         @Size(max = 600) String proofImageUrl) {
 
+    /** No Other charges. */
+    public ApplyExitPolicyRequest(
+            List<ExitCharge> earlyExitCharges,
+            DamageCharge damages,
+            Boolean depositPayable,
+            String proofImageUrl) {
+        this(earlyExitCharges, damages, null, null, depositPayable, proofImageUrl);
+    }
+
     /** The owner's written early-exit rule, priced by the actor who applied it. */
     public record ExitCharge(
             @Positive(message = "Early exit charge must be greater than zero") long amountPaise,
@@ -70,29 +88,13 @@ public record ApplyExitPolicyRequest(
             ManualPaymentMethod collectedVia) {
     }
 
-    /** Damage assessed at move-out: schedule items by name, plus anything unlisted. */
-    public record DamageCharge(
-            List<String> itemNames,
-            @Valid List<CustomCharge> customCharges,
-            @NotNull(message = "Choose how damage charges are collected") ExitChargeInstrument instrument,
-            /** How a billed damage charge was collected. Null falls back to cash. */
-            ManualPaymentMethod collectedVia,
-            /**
-             * With the deposit instrument, how much of the damage the deposit
-             * takes when it cannot cover all of it; the rest joins the move-out
-             * bill. Null takes everything from the deposit. Ignored for a bill.
-             * The same split the early-exit charge has (2026-09-28).
-             */
-            @Positive(message = "The deposit's share must be greater than zero") Long fromDepositPaise) {
-
-        /** Everything on one instrument, no split. */
-        public DamageCharge(
-                List<String> itemNames,
-                List<CustomCharge> customCharges,
-                ExitChargeInstrument instrument,
-                ManualPaymentMethod collectedVia) {
-            this(itemNames, customCharges, instrument, collectedVia, null);
-        }
+    /**
+     * What happens to the damage records still open on this stay (2026-10-31).
+     * Every one of them must be in exactly one list: {@code recordIds} come off
+     * the deposit, {@code waivedRecordIds} are waived for good. Billed damage
+     * never reaches here, it is a Damage bill raised before the exit.
+     */
+    public record DamageCharge(List<UUID> recordIds, List<UUID> waivedRecordIds) {
     }
 
     public record CustomCharge(

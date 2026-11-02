@@ -267,6 +267,7 @@ export function AuthScreen() {
 
     const session = {
       accessToken: response.accessToken,
+      refreshToken: response.refreshToken,
       user: response.user,
     };
 

@@ -86,10 +86,10 @@ export function errorMessage(error: unknown) {
       return "The server took too long to respond. Check your connection and try again.";
     }
     if (queryError.status === "FETCH_ERROR") {
-      return "Could not reach the backend. If you are on Expo Go, use the detected laptop URL.";
+      return "Could not connect. Check your connection and try again.";
     }
     if (queryError.status === "PARSING_ERROR") {
-      return "Backend responded, but the app could not read the response.";
+      return "Something went wrong. Please try again.";
     }
     if (typeof queryError.status === "number") {
       if (typeof queryError.data === "object" && queryError.data && "message" in queryError.data) {

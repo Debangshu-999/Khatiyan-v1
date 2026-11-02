@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { ChevronRight, Hourglass, ListFilter, RotateCcw } from "lucide-react-native";
+import { ChevronRight, Hourglass, ListFilter } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { ListEnd } from "@/components/list-end";
@@ -11,7 +12,6 @@ import { SearchField } from "@/components/search-field";
 import { SectionHeading } from "@/components/section-heading";
 import { SkeletonList } from "@/components/skeletons/primitives";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
-import { errorMessage } from "@/features/forms/server-error";
 import { LeadCard } from "@/features/lead/lead-card";
 import { PIPELINE_TABS, countOf } from "@/features/lead/lead-display";
 import {
@@ -73,10 +73,7 @@ export default function OwnerLeadsScreen() {
     <ScreenHeader title="Leads" italicTail="workspace." subtitle={property ? `Visits, bookings and move-ins for ${property.name}.` : "Visits, bookings and move-ins."} />
     {property ? <LeadsWorkspace key={property.id} propertyId={property.id} loadMoreRef={loadMore} />
       : scope.loading ? <SkeletonList rows={3} body={2} action />
-      : scope.error ? <>
-        <NoticeBar tone="danger" title="Could not load your properties" message={errorMessage(scope.error)} />
-        <View style={{ flexDirection: "row" }}><ActionButton label="Try again" icon={RotateCcw} onPress={scope.retry} /></View>
-      </>
+      : scope.error ? <LoadFailed error={scope.error} onReload={scope.retry} />
       : <EmptyState artworkNode={<PropertyLeadsIcon size={64} />} title="Select an active property" description="Choose the property on Home, then open Property Leads." />}
   </ScreenScrollView>;
 }
@@ -147,10 +144,7 @@ function LeadsWorkspace({ propertyId, loadMoreRef }: { propertyId: string; loadM
     </View>
 
     {!data && !list.isError ? <SkeletonList rows={3} body={2} action /> : null}
-    {list.isError && !data ? <>
-      <NoticeBar title="Could not load leads" message={errorMessage(list.error)} tone="danger" />
-      <View style={{ flexDirection: "row" }}><ActionButton label="Try again" icon={RotateCcw} onPress={() => void list.refetch()} variant="secondary" /></View>
-    </> : null}
+    {list.isError && !data ? <LoadFailed error={list.error} onReload={() => void list.refetch()} /> : null}
     {data && data.totalElements === 0 ? <EmptyState
       artworkNode={<PropertyLeadsIcon size={64} />}
       title={narrowed ? "No matching leads" : EMPTY_TITLE[tab]}

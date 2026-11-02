@@ -21,6 +21,8 @@ import {
   UserPlus,
 } from "lucide-react-native";
 
+import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { LoadFailed } from "@/components/load-failed";
 import { AddRecordCard } from "@/components/add-record-card";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -345,10 +347,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
   const showEarlierCard = view === "main" && tab === "today" && Boolean(property);
 
   const cards = tab === "history" && historyQuery.isError ? (
-    <View style={{ gap: spacing.sm }}>
-      <NoticeBar title="Unable to load history" message="Visitor history could not be loaded." tone="warning" />
-      <ActionButton label="Try again" onPress={() => void historyQuery.refetch()} variant="secondary" />
-    </View>
+    <LoadFailed error={historyQuery.error} onReload={() => void historyQuery.refetch()} />
   ) : loading ? (
     // The real cards, drawn as their own placeholder: every line of sample
     // data is a Ghost, so none of it reads as a real visitor's.
@@ -806,24 +805,24 @@ function VisitCardView({
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
           <InitialsAvatar name={visit.prospectName} />
           <View style={{ flex: 1, gap: 2 }}>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+            <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
               <GhostText
                 ghostWidth="60%"
                 numberOfLines={1}
-                style={[type.display, { color: colors.ink, flex: 1, fontSize: 18, lineHeight: 23 }]}
+                style={[smallerCardText(type.display), { color: colors.ink, flex: 1, fontSize: cardText(18), lineHeight: 23 }]}
               >
                 {cardName(visit.prospectName ?? "Visitor")}
               </GhostText>
               {/* Every card says where its visit stands, except an upcoming one on Today (user, 2026-10-19). */}
-              {(onToday && !upcomingToday) || tab === "upcoming" || tab === "history" ? <VisitStateChip pill {...status} /> : null}
-            </View>
-            <GhostText ghostWidth="75%" style={[type.caption, { color: colors.muted }]}>
+              <CardStatus>{(onToday && !upcomingToday) || tab === "upcoming" || tab === "history" ? <VisitStateChip pill {...status} /> : null}</CardStatus>
+            </CardNameRow>
+            <GhostText ghostWidth="75%" style={[smallerCardText(type.caption), { color: colors.muted }]}>
               {visit.referenceCode}
             </GhostText>
             {when ? (
               <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
                 <CalendarDays color={colors.muted} size={13} />
-                <GhostText ghostWidth="75%" style={[type.caption, { color: colors.muted, flex: 1 }]}>
+                <GhostText ghostWidth="75%" style={[smallerCardText(type.caption), { color: colors.muted, flex: 1 }]}>
                   {when}
                 </GhostText>
               </View>
@@ -863,13 +862,13 @@ function VisitCardView({
               <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
                 <CheckCircle2 color={visit.late ? colors.warningText : colors.successText} size={14} strokeWidth={2.2} />
                 {/* "Marked attended - by owner" on the one line (user, 2026-10-19). */}
-                <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
+                <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: colors.muted }]}>
                   {visit.checkInMethod === "OWNER" ? "Marked attended" : "Checked in"}
                   {visit.checkInMethod === "OWNER" ? <Text style={{ color: colors.successText, fontFamily: fonts.sansBold }}> - by owner</Text> : null}
                 </FitText>
               </View>
               {visit.checkInMethod === "OWNER" ? null : (
-                <FitText numberOfLines={1} style={[type.caption, { color: visit.late ? colors.warningText : colors.successText, fontFamily: fonts.sansBold }]}>
+                <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: visit.late ? colors.warningText : colors.successText, fontFamily: fonts.sansBold }]}>
                   {`${clockTime(checkedIn)}, ${visit.late ? "late" : "on time"}`}
                 </FitText>
               )}
@@ -879,9 +878,9 @@ function VisitCardView({
               <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
                 <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
                   <UserCheck color={colors.muted} size={14} strokeWidth={2.2} />
-                  <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>Visit handled by</FitText>
+                  <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: colors.muted }]}>Visit handled by</FitText>
                 </View>
-                <FitText numberOfLines={1} style={[type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>
+                <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: colors.ink, fontFamily: fonts.sansBold }]}>
                   {handledBy === "you" ? "You" : handledBy}
                 </FitText>
               </View>
@@ -908,16 +907,16 @@ function VisitCardView({
               <ClipboardPenLine color={colors.neutralText} size={15} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1, gap: 3 }}>
-              <Text style={{ color: colors.neutralText, fontFamily: fonts.sansBold, fontSize: 12.5, lineHeight: 17 }}>
+              <Text style={{ color: colors.neutralText, fontFamily: fonts.sansBold, fontSize: cardText(12.5), lineHeight: 17 }}>
                 Visit form
               </Text>
               {formPoints.map((point) => (
                 <View key={point} style={{ alignItems: "flex-start", flexDirection: "row", gap: 5 }}>
-                  <Text style={{ color: colors.neutralText, fontFamily: fonts.sansMedium, fontSize: 12.5, lineHeight: 17 }}>
+                  <Text style={{ color: colors.neutralText, fontFamily: fonts.sansMedium, fontSize: cardText(12.5), lineHeight: 17 }}>
                     {"•"}
                   </Text>
                   <Text
-                    style={{ color: colors.neutralText, flex: 1, fontFamily: fonts.sansMedium, fontSize: 12.5, lineHeight: 17 }}
+                    style={{ color: colors.neutralText, flex: 1, fontFamily: fonts.sansMedium, fontSize: cardText(12.5), lineHeight: 17 }}
                   >
                     {point}
                   </Text>

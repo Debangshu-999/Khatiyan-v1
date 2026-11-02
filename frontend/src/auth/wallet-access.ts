@@ -1,4 +1,4 @@
-/** A five-minute grant kept only in memory and bound to the login token. */
+/** A five-minute grant kept only in memory and bound to who is signed in. The server binds it to their session. */
 let grant: { token: string; session: string; expiresAt: number } | null = null;
 let expiryTimer: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();

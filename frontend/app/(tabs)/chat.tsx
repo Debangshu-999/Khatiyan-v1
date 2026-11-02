@@ -11,10 +11,12 @@ import NudgesScreen from "../nudges";
  */
 const TAB_BAR_HEIGHT_PX = 60;
 
+import { LoadFailed, loadFailure } from "@/components/load-failed";
 import { threadRoute } from "@/features/chat/thread-route";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SectionPill } from "@/components/section-pill";
 import { EmptyState } from "@/components/empty-state";
+import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { ChatThreadListSkeleton } from "@/components/skeletons";
 import { useToast } from "@/components/toast";
@@ -222,6 +224,11 @@ function ManagementChats() {
     }
   }
 
+  const loadFailed = loadFailure(mine, enquiries);
+  if (loadFailed) {
+    return <LoadFailed error={loadFailed.error} onReload={loadFailed.reload} />;
+  }
+
   if (!property) {
     return (
       <ScreenScrollView
@@ -229,6 +236,7 @@ function ManagementChats() {
         safeAreaEdges={["top", "bottom"]}
         surface={colors.chatSurface}
       >
+        <ScreenHeader title="Chats" />
         <CentredEmpty>
           <EmptyState
             compact
@@ -257,17 +265,7 @@ function ManagementChats() {
       safeAreaEdges={["top", "bottom"]}
       surface={colors.chatSurface}
     >
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, letterSpacing: -0.3 }}>
-            Chats
-          </Text>
-          <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
-            {property.name}
-          </FitText>
-        </View>
-
-      </View>
+      <ScreenHeader title="Chats" />
 
       {/* Pills rather than tabs: Enquiries is empty until that module is wired,
           and an empty TAB reads as something failing to load where an
@@ -675,6 +673,11 @@ function PersonalChats() {
   const showPinned = section === "MINE" ? pinned : null;
   const sectionEmpty = section !== "NUDGES" && !showPinned && others.length === 0 && !threadsQuery.isLoading;
 
+  const loadFailed = loadFailure(threadsQuery);
+  if (loadFailed) {
+    return <LoadFailed error={loadFailed.error} onReload={loadFailed.reload} />;
+  }
+
   return (
     <View style={{ flex: 1 }} {...personalSwipe}>
     <ScreenScrollView
@@ -685,20 +688,7 @@ function PersonalChats() {
       safeAreaEdges={["top", "bottom"]}
       surface={colors.chatSurface}
     >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <Text
-          style={{
-            color: colors.ink,
-            flex: 1,
-            fontFamily: fonts.display,
-            fontSize: 26,
-            letterSpacing: -0.3,
-          }}
-        >
-          Chats
-        </Text>
-
-      </View>
+      <ScreenHeader title="Chats" />
 
       {/* One row that slides sideways, never a second line, kept inside the screen's side
           padding so it never touches the edge (user, 2026-10-28). */}

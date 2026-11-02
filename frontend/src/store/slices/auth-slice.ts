@@ -19,6 +19,8 @@ type AuthUser = {
 
 type AuthState = {
   accessToken: string | null;
+  /** Renews the access token. Works once, so the one in the server's reply replaces it. Null on a session from before these existed. */
+  refreshToken: string | null;
   user: AuthUser | null;
   hydrated: boolean;
   // ID of the device token registered in this session — stored so sign-out
@@ -36,10 +38,11 @@ type AuthState = {
   sessionExpired: boolean;
 };
 
-type SessionPayload = Pick<AuthState, "accessToken" | "user">;
+type SessionPayload = Pick<AuthState, "accessToken" | "user"> & { refreshToken?: string | null };
 
 const initialState: AuthState = {
   accessToken: null,
+  refreshToken: null,
   hydrated: false,
   registeredDeviceTokenId: null,
   sessionExpired: false,
@@ -52,12 +55,19 @@ const authSlice = createSlice({
   reducers: {
     setSession(state, action: PayloadAction<SessionPayload>) {
       state.accessToken = action.payload.accessToken;
+      state.refreshToken = action.payload.refreshToken ?? null;
       state.user = action.payload.user;
       state.registeredDeviceTokenId = null;
       state.sessionExpired = false;
     },
+    /** The same session, renewed. Nothing else about it changes, unlike a sign-in. */
+    tokensRefreshed(state, action: PayloadAction<{ accessToken: string; refreshToken: string }>) {
+      state.accessToken = action.payload.accessToken;
+      state.refreshToken = action.payload.refreshToken;
+    },
     clearSession(state) {
       state.accessToken = null;
+      state.refreshToken = null;
       state.registeredDeviceTokenId = null;
       state.sessionExpired = false;
       state.user = null;
@@ -70,6 +80,7 @@ const authSlice = createSlice({
      */
     sessionExpired(state) {
       state.accessToken = null;
+      state.refreshToken = null;
       state.registeredDeviceTokenId = null;
       state.user = null;
       state.sessionExpired = true;
@@ -94,5 +105,6 @@ export const {
   sessionExpiryAcknowledged,
   setRegisteredDeviceTokenId,
   setSession,
+  tokensRefreshed,
 } = authSlice.actions;
 export const authReducer = authSlice.reducer;

@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Globe, Laptop, Monitor, Smartphone, Tablet, type LucideProps } from "lucide-react-native";
 
+import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
@@ -71,6 +72,11 @@ export function SignedInDevices() {
     } catch (caught) {
       opErrors.failFromServer(errorMessage(caught) || "Could not sign that device out. Try again.");
     }
+  }
+
+  const loadFailed = loadFailure(sessionsQuery);
+  if (loadFailed) {
+    return <LoadFailedCard error={loadFailed.error} onReload={loadFailed.reload} />;
   }
 
   return (
@@ -171,63 +177,6 @@ function DeviceRow({
 }
 
 /**
- * How long this session has left, counted down from the token's own expiry.
- *
- * <p>Read from the JWT already in memory rather than asked of the server: the
- * `exp` claim IS the deadline, so this cannot drift from the truth and costs no
- * request. It ticks once a minute — a second-by-second countdown on a one-hour
- * session is a distraction, not information.
- */
-export function SessionCountdown() {
-  const { colors, type } = useTheme();
-  const token = useAppSelector((state) => state.auth.accessToken);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const expiresAt = token ? tokenExpiryMs(token) : null;
-  if (expiresAt == null) {
-    return null;
-  }
-
-  const remaining = expiresAt - now;
-
-  return (
-    <Text style={[type.description, { color: remaining <= 0 ? colors.danger : colors.muted }]}>
-      {remaining <= 0 ? "Session has ended. Sign in again." : `Session ends in ${formatDuration(remaining)}`}
-    </Text>
-  );
-}
-
-/**
- * The `exp` claim, in milliseconds.
- *
- * <p>Decodes the payload WITHOUT verifying the signature, which is correct here
- * and would be wrong anywhere else: the client cannot verify a signature it has
- * no key for, and this drives a label rather than a decision. The server checks
- * the real thing on every request.
- */
-function tokenExpiryMs(token: string) {
-  try {
-    const payload = token.split(".")[1];
-    if (!payload) {
-      return null;
-    }
-    // Base64URL, and React Native's atob does not accept the URL alphabet.
-    const normalised = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalised.padEnd(normalised.length + ((4 - (normalised.length % 4)) % 4), "=");
-    const claims = JSON.parse(globalThis.atob(padded)) as { exp?: number };
-    return typeof claims.exp === "number" ? claims.exp * 1000 : null;
-  } catch {
-    // A token we cannot read is not a crash — it just means no countdown.
-    return null;
-  }
-}
-
-/**
  * The glyph for a device, chosen by form factor rather than OS — "android" says
  * nothing about whether the thing in someone's hand is a phone or a tablet.
  *
@@ -252,15 +201,6 @@ function iconFor(platform: string | null): ComponentType<LucideProps> {
   }
 }
 
-function formatDuration(ms: number) {
-  const minutes = Math.max(0, Math.round(ms / 60_000));
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
-}
 
 function formatRelative(iso: string) {
   const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));

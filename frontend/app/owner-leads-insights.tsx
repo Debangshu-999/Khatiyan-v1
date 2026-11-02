@@ -2,11 +2,12 @@ import { useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { AlertTriangle, ArrowDown, ChevronRight } from "lucide-react-native";
 
+import { LoadFailed } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { BarList } from "@/components/charts/bar-list";
 import { ChartCard, ChartDropdown } from "@/components/charts/chart-card";
-import { Donut } from "@/components/charts/donut";
+import { Donut, type DonutSlice } from "@/components/charts/donut";
 import { LineChart } from "@/components/charts/line-chart";
 import { SegmentedBar } from "@/components/charts/segmented-bar";
 import { StatTile } from "@/components/charts/stat-tile";
@@ -17,13 +18,13 @@ import { formatDateRange, periodLine, PRESET_LABELS } from "@/features/analytics
 import { PeriodPickerSheet } from "@/features/analytics/period-picker-sheet";
 import { PeriodPill } from "@/features/analytics/period-pill";
 import { useAnalyticsPeriod } from "@/features/analytics/use-analytics-period";
-import { errorMessage } from "@/features/forms/server-error";
 import { CLOSE_REASON_LABEL } from "@/features/lead/lead-display";
 import { useLeadsProperty } from "@/features/lead/use-leads-property";
 import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   useGetLeadInsightsQuery,
+  type LeadCloseReason,
   type LeadInsights,
   type LeadInsightsPeriod,
   type LeadJourneyStep,
@@ -149,12 +150,7 @@ export default function OwnerLeadsInsightsScreen() {
 
         <View style={{ gap: spacing.lg }}>
           {!insights && !query.isError ? <OwnerDataListSkeleton bodyLines={3} rows={3} /> : null}
-          {query.isError ? <>
-            <NoticeBar message={errorMessage(query.error)} title="Could not load lead insights" tone="danger" />
-            <View style={{ flexDirection: "row" }}>
-              <ActionButton label="Try again" onPress={() => void query.refetch()} variant="secondary" />
-            </View>
-          </> : null}
+          {query.isError ? <LoadFailed error={query.error} onReload={() => void query.refetch()} /> : null}
           {insights ? <Insights insights={insights} onRetry={() => void query.refetch()} /> : null}
         </View>
 
@@ -181,17 +177,17 @@ function Insights({ insights, onRetry }: { insights: LeadInsights; onRetry: () =
   const views = profileTime.views;
   const answered = charts.answerSpeed.reduce((sum, bucket) => sum + bucket.count, 0);
   const visits = charts.visitOutcomes.attended + charts.visitOutcomes.missed + charts.visitOutcomes.cancelled;
-  const lost = activity.deadLeads.reduce((sum, row) => sum + row.total, 0)
-    + activity.lostEnquiries.reduce((sum, row) => sum + row.total, 0);
   const actionColor = (action: LeadProfileAction) => (action === "NONE" ? palette.other : palette.series[ACTION_SLOT[action]]);
 
   return <>
     <BiggestDropCard drop={biggestDrop} quickExitPercent={profileTime.quickExitPercent} steps={steps} />
 
     <ChartCard
-      caption="Each person once, by the furthest thing they did."
       emptyText="Shows once people open your listing."
-      footnote="The list under the chart counts everyone who did each action, so one person can be in two rows."
+      info={[
+        "Each person once, by the furthest thing they did.",
+        "The list under the chart counts everyone who did each action, so one person can be in two rows.",
+      ]}
       onRetry={onRetry}
       sampleSize={opened}
       status={opened > 0 ? "OK" : "NO_DATA"}
@@ -232,8 +228,8 @@ function Insights({ insights, onRetry }: { insights: LeadInsights; onRetry: () =
     </ChartCard>
 
     <ChartCard
-      caption="The same people followed through, each counted once at the furthest step."
       emptyText="Shows once people open your listing."
+      info={["The same people followed through, each counted once at the furthest step."]}
       onRetry={onRetry}
       sampleSize={opened}
       status={opened > 0 ? "OK" : "NO_DATA"}
@@ -357,41 +353,7 @@ function Insights({ insights, onRetry }: { insights: LeadInsights; onRetry: () =
       </View>
     </ChartCard>
 
-    <ChartCard
-      emptyText="No leads were lost in this period."
-      onRetry={onRetry}
-      sampleSize={lost}
-      status={lost > 0 ? "OK" : "NO_DATA"}
-      title="Why leads were lost"
-    >
-      <View style={{ gap: spacing.lg }}>
-        {activity.deadLeads.length > 0 ? (
-          <BarList
-            rows={[...activity.deadLeads]
-              .sort((left, right) => right.total - left.total)
-              .map((row) => ({
-                color: palette.series[0],
-                key: `${row.stage}-${row.reason}`,
-                label: `${CLOSE_REASON_LABEL[row.reason] ?? row.reason}, as ${aOrAn(STAGE_LABEL[row.stage])}`,
-                value: row.total,
-                valueText: String(row.total),
-              }))}
-          />
-        ) : null}
-        {activity.lostEnquiries.length > 0 ? <View style={{ gap: spacing.sm }}>
-          <Text style={useSubheading()}>Enquiries closed before any visit</Text>
-          <BarList
-            rows={activity.lostEnquiries.map((row) => ({
-              color: palette.other,
-              key: row.reason,
-              label: CLOSE_REASON_LABEL[row.reason] ?? row.reason,
-              value: row.total,
-              valueText: String(row.total),
-            }))}
-          />
-        </View> : null}
-      </View>
-    </ChartCard>
+    <LostLeadsCard activity={activity} onRetry={onRetry} />
 
     {/* One card per row (user, 2026-10-18). */}
     <ChartCard onRetry={onRetry} sampleSize={1} status="OK" title="Coming back">
@@ -441,7 +403,7 @@ function Funnel({ drop, steps }: { drop: LeadInsights["biggestDrop"]; steps: Lea
   const { colors, fonts } = useTheme();
   const palette = useChartPalette();
   const opened = steps[0]?.people ?? 0;
-  return <View style={{ gap: spacing.sm }}>
+  return <View>
     {steps.map((step, index) => {
       const width = opened === 0 ? 0 : Math.max(step.people > 0 ? 2 : 0, (step.people * 100) / opened);
       const previous = steps[index - 1];
@@ -449,25 +411,115 @@ function Funnel({ drop, steps }: { drop: LeadInsights["biggestDrop"]; steps: Lea
         ? Math.round(((previous.people - step.people) * 100) / previous.people)
         : null;
       const biggest = drop?.toStep === step.key;
-      return <View key={step.key} style={{ gap: spacing.xs }}>
+      // A line between steps, and each step's loss under its own title (user, 2026-10-31).
+      return <View
+        key={step.key}
+        style={{
+          borderTopColor: colors.border,
+          borderTopWidth: index === 0 ? 0 : 1,
+          gap: spacing.xs,
+          paddingBottom: index === steps.length - 1 ? 0 : spacing.md,
+          paddingTop: index === 0 ? 0 : spacing.md,
+        }}
+      >
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <FitText numberOfLines={1} style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>{STEP_PEOPLE[step.key]}</FitText>
+          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13, fontVariant: ["tabular-nums"] }}>{step.people}</Text>
+        </View>
         {previous && lostPercent != null ? (
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xxs }}>
             <ArrowDown color={biggest ? colors.danger : colors.muted} size={12} strokeWidth={2.4} />
             <FitText numberOfLines={1} style={{ color: biggest ? colors.danger : colors.muted, flex: 1, fontFamily: biggest ? fonts.sansBold : fonts.sans, fontSize: 11 }}>
-              {`${lostPercent}% ${MISSED_STEP[step.key]}${biggest ? ", the biggest drop" : ""}`}
+              {`(${lostPercent}% ${MISSED_STEP[step.key]}${biggest ? ", the biggest drop" : ""})`}
             </FitText>
           </View>
         ) : null}
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <FitText numberOfLines={1} style={{ color: colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 13 }}>{STEP_PEOPLE[step.key]}</FitText>
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13, fontVariant: ["tabular-nums"] }}>{step.people}</Text>
-        </View>
         <View style={{ backgroundColor: palette.track, borderRadius: 4, height: 10 }}>
           <View style={{ backgroundColor: palette.series[0], borderRadius: 4, height: 10, width: `${width}%` }} />
         </View>
       </View>;
     })}
   </View>;
+}
+
+/** The menu's order: the further a lead got, the more it cost to lose. */
+const LOST_STAGES: { key: LeadStage; label: string }[] = [
+  { key: "ADVANCED_LEAD", label: "Strong leads" },
+  { key: "EARLY_LEAD", label: "Early leads" },
+  { key: "BOOKED", label: "Booked" },
+  { key: "ENQUIRED", label: "Enquired" },
+  { key: "MOVED_IN", label: "Moved in" },
+];
+/** Reasons as donut slices: a reason keeps its colour however the counts change, and the largest come first. */
+function lostSlices(rows: { reason: LeadCloseReason; total: number }[], palette: ReturnType<typeof useChartPalette>) {
+  const colorOf = new Map([...rows].sort((left, right) => left.reason.localeCompare(right.reason))
+    .map((row, index) => [row.reason, palette.series[index % palette.series.length]]));
+  const sorted = [...rows].sort((left, right) => right.total - left.total);
+  // Five slices at most and an Other, the donut's own limit.
+  const shown = sorted.length > 6 ? sorted.slice(0, 5) : sorted;
+  const rest = sorted.slice(shown.length).reduce((sum, row) => sum + row.total, 0);
+  const slices: DonutSlice[] = shown.map((row) => ({
+    color: colorOf.get(row.reason)!,
+    key: row.reason,
+    label: CLOSE_REASON_LABEL[row.reason] ?? row.reason,
+    value: row.total,
+    valueText: String(row.total),
+  }));
+  if (rest > 0) {
+    slices.push({ color: palette.other, key: "OTHER", label: "Other", value: rest, valueText: String(rest) });
+  }
+  return slices;
+}
+
+/**
+ * Donuts, not a long list of bars (user, 2026-10-31): the reasons for the stage
+ * picked in the menu, which offers only stages a lead was lost at, and always
+ * under them the enquiries closed before any visit.
+ */
+function LostLeadsCard({ activity, onRetry }: { activity: LeadInsights["activity"]; onRetry: () => void }) {
+  const palette = useChartPalette();
+  const subheading = useSubheading();
+  const [picked, setPicked] = useState<LeadStage | null>(null);
+  const options = LOST_STAGES.filter((stage) => activity.deadLeads.some((row) => row.stage === stage.key));
+  const stage = options.find((option) => option.key === picked)?.key ?? options[0]?.key ?? null;
+  const stageRows = activity.deadLeads.filter((row) => row.stage === stage);
+  const stageSlices = lostSlices(stageRows, palette);
+  const enquirySlices = lostSlices(activity.lostEnquiries, palette);
+  const lost = stageRows.reduce((sum, row) => sum + row.total, 0);
+  const closed = activity.lostEnquiries.reduce((sum, row) => sum + row.total, 0);
+  const total = activity.deadLeads.reduce((sum, row) => sum + row.total, 0) + closed;
+  return <ChartCard
+    emptyText="No leads were lost in this period."
+    info={[
+      "Why leads ended in this period, by how far they had got. Pick the stage from the menu.",
+      "Enquiries closed before any visit are shown on their own, under it.",
+    ]}
+    onRetry={onRetry}
+    sampleSize={total}
+    status={total > 0 ? "OK" : "NO_DATA"}
+    title="Why leads were lost"
+    trailing={stage ? <ChartDropdown accessibilityLabel="Shown for" onChange={setPicked} options={options} value={stage} /> : undefined}
+  >
+    <View style={{ gap: spacing.lg }}>
+      {stage ? (
+        <Donut
+          accessibilityLabel={stageSlices.map((slice) => `${slice.label} ${slice.valueText}`).join(", ")}
+          centerLabel="lost"
+          centerValue={String(lost)}
+          slices={stageSlices}
+        />
+      ) : null}
+      {closed > 0 ? <View style={{ gap: spacing.sm }}>
+        <Text style={subheading}>Enquiries closed before any visit</Text>
+        <Donut
+          accessibilityLabel={enquirySlices.map((slice) => `${slice.label} ${slice.valueText}`).join(", ")}
+          centerLabel="closed"
+          centerValue={String(closed)}
+          slices={enquirySlices}
+        />
+      </View> : null}
+    </View>
+  </ChartCard>;
 }
 
 function OverTimeCard({ insights, onRetry }: { insights: LeadInsights; onRetry: () => void }) {
@@ -587,10 +639,6 @@ function isKnownAction(row: { action: string }) {
 
 function share(part: number, whole: number) {
   return whole === 0 ? "0%" : `${Math.round((part * 100) / whole)}%`;
-}
-
-function aOrAn(noun: string) {
-  return /^[aeiou]/.test(noun) ? `an ${noun}` : `a ${noun}`;
 }
 
 const DAY = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });

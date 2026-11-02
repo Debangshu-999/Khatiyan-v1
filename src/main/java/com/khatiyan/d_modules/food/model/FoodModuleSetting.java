@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.food.model;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import com.khatiyan.c_shared.audit.BaseEntity;
@@ -25,6 +26,14 @@ public class FoodModuleSetting extends BaseEntity {
     @Column(name = "is_enabled", nullable = false)
     private boolean enabled;
 
+    /** Record meal attendance (user, 2026-11-01). */
+    @Column(name = "attendance_enabled", nullable = false)
+    private boolean attendanceEnabled;
+
+    /** When it was last turned on. A meal already under way then is not recorded. */
+    @Column(name = "attendance_enabled_at")
+    private Instant attendanceEnabledAt;
+
     private FoodModuleSetting(UUID propertyId, boolean enabled) {
         this.propertyId = propertyId;
         this.enabled = enabled;
@@ -36,5 +45,12 @@ public class FoodModuleSetting extends BaseEntity {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public void setAttendanceEnabled(boolean enabled, Instant at) {
+        if (enabled && !this.attendanceEnabled) {
+            this.attendanceEnabledAt = at;
+        }
+        this.attendanceEnabled = enabled;
     }
 }

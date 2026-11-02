@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { HelpModalClose, HelpModalHeader } from "@/components/help-modal-header";
+import { HelpModalHeader, HowItWorksClose } from "@/components/help-modal-header";
 
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { spacing } from "@/theme/spacing";
@@ -37,10 +37,17 @@ export type HowItWorksStep = {
  * the app ends up explaining itself in two different voices.
  */
 export function HowItWorksSheet({
+  markers,
   onClose,
   steps,
   title,
 }: {
+  /**
+   * Points instead of numbers: one marker per step in place of its number,
+   * for things that are not a sequence (2026-10-29: the damage levels, each
+   * marked with its own pill).
+   */
+  markers?: ReactNode[];
   /** What is being explained, above the title. */
   eyebrow: string;
   onClose: () => void;
@@ -52,7 +59,7 @@ export function HowItWorksSheet({
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        <HelpModalClose onClose={() => dismiss()} />
+        <HowItWorksClose onClose={() => dismiss()} />
         <View
           style={{
             backgroundColor: colors.surface,
@@ -73,6 +80,9 @@ export function HowItWorksSheet({
                 key={step.title}
                 style={{ flexDirection: "row", alignItems: "flex-start", gap: 16 }}
               >
+                  {markers ? (
+                    <View style={{ minWidth: 34, paddingTop: 5 }}>{markers[index]}</View>
+                  ) : (
                   <View
                     style={{
                       alignItems: "center",
@@ -87,6 +97,7 @@ export function HowItWorksSheet({
                       {index + 1}
                     </Text>
                   </View>
+                  )}
                 <View style={{ flex: 1, paddingTop: 3 }}>
                 <Text style={[type.modalDescription, { color: colors.ink }]}>
                   {step.body}
@@ -96,8 +107,6 @@ export function HowItWorksSheet({
               </View>
             ))}
           </ScrollView>
-
-
         </View>
       </View>}
     </BottomSheetModal>

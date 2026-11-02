@@ -56,6 +56,8 @@ export type PropertyDiscoveryCard = {
   dailyGuestNonAcRatePaise: number | null;
   profileImageUrl: string | null;
   imageUrls?: string[] | null;
+  /** While stations are ticked: the nearest ticked one, which `distanceKm` is measured from. */
+  nearestMetroStationName?: string | null;
 };
 
 export type PropertyDiscoveryDetail = PropertyDiscoveryCard & {
@@ -108,6 +110,8 @@ export type PropertyDiscoverySearch = {
   /** PG or hostel. A preference like food: counted in the match, not a hard limit. */
   propertyType?: PropertyType | null;
   sort?: ListingSort;
+  /** Ticked stations. While any are sent, the server ignores the place fields above. */
+  metroStationCodes?: string[];
   page?: number;
   size?: number;
 };
@@ -335,6 +339,7 @@ export const discoveryApi = api.injectEndpoints({
           sharingTypes: params.sharingTypes?.join(","),
           propertyType: params.propertyType,
           sort: params.sort,
+          metroStationCodes: params.metroStationCodes?.join(","),
           page: params.page ?? 0,
           size: params.size ?? 10,
         }),

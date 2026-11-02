@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.dashboard.event;
 
+import com.khatiyan.c_shared.money.Money;
 import org.springframework.modulith.events.ApplicationModuleListener;
 
 import com.khatiyan.d_modules.billing.event.BillingCyclePaidManuallyEvent;
@@ -338,7 +339,7 @@ public class ActivityFeedListener {
     }
 
     private static String formatMoney(long paise) {
-        return "₹" + java.text.NumberFormat.getInstance(java.util.Locale.of("en", "IN")).format(paise / 100);
+        return "₹" + Money.indianGrouped(paise / 100);
     }
 
     private static String methodLabel(com.khatiyan.d_modules.billing.model.ManualPaymentMethod method) {

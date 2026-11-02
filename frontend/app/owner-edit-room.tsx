@@ -1,4 +1,6 @@
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCallback, useMemo, useState } from "react";
+import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useHardwareBack } from "@/components/use-hardware-back";
 import { Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -187,11 +189,17 @@ export default function OwnerEditRoomScreen() {
     }, [router, unsaved]),
   );
 
+  const insets = useSafeAreaInsets();
+  const loadFailed = loadFailure(rooms, molds);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return (
     <>
       <ScreenScrollView
         safeAreaEdges={["top"]}
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE - spacing.lg }}
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE + insets.bottom }}
         surface={colors.formSurface}
       >
         <ScreenHeader

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ChevronLeft } from "lucide-react-native";
+import { ArrowLeft } from "lucide-react-native";
+import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ListEnd } from "@/components/list-end";
 import { SelectionTabs } from "@/components/selection-tabs";
@@ -45,9 +46,14 @@ function ServiceBalanceTransactionsContent() {
     if (page !== 0) setPage(0);
     else await query.refetch();
   }
+  const loadFailed = loadFailure(query);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
+
   return <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: colors.surface }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 18, paddingVertical: 16 }}>
-      <AnimatedPressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} style={{ width: 36, height: 36, borderWidth: 1, borderColor: colors.border, borderRadius: 999, alignItems: "center", justifyContent: "center" }}><ChevronLeft color={colors.ink} size={20} /></AnimatedPressable>
+      <AnimatedPressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} style={{ width: 36, height: 36, borderWidth: 1, borderColor: colors.border, borderRadius: 999, alignItems: "center", justifyContent: "center" }}><ArrowLeft color={colors.ink} size={21} strokeWidth={2.75} /></AnimatedPressable>
       <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 18 }}>All Transactions</Text>
     </View>
     <SelectionTabs active={filter} onChange={setFilter} horizontalPadding={18} topPadding={10} options={(["All", "Credited", "Debited"] as Filter[]).map((value) => ({ value, label: value }))} />

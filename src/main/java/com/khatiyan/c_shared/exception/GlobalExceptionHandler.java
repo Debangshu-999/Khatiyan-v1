@@ -5,6 +5,7 @@ import java.util.Map;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import jakarta.persistence.OptimisticLockException;
 import com.khatiyan.a_auth.api.dto.SessionLimitResponse;
@@ -186,6 +187,16 @@ public class GlobalExceptionHandler {
         log.error("Database rejected request data", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ErrorResponse.of("INTERNAL_ERROR", "Something went wrong while processing your request. Please try again."));
+    }
+
+    /**
+     * The client left while the reply was being written: a screen closed, a phone lost
+     * signal, or a read was cancelled. Nothing failed here, and there is nobody left to
+     * answer, so it is not logged as an error (user, 2026-11-02).
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleClientGone(AsyncRequestNotUsableException e) {
+        log.debug("Client left before the reply was written: {}", e.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

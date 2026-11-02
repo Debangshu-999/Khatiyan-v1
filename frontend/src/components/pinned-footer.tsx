@@ -2,6 +2,7 @@ import { PropsWithChildren } from "react";
 import { View, type ViewProps } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { COMPACT_SCREEN_HEADERS } from "@/components/compact-screen-header";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -11,21 +12,32 @@ import { useTheme } from "@/theme/use-theme";
  * <p>It <b>overlays</b> the scroll area rather than sitting below it in flow, so
  * content scrolls underneath it right to the bottom of the screen.
  *
- * <p><b>Seamless.</b> An opaque strip in the page's own colour, with no rule
- * above it and no fade — the way the chat composer sits under its messages. It
- * used to veil the content behind it with two gradients, a page-colour wash and
- * a dark dim. That read as a grey band laid across the form, a second surface
- * where there should be none. The button's own shape is enough to say where the
- * page ends and the action begins.
- *
- * <p>The page colour is `colors.background`. Every screen that pins a footer
- * sits on that or `formSurface`, which is the same colour in both themes; a
- * screen on any other ground would show this as a band and needs a prop here.
+ * <p><b>Separated by a line</b> (user, 2026-11-01): see {@link pinnedFooterEdge}.
+ * An opaque strip in the page's own colour, with the same gap under the button as
+ * the Property filters page.
  *
  * <p>The scroll view behind it needs bottom padding of roughly
  * {@link PINNED_FOOTER_CLEARANCE} so its last item can still be scrolled clear
  * of the button.
  */
+/**
+ * The line around any fixed bottom bar: slightly bold, and the same thickness
+ * round the curves and down the sides, so the bar reads as a raised sheet (user,
+ * 2026-11-01). A top border alone thins to nothing along the curve. A bar that is
+ * not a PinnedFooter spreads this too, so they stay one line.
+ */
+export function pinnedFooterEdge(colors: { borderStrong: string }) {
+  return {
+    borderColor: colors.borderStrong,
+    borderCurve: "continuous",
+    borderLeftWidth: 1.5,
+    borderRightWidth: 1.5,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderTopWidth: 1.5,
+  } as const;
+}
+
 export function PinnedFooter({
   children,
   onLayout,
@@ -47,7 +59,8 @@ export function PinnedFooter({
       onLayout={onLayout}
       pointerEvents="box-none"
       style={{
-        backgroundColor: colors.background,
+        ...pinnedFooterEdge(colors),
+        backgroundColor: COMPACT_SCREEN_HEADERS ? colors.surface : colors.background,
         bottom: 0,
         left: 0,
         position: "absolute",
@@ -57,10 +70,8 @@ export function PinnedFooter({
         // swallow the gap entirely, so on an Android three-button navigation bar
         // the button sat flush against it. Where there is no inset this is still
         // just the gap, so nothing changes on iOS gesture bars or the web.
-        //
-        // The gap is xl rather than md: at md the button read as touching the
-        // bottom edge on devices with no inset at all.
-        paddingBottom: insets.bottom + spacing.xl,
+        // md matches the Property filters page (user, 2026-11-01).
+        paddingBottom: insets.bottom + spacing.md,
         paddingHorizontal: spacing.lg,
         paddingTop: spacing.md,
       }}

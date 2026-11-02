@@ -37,6 +37,8 @@ export type FoodModuleOverview = {
   foodAvailableInProperty: boolean;
   /** Whether Khatiyan manages it. Ours. */
   moduleEnabled: boolean;
+  /** Record meal attendance is on (2026-11-01). */
+  attendanceEnabled: boolean;
   availableMeals: MealType[];
   activeItems: number;
   activeProfiles: number;
@@ -60,6 +62,7 @@ export type FoodItem = {
    * as two separate things.
    */
   mealTags: MealType[];
+  dishType: FoodDishType;
   /** False once retired: off the menus, still listed, and recoverable. */
   active: boolean;
   /** True once removed from the owner's list. The listing never returns these. */
@@ -255,6 +258,8 @@ export type SaveFoodItemBody = {
   quantityUnit: FoodQuantityUnit;
   /** At least one. An untagged item matches no meal and can never be served. */
   mealTags: MealType[];
+  /** Guessed from the name when left out. */
+  dishType?: FoodDishType;
 };
 
 export type SaveFoodProfileBody = {
@@ -283,6 +288,175 @@ export type MealSlot = {
   /** Minutes later than planned, 0 when on time. */
   delayMinutes: number;
   status: MealStatus;
+};
+
+/**
+ * A tenant's meal pass (2026-11-01). `token` and `code` are null until the meal
+ * starts and once it has been scanned, when `attendedAt` says when.
+ */
+export type MealPass = {
+  state: "UPCOMING" | "OPEN" | "RECORDED";
+  propertyName: string;
+  date: string;
+  mealType: MealType;
+  startTime: string;
+  endTime: string;
+  profileName: string | null;
+  token: string | null;
+  code: string | null;
+  attendedAt: string | null;
+};
+
+/** The meal open for scanning now, for every owner and manager. */
+export type MealAttendanceLive = {
+  enabled: boolean;
+  openMeal: { mealType: MealType; startTime: string; endTime: string; attended: number; expected: number } | null;
+};
+
+export type MealScanResult = {
+  tenantName: string | null;
+  roomNumber: string | null;
+  profileName: string | null;
+  profileCategory: string | null;
+  mealType: MealType;
+  attendedAt: string;
+  /** This pass had been scanned before: nothing new was recorded. */
+  alreadyRecorded: boolean;
+  attended: number;
+  expected: number;
+};
+
+/**
+ * `recorded` means at least one scan. A meal nobody scanned was not recorded,
+ * which is not the same as everybody skipping it.
+ */
+export type MealAttendanceDayMeal = {
+  mealType: MealType;
+  state: "UPCOMING" | "OPEN" | "DONE";
+  recorded: boolean;
+  attended: number;
+  expected: number;
+  skipped: number;
+  /** When it is served, such as "1:00 PM to 3:00 PM". Today's meals only. */
+  time: string | null;
+};
+
+export type MealAttendanceDay = { date: string; attendanceEnabled: boolean; meals: MealAttendanceDayMeal[] };
+
+type MealAttendanceCell = { date: string; attended: number; expected: number };
+
+export type MealAttendancePlan = {
+  profileId: string;
+  name: string;
+  meals: { mealType: MealType; thisWeek: MealAttendanceCell[]; thisMonth: MealAttendanceCell[]; thisYear: MealAttendanceCell[] }[];
+};
+
+/** Recorded meals only. The columns are each duration's periods, so one with nothing recorded keeps its place. */
+export type MealAttendanceAnalytics = {
+  weekColumns: string[];
+  monthColumns: string[];
+  yearColumns: string[];
+  plans: MealAttendancePlan[];
+};
+
+export type MealAttendanceHistory = {
+  days: { date: string; meals: MealAttendanceDayMeal[] }[];
+  hasMore: boolean;
+};
+
+export type MealAttendancePerson = {
+  tenancyId: string;
+  tenantName: string | null;
+  tenantPhotoUrl: string | null;
+  roomNumber: string | null;
+  profileName: string | null;
+  attendedAt: string | null;
+};
+
+export type MealRatingPrompt = {
+  date: string;
+  mealType: MealType;
+  dishes: { itemId: string; name: string }[];
+};
+
+export type FoodDishType = "COMMON" | "DRINK" | "VEG" | "NON_VEG";
+
+/** The graph's points in date order: a day each for a week, the Monday of each week for a month, the first of the month for a year. */
+export type MealRatingTrend = { rating: number | null; points: { date: string; rating: number | null }[] };
+
+/** Empty when nobody rated it then. `change` is against the same length of time before, when both exist. */
+export type MealDishPeriod = { rating: number | null; change: number | null };
+
+export type MealDishRating = {
+  itemId: string;
+  name: string;
+  thisWeek: MealDishPeriod;
+  /** The whole of last week, for when this week has no rating yet. */
+  lastWeek: number | null;
+  thisMonth: MealDishPeriod;
+  thisYear: MealDishPeriod;
+};
+
+export type MealPlanAnalytics = {
+  profileId: string;
+  name: string;
+  ratingThisWeek: number | null;
+  ratingLastWeek: number | null;
+  ratingThisMonth: number | null;
+  ratingThisYear: number | null;
+  /** Only periods someone rated: thisWeek by day, thisMonth by the week's Monday, thisYear by the first of the month. */
+  meals: {
+    mealType: MealType;
+    thisWeek: { date: string; rating: number; people: number }[];
+    thisMonth: { date: string; rating: number; people: number }[];
+    thisYear: { date: string; rating: number; people: number }[];
+  }[];
+};
+
+/** Averages only. Nothing here says who rated what, or what they wrote. */
+export type MealRatingsSummary = {
+  overall: {
+    /** The last 30 days, the card's own figure on the Meals overview. */
+    rating: number | null;
+    changeThisWeek: number | null;
+    thisWeek: MealRatingTrend;
+    thisMonth: MealRatingTrend;
+    thisYear: MealRatingTrend;
+  };
+  profileAnalytics: MealPlanAnalytics[];
+  dishGroups: { type: FoodDishType; dishes: MealDishRating[] }[];
+};
+
+export type MealReviewReading = {
+  id: string;
+  name: string;
+  /** Out of 5: the AI's own score for its review, or the tenants' average behind a generic line. */
+  rating: number | null;
+  /** One short paragraph: the AI's review with key words between double asterisks, or the rating's own line when nobody wrote about it. */
+  line: string | null;
+};
+
+/** `stored` is false for a week with nothing written: no AI ran and the turn was not used. */
+export type MealReviewAnalysis = {
+  stored: boolean;
+  generatedOn: string | null;
+  expiresOn: string | null;
+  reviewsRead: number;
+  plans: MealReviewReading[];
+  dishes: MealReviewReading[];
+};
+
+export type MealReviewAnalysisStatus = { current: MealReviewAnalysis | null; owner: boolean; canGenerate: boolean };
+
+export type MealAttendanceMeal = {
+  date: string;
+  mealType: MealType;
+  state: "UPCOMING" | "OPEN" | "DONE";
+  recorded: boolean;
+  expected: number;
+  attended: MealAttendancePerson[];
+  /** Not yet scanned while the meal is open, skipped after it. Empty for a meal not recorded. */
+  notAttended: MealAttendancePerson[];
 };
 
 /**
@@ -594,6 +768,105 @@ export const foodApi = api.injectEndpoints({
       query: () => ({ url: "/api/v1/food/me/meal-schedule" }),
     }),
 
+    /** The tenant's pass for the meal on now or their next one today. Null when they have none. */
+    getMyMealPass: builder.query<MealPass | null, void>({
+      providesTags: ["MealAttendance"],
+      query: () => ({ url: "/api/v1/food/me/meal-pass" }),
+    }),
+
+    setMealAttendanceEnabled: builder.mutation<void, { propertyId: string; enabled: boolean }>({
+      invalidatesTags: ["Food", "MealAttendance"],
+      // The switch shows the cached value, so without this it snaps back until the
+      // server answers and then moves again (user, 2026-11-01). A refusal undoes it.
+      async onQueryStarted({ propertyId, enabled }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          foodApi.util.updateQueryData("getFoodOverview", propertyId, (overview) => {
+            overview.attendanceEnabled = enabled;
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+      query: ({ propertyId, enabled }) => ({
+        body: { enabled },
+        method: "PATCH",
+        url: `/api/v1/properties/${propertyId}/food/attendance/status`,
+      }),
+    }),
+
+    /** Open to every manager of the property, whatever they were granted. */
+    getMealAttendanceLive: builder.query<MealAttendanceLive, string>({
+      providesTags: ["MealAttendance"],
+      query: (propertyId) => ({ url: `/api/v1/properties/${propertyId}/food/attendance/live` }),
+    }),
+
+    scanMealPass: builder.mutation<MealScanResult, { propertyId: string; token?: string; code?: string }>({
+      invalidatesTags: ["MealAttendance"],
+      query: ({ propertyId, token, code }) => ({
+        body: { code, token },
+        method: "POST",
+        url: `/api/v1/properties/${propertyId}/food/attendance/scan`,
+      }),
+    }),
+
+    /** The one meal on offer for this tenant to rate. Null when there is none. */
+    getMyMealRating: builder.query<MealRatingPrompt | null, void>({
+      providesTags: ["MealRatings"],
+      query: () => ({ url: "/api/v1/food/me/meal-rating" }),
+    }),
+
+    submitMealRating: builder.mutation<void, { date: string; mealType: MealType; ratings: { itemId: string; rating: number; review?: string }[] }>({
+      invalidatesTags: ["MealRatings"],
+      query: (body) => ({ body, method: "POST", url: "/api/v1/food/me/meal-rating" }),
+    }),
+
+    getMealRatingsSummary: builder.query<MealRatingsSummary, string>({
+      providesTags: ["MealRatings"],
+      query: (propertyId) => ({ url: `/api/v1/properties/${propertyId}/food/ratings` }),
+    }),
+
+    getMealReviewAnalysis: builder.query<MealReviewAnalysisStatus, string>({
+      providesTags: ["MealRatings"],
+      query: (propertyId) => ({ url: `/api/v1/properties/${propertyId}/food/ratings/analysis` }),
+    }),
+
+    generateMealReviewAnalysis: builder.mutation<MealReviewAnalysis, string>({
+      invalidatesTags: ["MealRatings"],
+      query: (propertyId) => ({ method: "POST", url: `/api/v1/properties/${propertyId}/food/ratings/analysis` }),
+    }),
+
+    getMealAttendanceDay: builder.query<MealAttendanceDay, { propertyId: string; date: string }>({
+      providesTags: ["MealAttendance"],
+      query: ({ propertyId, date }) => ({
+        params: { date },
+        url: `/api/v1/properties/${propertyId}/food/attendance/day`,
+      }),
+    }),
+
+    getMealAttendanceAnalytics: builder.query<MealAttendanceAnalytics, string>({
+      providesTags: ["MealAttendance"],
+      query: (propertyId) => ({ url: `/api/v1/properties/${propertyId}/food/attendance/analytics` }),
+    }),
+
+    getMealAttendanceHistory: builder.query<MealAttendanceHistory, { propertyId: string; page: number }>({
+      providesTags: ["MealAttendance"],
+      query: ({ propertyId, page }) => ({
+        params: { page, size: 14 },
+        url: `/api/v1/properties/${propertyId}/food/attendance/history`,
+      }),
+    }),
+
+    getMealAttendanceMeal: builder.query<MealAttendanceMeal, { propertyId: string; date: string; mealType: MealType }>({
+      providesTags: ["MealAttendance"],
+      query: ({ propertyId, date, mealType }) => ({
+        params: { date, mealType },
+        url: `/api/v1/properties/${propertyId}/food/attendance/meal`,
+      }),
+    }),
+
     /** Null when there is no plan today and none coming. */
     getMyFoodSubscription: builder.query<FoodPlan | null, void>({
       providesTags: ["Food"],
@@ -634,8 +907,21 @@ export const {
   useGetCookingForecastQuery,
   useGetFoodOverviewQuery,
   useGetFoodProfileMenuQuery,
+  useGetMealAttendanceAnalyticsQuery,
+  useGetMealAttendanceDayQuery,
+  useGetMealAttendanceHistoryQuery,
+  useGetMealAttendanceLiveQuery,
+  useGetMealAttendanceMealQuery,
+  useGenerateMealReviewAnalysisMutation,
+  useGetMealRatingsSummaryQuery,
+  useGetMealReviewAnalysisQuery,
+  useGetMyMealRatingQuery,
+  useSubmitMealRatingMutation,
   useGetMealScheduleQuery,
+  useGetMyMealPassQuery,
   useGetMyMealScheduleQuery,
+  useScanMealPassMutation,
+  useSetMealAttendanceEnabledMutation,
   useGetMyFoodAvailabilityQuery,
   useGetMyFoodProfileMenuQuery,
   useGetMyFoodSkipsQuery,
