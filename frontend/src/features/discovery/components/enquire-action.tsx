@@ -6,10 +6,9 @@ import type { ComponentType } from "react";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { AppTextInput } from "@/components/app-text-input";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
-import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog, FormInput } from "@/features/owner/owner-ui";
 import { DirectVisitFlow } from "@/features/discovery/components/direct-booking-flows";
 import { EnquiryConsentModal } from "@/features/discovery/components/enquiry-consent-modal";
 import {
@@ -370,48 +369,33 @@ function EnquirySheet({
       {/* Names what was actually consented to rather than assuming phone. Someone
           who declined the call-back should not be told their number is going
           over on the very screen where they send the message. */}
-      <Text style={[type.modalDescription, { color: colors.muted }]}>
+      {/* Shorter on a phone (user, 2026-11-14): smaller text, the count on the label's row. */}
+      <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13, lineHeight: 18 }}>
         {sharedNames.length > 0
           ? `${propertyName} will see your name and ${sharedNames.join(" and ")} so they can reply.`
           : `${propertyName} will only be able to reply in the app.`}
       </Text>
 
-      <View style={{ gap: spacing.xs }}>
-        <Text style={[type.caption, { color: colors.muted, fontWeight: "800" }]}>
-          Your message
-        </Text>
-        <AppTextInput
-          autoFocus
-          maxLength={ENQUIRY_MESSAGE_MAX_LENGTH}
-          multiline
-          onChangeText={(next) => {
-            setMessage(next);
-            form.clearField("message");
-          }}
-          placeholder="Is a single AC room available from the 1st of next month?"
-          placeholderTextColor={colors.kicker}
-          style={{
-            borderColor: colors.borderStrong,
-            borderRadius: 14,
-            borderWidth: 1.5,
-            color: colors.ink,
-            fontFamily: fonts.sansMedium,
-            fontSize: 15,
-            minHeight: 104,
-            padding: spacing.md,
-            textAlignVertical: "top",
-          }}
-          value={message}
-        />
-        <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-          <Text style={[type.caption, { color: form.errors.message ? colors.danger : colors.kicker, flex: 1 }]}>
-            {form.errors.message ?? " "}
+      {/* The app's labelled field (user, 2026-11-14), as Raise a concern has it: the
+          label above, the count at the right of the label's row, the error under it. */}
+      <FormInput
+        error={form.errors.message}
+        label="Your message"
+        labelAccessory={
+          <Text style={[type.caption, { color: colors.kicker, fontVariant: ["tabular-nums"], marginLeft: "auto" }]}>
+            {trimmed.length}/{ENQUIRY_MESSAGE_MAX_LENGTH}
           </Text>
-          <Text style={[type.caption, { color: colors.kicker }]}>
-            {trimmed.length} / {ENQUIRY_MESSAGE_MAX_LENGTH}
-          </Text>
-        </View>
-      </View>
+        }
+        maxLength={ENQUIRY_MESSAGE_MAX_LENGTH}
+        multiline
+        onChangeText={(next) => {
+          setMessage(next);
+          form.clearField("message");
+        }}
+        placeholder="Is a single AC room available from the 1st of next month?"
+        required
+        value={message}
+      />
 
       <ActionButton
         disabled={raiseState.isLoading || !trimmed || form.blocked}

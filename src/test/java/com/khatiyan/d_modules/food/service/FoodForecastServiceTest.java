@@ -52,6 +52,7 @@ class FoodForecastServiceTest {
     @Mock private FoodSubscriptionRepository subscriptionRepository;
     @Mock private FoodDailySkipRepository dailySkipRepository;
     @Mock private MealScheduleService mealScheduleService;
+    @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
     private FoodForecastService service;
 
     @BeforeEach
@@ -65,7 +66,8 @@ class FoodForecastServiceTest {
                 menuEntryRepository,
                 subscriptionRepository,
                 dailySkipRepository,
-                mealScheduleService);
+                mealScheduleService,
+                eventPublisher);
     }
 
     /** A meal that has started keeps its dishes (2026-09-29). */
@@ -217,6 +219,129 @@ class FoodForecastServiceTest {
         assertThat(result.totalSubscribers()).isEqualTo(2);
         assertThat(result.profiles()).singleElement()
                 .satisfies(profile -> assertThat(profile.profileName()).isEqualTo("Veg"));
+    }
+
+
+    /** A declared stay out takes its tenant off the meal (user, 2026-11-08). */
+    @Test
+    void tenantsAwayOnAStayOutAreNotCookedFor() {
+        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
+        FoodItem roti = FoodItem.create(
+                PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
+        List<FoodSubscription> subscriptions = new ArrayList<>();
+        List<TenancyResponse> tenancies = new ArrayList<>();
+        addSubscriber(subscriptions, tenancies, veg);
+        addSubscriber(subscriptions, tenancies, veg);
+        addSubscriber(subscriptions, tenancies, veg);
+
+        when(moduleSettingService.requireUsable(PROPERTY))
+                .thenReturn(FoodTestFixtures.property(PROPERTY, true, Set.of(MealType.LUNCH)));
+        when(profileRepository.findByPropertyIdAndActiveTrueOrderByDisplayOrderAscNameAsc(PROPERTY)).thenReturn(List.of(veg));
+        when(tenancyModule.findActiveByPropertyId(PROPERTY)).thenReturn(tenancies);
+        when(subscriptionRepository.findCovering(org.mockito.ArgumentMatchers.eq(PROPERTY), any())).thenReturn(subscriptions);
+        when(menuEntryRepository
+                .findByPropertyIdAndDayOfWeekAndMealTypeAndActiveTrueOrderByDisplayOrderAsc(
+                        PROPERTY, DayOfWeek.MONDAY, MealType.LUNCH))
+                .thenReturn(List.of(entry(veg, roti, "4", "0")));
+        when(itemRepository.findAllById(any())).thenReturn(List.of(roti));
+        when(tenancyModule.awayTenancyIds(PROPERTY, MONDAY, MealType.LUNCH))
+                .thenReturn(Set.of(subscriptions.get(0).getTenancyId()));
+
+        CookingForecastResponse result = service.forecast(ACTOR, PROPERTY, MONDAY, MealType.LUNCH);
+
+        assertThat(result.totalSubscribers()).isEqualTo(2);
+    }
+
+    // ----- A dish off or back on tells the tenants who eat it (P1.5.h, 2026-11-08) -----
+
+    /** Taking roti off Monday lunch tells the Veg tenant, whose lunch serves it, and not the Gym one. */
+    @Test
+    void takingADishOffTellsOnlyTenantsWhosePlanServesIt() {
+        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
+        FoodProfile gym = FoodProfile.create(PROPERTY, ACTOR, "Gym", null, 1, FoodProfileCategory.VEG);
+        FoodItem roti = FoodItem.create(
+                PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
+        UUID vegTenant = UUID.randomUUID();
+        UUID gymTenant = UUID.randomUUID();
+        dishSetUp(roti, List.of(entry(veg, roti, "4", "0")), List.of(
+                FoodSubscription.start(PROPERTY, UUID.randomUUID(), vegTenant, FoodSubscription.everyDay(veg.getId()), MONDAY),
+                FoodSubscription.start(PROPERTY, UUID.randomUUID(), gymTenant, FoodSubscription.everyDay(gym.getId()), MONDAY)));
+        when(dailySkipRepository.findByPropertyIdAndSkipDateAndMealTypeAndItemId(PROPERTY, MONDAY, MealType.LUNCH, roti.getId()))
+                .thenReturn(java.util.Optional.empty());
+
+        service.markUnavailable(ACTOR, PROPERTY, MONDAY, MealType.LUNCH, roti.getId());
+
+        var event = org.mockito.ArgumentCaptor.forClass(com.khatiyan.d_modules.food.event.MealDishAvailabilityChangedEvent.class);
+        org.mockito.Mockito.verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().available()).isFalse();
+        assertThat(event.getValue().itemName()).isEqualTo("Roti");
+        assertThat(event.getValue().mealType()).isEqualTo(MealType.LUNCH);
+        assertThat(event.getValue().mealDate()).isEqualTo(MONDAY);
+        assertThat(event.getValue().tenantUserIds()).containsExactly(vegTenant);
+    }
+
+    /** A dish already off is not announced twice. */
+    @Test
+    void takingOffADishAlreadyOffTellsNobody() {
+        FoodItem roti = FoodItem.create(
+                PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
+        dishSetUp(roti, List.of(), List.of());
+        when(dailySkipRepository.findByPropertyIdAndSkipDateAndMealTypeAndItemId(PROPERTY, MONDAY, MealType.LUNCH, roti.getId()))
+                .thenReturn(java.util.Optional.of(com.khatiyan.d_modules.food.model.FoodDailySkip.create(
+                        PROPERTY, roti.getId(), MONDAY, MealType.LUNCH, ACTOR)));
+
+        service.markUnavailable(ACTOR, PROPERTY, MONDAY, MealType.LUNCH, roti.getId());
+
+        org.mockito.Mockito.verify(eventPublisher, org.mockito.Mockito.never()).publishEvent(any());
+    }
+
+    /** Putting it back tells the same tenants: the ones who were told it was off. */
+    @Test
+    void puttingADishBackTellsTheSameTenants() {
+        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
+        FoodItem roti = FoodItem.create(
+                PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
+        UUID vegTenant = UUID.randomUUID();
+        dishSetUp(roti, List.of(entry(veg, roti, "4", "0")), List.of(
+                FoodSubscription.start(PROPERTY, UUID.randomUUID(), vegTenant, FoodSubscription.everyDay(veg.getId()), MONDAY)));
+        when(dailySkipRepository.findByPropertyIdAndSkipDateAndMealTypeAndItemId(PROPERTY, MONDAY, MealType.LUNCH, roti.getId()))
+                .thenReturn(java.util.Optional.of(com.khatiyan.d_modules.food.model.FoodDailySkip.create(
+                        PROPERTY, roti.getId(), MONDAY, MealType.LUNCH, ACTOR)));
+
+        service.markAvailable(ACTOR, PROPERTY, MONDAY, MealType.LUNCH, roti.getId());
+
+        var event = org.mockito.ArgumentCaptor.forClass(com.khatiyan.d_modules.food.event.MealDishAvailabilityChangedEvent.class);
+        org.mockito.Mockito.verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().available()).isTrue();
+        assertThat(event.getValue().tenantUserIds()).containsExactly(vegTenant);
+    }
+
+    /** Nothing was off, so nobody was told, so nothing to take back. */
+    @Test
+    void puttingBackADishThatWasNeverOffTellsNobody() {
+        FoodItem roti = FoodItem.create(
+                PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
+        dishSetUp(roti, List.of(), List.of());
+        when(dailySkipRepository.findByPropertyIdAndSkipDateAndMealTypeAndItemId(PROPERTY, MONDAY, MealType.LUNCH, roti.getId()))
+                .thenReturn(java.util.Optional.empty());
+
+        service.markAvailable(ACTOR, PROPERTY, MONDAY, MealType.LUNCH, roti.getId());
+
+        org.mockito.Mockito.verify(eventPublisher, org.mockito.Mockito.never()).publishEvent(any());
+    }
+
+    private void dishSetUp(FoodItem item, List<FoodMenuEntry> entries, List<FoodSubscription> plans) {
+        org.mockito.Mockito.lenient().when(moduleSettingService.requireUsable(PROPERTY))
+                .thenReturn(FoodTestFixtures.property(PROPERTY, true, Set.of(MealType.LUNCH)));
+        org.mockito.Mockito.lenient().when(itemRepository.findByIdAndActiveTrue(item.getId()))
+                .thenReturn(java.util.Optional.of(item));
+        org.mockito.Mockito.lenient().when(itemRepository.findById(item.getId()))
+                .thenReturn(java.util.Optional.of(item));
+        org.mockito.Mockito.lenient().when(menuEntryRepository
+                        .findByPropertyIdAndDayOfWeekAndMealTypeAndActiveTrueOrderByDisplayOrderAsc(
+                                PROPERTY, DayOfWeek.MONDAY, MealType.LUNCH))
+                .thenReturn(entries);
+        org.mockito.Mockito.lenient().when(subscriptionRepository.findCovering(PROPERTY, MONDAY)).thenReturn(plans);
     }
 
     private FoodMenuEntry entry(FoodProfile profile, FoodItem item, String base, String buffer) {

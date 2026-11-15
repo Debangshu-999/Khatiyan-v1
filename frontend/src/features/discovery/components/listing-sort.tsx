@@ -1,4 +1,6 @@
 import { ModalTitle } from "@/components/modal-title";
+import { FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react-native";
@@ -6,6 +8,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import type { ListingSort } from "@/store/services/discovery-api";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -56,14 +59,15 @@ const ASCENDING = new Set<ListingSort>(["DEPOSIT_LOW", "DISTANCE", "RENT_LOW"]);
 /**
  * The button beside a results header.
  *
- * <p>Small, grey and borderless: the count beside it is the heading, and this
- * is a control for it, so it should take as little of that line as it can. It
- * names the order in force whenever that is not the default, so a re-ordered
- * list never looks like the natural one.
+ * <p>Small, white with a blue edge and a soft shadow while the order is the
+ * default, filled once it is not, and it names the order in force, so a
+ * re-ordered list never looks like the natural one. Blue in AI results too, as
+ * it is not an AI control (user, 2026-11-02).
  */
 export function ListingSortButton({ onPress, sort }: { onPress: () => void; sort: ListingSort }) {
   const { colors, fonts } = useTheme();
   const active = sort !== "RELEVANCE";
+  const ink = active ? "#FFFFFF" : colors.primary;
 
   return (
     <AnimatedPressable
@@ -73,30 +77,34 @@ export function ListingSortButton({ onPress, sort }: { onPress: () => void; sort
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: colors.neutralSoft,
-        borderRadius: 999,
+        backgroundColor: active ? colors.primary : colors.surface,
+        borderColor: colors.primary,
+        borderCurve: "continuous",
+        borderRadius: FILTER_CHIP_RADIUS,
+        borderWidth: 1,
         flexDirection: "row",
         flexShrink: 0,
         gap: 4,
         paddingHorizontal: spacing.xs + 2,
-        paddingVertical: 4,
+        paddingVertical: 3,
+        ...cardShadow(colors.shadow),
       }}
     >
       {active ? (
         <>
-          <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 11 }}>{SHORT_LABELS[sort]}</Text>
+          <Text style={{ color: ink, fontFamily: fonts.sansBold, fontSize: 11 }}>{SHORT_LABELS[sort]}</Text>
           {/* Down is low to high, up is high to low. The arrow says the
               direction so the pill can stay one word. */}
           {ASCENDING.has(sort) ? (
-            <ArrowDown color={colors.primary} size={12} strokeWidth={2.6} />
+            <ArrowDown color={ink} size={12} strokeWidth={2.6} />
           ) : (
-            <ArrowUp color={colors.primary} size={12} strokeWidth={2.6} />
+            <ArrowUp color={ink} size={12} strokeWidth={2.6} />
           )}
         </>
       ) : (
         <>
-          <ArrowUpDown color={colors.inkSoft} size={12} strokeWidth={2.4} />
-          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 11 }}>Sort</Text>
+          <ArrowUpDown color={ink} size={12} strokeWidth={2.4} />
+          <Text style={{ color: ink, fontFamily: fonts.sansBold, fontSize: 11 }}>Sort</Text>
         </>
       )}
     </AnimatedPressable>
@@ -143,6 +151,7 @@ export function ListingSortModal({
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         {/* Tapping the dim closes it, as every sheet here does. */}
         <AnimatedPressable accessibilityLabel="Close sort" onPress={() => dismiss()} style={{ flex: 1 }} />
+        <SheetCloseButton onClose={() => dismiss()} />
         <View
           style={{
             backgroundColor: colors.surfaceRaised,

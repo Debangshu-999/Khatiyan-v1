@@ -4,14 +4,17 @@ import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react-native";
 import { Text, View } from "react-native";
 
 import { LoadFailed } from "@/components/load-failed";
+import { WrapTitle } from "@/components/wrap-title";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
+import { HighlightPanel, highlightPalette } from "@/components/highlight-card";
 import { FieldError } from "@/components/field-error";
 import { MarqueeText } from "@/components/marquee-text";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { SheetShell } from "@/components/sheet-shell";
 import { FoodMenuSkeleton, FoodTenantMenuRowsSkeleton, FoodTenantSkeleton } from "@/components/skeletons";
 import { useToast } from "@/components/toast";
@@ -57,7 +60,7 @@ import {
   type FoodProfile,
 } from "@/store/services/food-api";
 import type { MealType } from "@/store/services/property-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
@@ -224,8 +227,17 @@ export default function TenancyFoodScreen() {
   const todaysProfileId = todayPlan ? dayProfile(todayPlan, weekdayOf(todayInIst()))?.profileId ?? null : null;
   const pendingCopy = pending ? choiceCopy(plan, pending, tomorrow) : null;
 
+  // While choosing, "Keep my current plan" is a fixed footer (user, 2026-11-14).
+  const keepFooter = Boolean(hasPlan && choosing && profiles.length > 0);
+
   return (
-    <ScreenScrollView onRefresh={refresh} safeAreaEdges={["top", "bottom"]}>
+    <View style={{ backgroundColor: colors.background, flex: 1 }}>
+    <ScreenScrollView
+      bottomPaddingCovered={keepFooter}
+      contentContainerStyle={keepFooter ? { paddingBottom: PINNED_FOOTER_CLEARANCE } : undefined}
+      onRefresh={refresh}
+      safeAreaEdges={["top", "bottom"]}
+    >
       {header}
 
       {plan && hasPlan && !choosing ? (
@@ -258,7 +270,9 @@ export default function TenancyFoodScreen() {
                 {hasPlan ? "Move to another plan" : "Choose the plan that fits you"}
               </Text>
               <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
-                Any change starts tomorrow. Today's meals stay as they are.
+                {/* The "before you subscribe" warning, in the same paragraph (user, 2026-11-14). */}
+                Any change starts tomorrow. Today's meals stay as they are. Your property cooks assuming everybody
+                subscribed will eat, so subscribe only if you plan to take the meals regularly.
               </Text>
             </View>
 
@@ -278,17 +292,6 @@ export default function TenancyFoodScreen() {
             </View>
           </View>
 
-          {hasPlan ? (
-            <View style={{ flexDirection: "row" }}>
-              <ActionButton label="Keep my current plan" onPress={() => setChoosing(false)} variant="successQuiet" />
-            </View>
-          ) : null}
-
-          <NoticeBar
-            message="Your property cooks assuming everybody subscribed will eat. Subscribe only if you plan to take the meals regularly."
-            title="Before you subscribe"
-            tone="warning"
-          />
         </>
       )}
 
@@ -321,6 +324,15 @@ export default function TenancyFoodScreen() {
         <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} />
       ) : null}
     </ScreenScrollView>
+
+      {keepFooter ? (
+        <PinnedFooter>
+          <View style={{ flexDirection: "row" }}>
+            <ActionButton label="Keep my current plan" onPress={() => setChoosing(false)} variant="success" />
+          </View>
+        </PinnedFooter>
+      ) : null}
+    </View>
   );
 }
 
@@ -530,6 +542,8 @@ function PlanCard({
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
+        // Cards lift off the page here too (user, 2026-11-09).
+        ...cardShadow(colors.shadow),
         gap: spacing.md,
         padding: spacing.md,
       }}
@@ -743,6 +757,8 @@ function HybridPlanCard({ current, onBuild }: { current: boolean; onBuild: () =>
         borderRadius: radii.card,
         borderStyle: "dashed",
         borderWidth: 1,
+        // Cards lift off the page here too (user, 2026-11-09).
+        ...cardShadow(colors.shadow),
         gap: spacing.md,
         padding: spacing.md,
       }}
@@ -996,6 +1012,8 @@ function ProfileChoiceCard({
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
+        // Cards lift off the page here too (user, 2026-11-09).
+        ...cardShadow(colors.shadow),
         gap: spacing.md,
         padding: spacing.md,
       }}
@@ -1004,9 +1022,9 @@ function ProfileChoiceCard({
         <FoodProfileMark category={profile.category} name={profile.name} size={48} />
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
+            <WrapTitle style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
               {profile.name}
-            </FitText>
+            </WrapTitle>
             {current ? <FoodStatusChip icon="check-circle" label="Your plan" tone="success" /> : null}
           </View>
           {profile.description ? (
@@ -1091,20 +1109,23 @@ function UpcomingMealCard({ profileId }: { profileId: string }) {
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
+        // Cards lift off the page here too (user, 2026-11-09).
+        ...cardShadow(colors.shadow),
         gap: spacing.md,
         padding: spacing.md,
       }}
     >
+      <HighlightPanel variant="warm" style={{ marginHorizontal: -spacing.md, marginTop: -spacing.md, borderWidth: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 999, height: 36, justifyContent: "center", width: 36 }}>
-          <MaterialCommunityIcons color={colors.primary} name="calendar-month-outline" size={21} />
+        <View style={{ alignItems: "center", backgroundColor: "#FFF9EE", borderRadius: 999, height: 36, justifyContent: "center", width: 36 }}>
+          <MaterialCommunityIcons color={highlightPalette.warm.muted} name="calendar-month-outline" size={21} />
         </View>
-        <FitText numberOfLines={1} style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13.5 }}>
+        <FitText numberOfLines={1} style={{ color: highlightPalette.warm.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13.5 }}>
           {dayLabel}
         </FitText>
         {upcoming ? (
-          <View style={{ backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
-            <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 11.5 }}>
+          <View style={{ backgroundColor: "#FFF9EE", borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs }}>
+            <Text style={{ color: highlightPalette.warm.ink, fontFamily: fonts.sansBold, fontSize: 11.5 }}>
               {tomorrow ? "Tomorrow" : "Today"}
             </Text>
           </View>
@@ -1115,7 +1136,7 @@ function UpcomingMealCard({ profileId }: { profileId: string }) {
         <>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
             <TenantMealIcon meal={upcoming.mealType} size={26} />
-            <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 20, lineHeight: 25 }}>
+            <Text style={{ color: highlightPalette.warm.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 20, lineHeight: 25 }}>
               {slot?.status === "SERVING"
                 ? `${MEAL_LABEL[upcoming.mealType]} is being served`
                 : `${MEAL_LABEL[upcoming.mealType]} ${tomorrow ? "tomorrow" : "today"}`}
@@ -1123,15 +1144,20 @@ function UpcomingMealCard({ profileId }: { profileId: string }) {
           </View>
           {slot ? (
             <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-              <MaterialCommunityIcons color={colors.muted} name="clock-outline" size={16} />
-              <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 14 }}>
+              <MaterialCommunityIcons color={highlightPalette.warm.muted} name="clock-outline" size={16} />
+              <Text style={{ color: highlightPalette.warm.muted, fontFamily: fonts.sansBold, fontSize: 14 }}>
                 {formatMealWindow(slot.startTime, slot.endTime)}
               </Text>
               {slot.delayMinutes > 0 ? <DelayedChip minutes={slot.delayMinutes} /> : null}
             </View>
           ) : null}
 
-          <View style={{ backgroundColor: colors.border, height: 1 }} />
+        </>
+      ) : null}
+      </HighlightPanel>
+
+      {upcoming ? (
+        <>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
             <MaterialCommunityIcons color={colors.muted} name="silverware-fork-knife" size={17} />
             <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 13 }}>Menu</Text>
@@ -1212,6 +1238,8 @@ function WeeklyMenuDropdown({ oldPlan, version }: { oldPlan: boolean; version: F
           borderCurve: "continuous",
           borderRadius: radii.card,
           borderWidth: 1,
+          // Cards lift off the page here too (user, 2026-11-09).
+          ...cardShadow(colors.shadow),
           flexDirection: "row",
           gap: spacing.sm,
           minHeight: 52,
@@ -1264,33 +1292,9 @@ function WeeklyMenu({ oldPlan, version }: { oldPlan: boolean; version: FoodPlanV
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <DayStrip onSelect={setDay} selected={day} week={week} />
-      {dayPlan?.profileName ? (
-        <View
-          style={{
-            alignItems: "center",
-            alignSelf: "center",
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 999,
-            flexDirection: "row",
-            gap: 6,
-            maxWidth: "100%",
-            paddingLeft: 4,
-            paddingRight: spacing.sm,
-            paddingVertical: 4,
-          }}
-        >
-          <FoodProfileMark category={dayPlan.profileCategory ?? undefined} name={dayPlan.profileName} size={22} />
-          <FitText numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>
-            {dayPlan.profileName}
-          </FitText>
-          {oldPlan ? (
-            <FitText numberOfLines={1} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
-              · Old plan until tonight
-            </FitText>
-          ) : null}
-        </View>
-      ) : null}
+      {/* The filter bubbles, as on the owner's weekly menu, with the date in each
+          (user, 2026-11-09). No plan pill under them. */}
+      <DayStrip onSelect={setDay} selected={day} showDates variant="bubbles" week={week} />
 
       {loading ? <FoodTenantMenuRowsSkeleton /> : null}
 
@@ -1301,6 +1305,9 @@ function WeeklyMenu({ oldPlan, version }: { oldPlan: boolean; version: FoodPlanV
             borderColor: colors.border,
             borderRadius: radii.card,
             borderWidth: 1,
+            backgroundColor: colors.surface,
+            // Cards lift off the page here too (user, 2026-11-09).
+            ...cardShadow(colors.shadow),
             gap: spacing.sm,
             padding: spacing.md,
           }}

@@ -68,8 +68,9 @@ public class LeadVisitController {
     public PageResponse<VisitCardResponse> propertyHistory(
             @AuthenticationPrincipal UserPrincipal user, @PathVariable UUID propertyId,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "12") int size,
-            @RequestParam(defaultValue = "ALL") String status) {
-        return visitDayService.propertyHistory(user.userId(), propertyId, page, size, status);
+            @RequestParam(defaultValue = "ALL") String status,
+            @RequestParam(required = false) String search) {
+        return visitDayService.propertyHistory(user.userId(), propertyId, page, size, status, search);
     }
 
     @GetMapping("/visits/mine/history")

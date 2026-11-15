@@ -13,6 +13,8 @@ export const ScreenHeaderScrollContext = createContext<{
 }>({ sticky: false });
 
 type ScreenHeaderProps = {
+  /** Compact header only: the title at the left beside the back button. */
+  alignLeft?: boolean;
   eyebrow?: string;
   title: string;
   titleAdjustsFontSizeToFit?: boolean;
@@ -40,11 +42,11 @@ export function ScreenHeader(props: ScreenHeaderProps) {
   return COMPACT_SCREEN_HEADERS ? <CompactFromProps {...props} /> : useClassicScreenHeader(props);
 }
 
-function CompactFromProps({ badge, italicTail, onBack, onDark, title, trailing }: ScreenHeaderProps) {
+function CompactFromProps({ alignLeft, badge, italicTail, onBack, onDark, title, trailing }: ScreenHeaderProps) {
   const { sticky, surface } = useContext(ScreenHeaderScrollContext);
   return (
     <CompactScreenHeader
-      content={{ badge, italicTail, onBack, onDark, title, trailing }}
+      content={{ alignLeft, badge, italicTail, onBack, onDark, title, trailing }}
       inlineMargin={sticky ? -spacing.lg : 0}
       surface={surface}
     />

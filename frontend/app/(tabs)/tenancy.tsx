@@ -1,11 +1,10 @@
 import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Image, Text, View, type ImageSourcePropType } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { TenantDamageRecords } from "@/features/damage/tenant-damage-records";
 import {
   ArrowLeftRight,
   Banknote,
@@ -40,21 +39,11 @@ import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/components/toast";
 import { SkeletonCard, SkeletonList, SkeletonTiles } from "@/components/skeleton";
 import { TenantOnboardingSteps } from "@/features/compliance/tenant-onboarding-steps";
-import { AlertModal } from "@/components/alert-modal";
 import {
   REQUESTS_NOT_STARTED,
   TenancyStartsSoonBubble,
   tenancyNotStarted,
 } from "@/features/tenancy/starts-soon-bubble";
-import { useTenantCardUpdates } from "@/features/tenancy/use-tenant-card-updates";
-import type { BillingCycle } from "@/store/services/billing-api";
-import { billTitle, useGetMyTenancyDepositQuery, useListMyTenancyBillingCyclesQuery } from "@/store/services/billing-api";
-import type { ConcernSummary } from "@/store/services/concern-api";
-import {
-  splitTenantConcerns,
-  useListMyConcernHistoryQuery,
-  useListMyCurrentConcernsQuery,
-} from "@/store/services/concern-api";
 import {
   useGetMoveInChecklistQuery,
   useGetMyActiveTenancyQuery,
@@ -70,30 +59,20 @@ import {
 import { useAppSelector } from "@/store/hooks";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { buildExitRequestChains, buildRoomChangeRequestChains } from "@/features/tenancy/request-chain";
-import {
-  exitRequestBlock,
-  pendingExitBlock,
-  RequestBlockedModal,
-  roomChangeRequestBlock,
-  type RequestBlock,
-} from "@/features/tenancy/request-blocked-modal";
 import { formatFloor } from "@/features/property/floor";
 import { FitText } from "@/components/fit-text";
+import { compareRequests, formatMoney, mergedRequests } from "@/features/tenancy/tenant-tool-cards";
+import { FactColumn, PropertyStayCard } from "@/features/tenancy/request-form-cards";
+import { AgreementHeroCard, MoveInChecklistCard, RoommatesCard, StayTimelineCard } from "@/features/tenancy/stay-overview-cards";
 
 // The same drawing the owner's Deposit manager tile carries on Home. A deposit
 // is one thing across both sides of the app and should look like one thing.
-const DEPOSIT_ARTWORK = require("../../assets/icons/home-tools/deposit-manager.png");
-const BILLS_ARTWORK = require("../../assets/images/workspace/tenant-bills-header.png");
-const REQUESTS_ARTWORK = require("../../assets/images/workspace/tenancy-module.png");
-const CONCERNS_ARTWORK = require("../../assets/images/workspace/concern-module.png");
 
 export default function TenancyScreen() {
   const router = useGuardedRouter();
   const params = useLocalSearchParams<{ exitRequestCreated?: string; roomChangeRequested?: string }>();
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
-  const currentUserId = useAppSelector((state) => state.auth.user?.id) ?? null;
   const requestToastShownRef = useRef(false);
 
   useEffect(() => {
@@ -116,95 +95,6 @@ export default function TenancyScreen() {
   });
   const activeTenancy = activeTenancyQuery.data;
   const moveInQuery = useGetMoveInChecklistQuery(activeTenancy?.tenancy.id ?? "", { skip: !activeTenancy });
-  const concernsQuery = useListMyCurrentConcernsQuery(undefined, {
-    refetchOnMountOrArgChange: true,
-    skip: !activeTenancy,
-  });
-  const concernHistoryQuery = useListMyConcernHistoryQuery(
-    { page: 0, size: 200 },
-    { refetchOnMountOrArgChange: true, skip: !activeTenancy },
-  );
-  const activeTenancyId = activeTenancy?.tenancy.id;
-  const cyclesQuery = useListMyTenancyBillingCyclesQuery(activeTenancyId ?? "", {
-    refetchOnMountOrArgChange: true,
-    skip: !activeTenancyId,
-  });
-  const depositQuery = useGetMyTenancyDepositQuery(activeTenancyId ?? "", { skip: !activeTenancyId });
-  const cycles = useMemo(() => [...(cyclesQuery.data ?? [])].sort(compareCycles), [cyclesQuery.data]);
-  // My Bills = everything still owed, grouped: numbered rent cycles vs one-off
-  // bills (e.g. an early-exit penalty). Settled bills move to Past Bills.
-  // CONFIRMATION_PENDING belongs here too. It is neither payable nor settled, so
-  // leaving it out of both lists made a bill DISAPPEAR the moment its tenant
-  // claimed they had paid it — the one moment they are most likely to look.
-  const payableBills = useMemo(
-    () =>
-      cycles.filter(
-        (cycle) =>
-          cycle.status === "UNPAID" || cycle.status === "OVERDUE" || cycle.status === "CONFIRMATION_PENDING",
-      ),
-    [cycles],
-  );
-  const rentBills = useMemo(() => payableBills.filter((cycle) => cycle.category === "RENT_CYCLE"), [payableBills]);
-  const otherBills = useMemo(() => payableBills.filter((cycle) => cycle.category === "ONE_OFF"), [payableBills]);
-  const pastBills = useMemo(() => cycles.filter((cycle) => cycle.status === "PAID" || cycle.status === "CANCELLED"), [cycles]);
-
-  const [requestBlock, setRequestBlock] = useState<RequestBlock | null>(null);
-  /** Why a request cannot be raised before the stay starts, while shown. */
-  const [notStartedMessage, setNotStartedMessage] = useState<string | null>(null);
-
-  const currentTenancyRequests = useMemo(
-    () => (activeTenancy ? mergedRequests(exitRequestsQuery.data, roomChangeRequestsQuery.data, activeTenancy.tenancy.id).sort(compareRequests) : []),
-    [activeTenancy, exitRequestsQuery.data, roomChangeRequestsQuery.data],
-  );
-  const requestAvailabilityLoading = exitRequestsQuery.isFetching || roomChangeRequestsQuery.isFetching;
-
-  function openRoomChangeRequest() {
-    if (!activeTenancy) {
-      return;
-    }
-    // Checked first, so the answer is immediate: nothing about open requests
-    // matters before the stay has begun.
-    if (tenancyNotStarted(activeTenancy.tenancy.startDate)) {
-      setNotStartedMessage(REQUESTS_NOT_STARTED.roomChange);
-      return;
-    }
-    if (requestAvailabilityLoading) {
-      return;
-    }
-    const block = pendingExitBlock(activeTenancy.tenancy) ?? roomChangeRequestBlock(
-      exitRequestsQuery.data,
-      roomChangeRequestsQuery.data,
-      activeTenancy.tenancy.id,
-    );
-    if (block) {
-      setRequestBlock(block);
-      return;
-    }
-    router.push("/tenancy-room-change-request");
-  }
-
-  function openExitRequest() {
-    if (!activeTenancy) {
-      return;
-    }
-    if (tenancyNotStarted(activeTenancy.tenancy.startDate)) {
-      setNotStartedMessage(REQUESTS_NOT_STARTED.exit);
-      return;
-    }
-    if (requestAvailabilityLoading) {
-      return;
-    }
-    const block = pendingExitBlock(activeTenancy.tenancy) ?? exitRequestBlock(
-      exitRequestsQuery.data,
-      roomChangeRequestsQuery.data,
-      activeTenancy.tenancy.id,
-    );
-    if (block) {
-      setRequestBlock(block);
-      return;
-    }
-    router.push("/tenancy-exit-request");
-  }
   const pastTenancyRequests = useMemo(
     () =>
       mergedRequests(exitRequestsQuery.data, roomChangeRequestsQuery.data)
@@ -212,35 +102,6 @@ export default function TenancyScreen() {
         .sort(compareRequests),
     [activeTenancy, exitRequestsQuery.data, roomChangeRequestsQuery.data],
   );
-  const {
-    closedCount: closedConcernCount,
-    open: currentConcerns,
-  } = useMemo(
-    () => splitTenantConcerns(concernsQuery.data, concernHistoryQuery.data),
-    [concernHistoryQuery.data, concernsQuery.data],
-  );
-  const trackedConcerns = useMemo(
-    () => uniqueConcerns([...(concernsQuery.data ?? []), ...(concernHistoryQuery.data?.items ?? [])]),
-    [concernHistoryQuery.data, concernsQuery.data],
-  );
-  const cardUpdates = useTenantCardUpdates({
-    concerns: trackedConcerns,
-    concernsReady:
-      concernsQuery.isSuccess &&
-      concernHistoryQuery.isSuccess &&
-      !concernsQuery.isFetching &&
-      !concernHistoryQuery.isFetching,
-    requests: currentTenancyRequests,
-    requestsReady:
-      exitRequestsQuery.isSuccess &&
-      roomChangeRequestsQuery.isSuccess &&
-      !exitRequestsQuery.isFetching &&
-      !roomChangeRequestsQuery.isFetching,
-    scopeKey:
-      currentUserId && activeTenancyId
-        ? currentUserId + "." + activeTenancyId
-        : null,
-  });
 
   const loadFailed = loadFailure(activeTenancyQuery, tenanciesQuery);
   if (loadFailed) {
@@ -316,111 +177,19 @@ export default function TenancyScreen() {
         <>
           <TenancyOverviewCard
             activeTenancy={activeTenancy}
+            checklist={moveInQuery.isLoading ? null : (
+              <MoveInChecklistCard
+                onPress={() => router.push({ pathname: "/move-in-checklist", params: { role: "tenant", tenancyId: activeTenancy.tenancy.id } })}
+                status={moveInQuery.data?.canRespond ? "WAITING" : moveInQuery.data?.status === "NOTED" ? "NOTED" : "ACCEPTED"}
+              />
+            )}
             onViewAgreement={() => router.push("/tenancy-agreement-view")}
           />
 
           {/* The room as recorded when they moved in, theirs to answer within 48 hours (2026-10-29). */}
-          {moveInQuery.data ? (
-            <ActionCard
-              badge={moveInQuery.data.canRespond ? 1 : undefined}
-              description={moveInQuery.data.canRespond
-                ? "Check the room's condition as recorded and answer within 48 hours."
-                : "The room's condition when you moved in."}
-              meta={moveInQuery.data.canRespond ? "Waiting for your answer" : undefined}
-              onPress={() => router.push({ pathname: "/move-in-checklist", params: { role: "tenant", tenancyId: activeTenancy.tenancy.id } })}
-              title="Move-in checklist"
-            />
-          ) : null}
 
-          {/* Damage recorded in their name, with their share and bill (user, 2026-10-29). */}
-          <TenantDamageRecords tenancyId={activeTenancy.tenancy.id} />
-
-          {/* A door to the bills, no bill card above it (user, 2026-09-27).
-              Paying happens on My Bills, where every bill of the month is. */}
-          <Section title="Bills & Deposit">
-            <AllBillsCard
-              dueNowPaise={payableBills.reduce((total, cycle) => total + cycle.totalAmountPaise, 0)}
-              // Red while anything is waiting on the tenant to pay. Confirming
-              // is with the owner, and upcoming is not payable yet.
-              hasUnpaid={payableBills.some((cycle) => cycle.status === "UNPAID" || cycle.status === "OVERDUE")}
-              onPress={() => {
-                router.push({ pathname: "/tenancy-bills", params: { tenancyId: activeTenancy.tenancy.id } });
-              }}
-              payableCount={payableBills.length}
-              totalCount={cycles.length}
-            />
-
-            {/* In with the bills rather than in a section of its own. A deposit
-                is money on this stay like every other row here, and one card
-                under its own heading read as a feature rather than a figure.
-                One card, not two tiles and a button: the balance IS the
-                snapshot, and the ledger it opens is where a movement count
-                belongs — printed out here it was a number nobody can act on. */}
-            {depositQuery.isFetching ? (
-              <SkeletonCard />
-            ) : depositQuery.data ? (
-              <EntryCard
-                artwork={DEPOSIT_ARTWORK}
-                label="Deposit balance"
-                onPress={() => router.push({ pathname: "/tenancy-deposit", params: { tenancyId: activeTenancy.tenancy.id } })}
-                value={formatMoney(depositQuery.data.currentBalancePaise)}
-              />
-            ) : (
-              // The same card as an open deposit, so the row does not change
-              // shape the day it opens. Nothing to open yet, so no chevron.
-              <EntryCard artwork={DEPOSIT_ARTWORK} label="Deposit account" value="Not opened yet" />
-            )}
-          </Section>
-
-          {/* Two tiles, not two full cards. Choosing between a room change and
-              an exit is one decision with two answers, and a paragraph under
-              each was explaining a screen that explains itself. */}
-          <Section title="Raise a request">
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              <RequestTile
-                disabled={requestAvailabilityLoading}
-                icon={ArrowLeftRight}
-                label="Room change"
-                onPress={openRoomChangeRequest}
-              />
-              <RequestTile
-                disabled={requestAvailabilityLoading}
-                icon={ExitTenancyIcon}
-                label="Exit request"
-                onPress={openExitRequest}
-              />
-            </View>
-
-            <StayRequestsCard
-              hasUpdate={cardUpdates.requestUpdate}
-              onPress={() => {
-                cardUpdates.markRequestsSeen();
-                router.push({
-                  pathname: "/tenancy-request-history",
-                  params: { scope: "current", tenancyId: activeTenancy.tenancy.id },
-                });
-              }}
-            />
-          </Section>
-
-          <Section title="Concerns">
-            {(concernsQuery.isFetching && !concernsQuery.data) ||
-            (concernHistoryQuery.isFetching && !concernHistoryQuery.data) ? (
-              <SkeletonCard />
-            ) : (
-              <TenantConcernsCard
-                closedCount={closedConcernCount}
-                hasUpdate={cardUpdates.concernUpdate}
-                onPress={() => {
-                  cardUpdates.markConcernsSeen();
-                  router.push("/concerns");
-                }}
-                openCount={currentConcerns.length}
-                totalCount={currentConcerns.length + closedConcernCount}
-              />
-            )}
-          </Section>
-
+          {/* Bills, deposit, requests, concerns, stay outs and damage records moved to
+              Tenancy tools on Home (user, 2026-11-10). */}
         </>
       ) : (
         <EmptyState
@@ -457,28 +226,6 @@ export default function TenancyScreen() {
         </Section>
       ) : null}
 
-      {notStartedMessage ? (
-        <AlertModal message={notStartedMessage} onClose={() => setNotStartedMessage(null)} tone="info" />
-      ) : null}
-
-      {requestBlock ? (
-        <RequestBlockedModal
-          block={requestBlock}
-          onClose={() => setRequestBlock(null)}
-          onViewRequests={() => {
-            const tenancyId = activeTenancy?.tenancy.id;
-            setRequestBlock(null);
-            if (!tenancyId) {
-              return;
-            }
-            cardUpdates.markRequestsSeen();
-            router.push({
-              pathname: "/tenancy-request-history",
-              params: { scope: "current", tenancyId },
-            });
-          }}
-        />
-      ) : null}
 
     </ScreenScrollView>
   );
@@ -486,164 +233,82 @@ export default function TenancyScreen() {
 
 function TenancyOverviewCard({
   activeTenancy,
+  checklist,
   onViewAgreement,
 }: {
   activeTenancy: TenantActiveTenancy;
+  /** The move-in checklist square, set above the agreement (user, 2026-11-11). */
+  checklist?: ReactNode;
   onViewAgreement: () => void;
 }) {
-  const { colors, fonts, type } = useTheme();
-  const rentAmount = activeTenancy.tenancy.rentAmountPaise ?? activeTenancy.tenancy.dailyRatePaise;
+  const { colors } = useTheme();
+  const tenancy = activeTenancy.tenancy;
+  const rentAmount = tenancy.rentAmountPaise ?? tenancy.dailyRatePaise;
+  const addressParts = [activeTenancy.property.address, activeTenancy.property.city, activeTenancy.property.state, activeTenancy.property.pincode];
+  const endDate = tenancy.checkoutDate ?? tenancy.agreementEndDate ?? null;
+  const months = tenancy.agreementValidityMonths;
+  const term = months != null ? `${months} ${months === 1 ? "month" : "months"}` : "Indefinite";
 
   return (
     <>
-      {/* FOUR cards, not one card with three boxes drawn inside it. Nesting a
-          bordered block in a bordered block draws two frames around one fact,
-          and the stay reads as a stack of separate things anyway: where you
-          live, when it began, what it costs, what you signed. */}
-      {/* The owner's Manage card, on the tenant's side of the app: mark and
-          name on one row, pin and full postal address on the next. One property
-          should look like one property whichever account is holding the phone,
-          and this side had drifted into its own layout — a bigger name, no
-          mark, and a room number where the address goes.
-          <p>The eyebrow is the one addition. The owner's card sits under a
-          screen heading that already says what it is; this one leads the tab. */}
-      <Card>
-        <View style={{ gap: spacing.sm }}>
-          {/* One identity row: the label belongs to the property name, while
-              the live tenancy state stays visible at the trailing edge. */}
-          <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <PropertyArtwork size={24} />
-            {/* No "Current stay" eyebrow (user, 2026-09-27): the name alone. */}
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <FitText
-                minimumFontScale={0.78}
-                numberOfLines={1}
-                style={[smallerCardText(type.display), { color: colors.ink, fontSize: cardText(22), lineHeight: 27 }]}
-              >
-                {activeTenancy.property.name}
-              </FitText>
-            </View>
-            {/* Hidden before the start date. "Active" there is the record's
-                status, not the tenant's reality, and the bubble below already
-                says when it begins. */}
-            <CardStatus>{tenancyNotStarted(activeTenancy.tenancy.startDate) ? null : (
-              <TenancyStatusPill status={activeTenancy.tenancy.status} />
-            )}</CardStatus>
-          </CardNameRow>
+      {/* The owner's Property card, on the tenant's side (user, 2026-11-11):
+          the tenancy code and status, the property and its address, then the
+          room, floor and rent. */}
+      <PropertyStayCard
+        address={addressParts.filter(Boolean).join(", ")}
+        addressAccessory={<DirectionsButton borderColor="#9E77ED" parts={addressParts} />}
+        badge={null}
+        name={activeTenancy.property.name}
+        referenceCode={tenancy.referenceCode}
+      >
+        <FactColumn label="Room" value={activeTenancy.room.roomNumber} />
+        <FactColumn divided dividerColor={colors.borderStrong} label="Floor" value={formatFloor(activeTenancy.room.floor)} />
+        <FactColumn divided dividerColor={colors.borderStrong} label="Rent" value={formatOptionalMoney(rentAmount)} />
+      </PropertyStayCard>
 
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            <View style={{ alignItems: "center", width: 24 }}>
-              <MapPin color={colors.muted} size={18} strokeWidth={1.9} />
-            </View>
-            <Text style={[type.body, { color: colors.muted, flex: 1 }]}>
-              {[
-                activeTenancy.property.address,
-                activeTenancy.property.city,
-                activeTenancy.property.state,
-                activeTenancy.property.pincode,
-              ]
-                .filter(Boolean)
-                .join(", ")}
-            </Text>
-            {/* The same control the discovery listing carries, so getting to a
-                property you are considering and getting to the one you live in
-                are the same button. No stored maps link on this side — the
-                tenant's property summary does not carry one — so it searches
-                the address it is showing. */}
-            <DirectionsButton
-              parts={[
-                activeTenancy.property.address,
-                activeTenancy.property.city,
-                activeTenancy.property.state,
-                activeTenancy.property.pincode,
-              ]}
-            />
-          </View>
-        </View>
-      </Card>
+      {/* The stay's status as its own slim bar under the property (user, 2026-11-11). */}
+      {tenancyNotStarted(tenancy.startDate) ? null : <StayStatusBar startDate={tenancy.startDate} status={tenancy.status} />}
 
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <TenancyStat icon={CalendarDays} label="Started" value={formatDate(activeTenancy.tenancy.startDate)} />
-        <TenancyStat
-          icon={CalendarDays}
-          label="Ending"
-          value={activeTenancy.tenancy.checkoutDate || activeTenancy.tenancy.agreementEndDate
-            ? formatDate(activeTenancy.tenancy.checkoutDate ?? activeTenancy.tenancy.agreementEndDate!)
-            : "----"}
-        />
-      </View>
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
-        <TenancyStat icon={ReceiptText} label="Billing" value={humanizeToken(activeTenancy.tenancy.billingType)} />
-        <TenancyStat
-          icon={FileSignature}
-          label="Agreement"
-          value={activeTenancy.tenancy.agreementValidityMonths != null
-            ? `${activeTenancy.tenancy.agreementValidityMonths} ${activeTenancy.tenancy.agreementValidityMonths === 1 ? "month" : "months"}`
-            : "Indefinite"}
-        />
-      </View>
-
-      {/* The owner's field card, rows and type scale unchanged: a muted
-          caption label with a 15pt bold value under it, rules inset from the
-          card's corners. This side had its own scale — a 16pt heading, a 20pt
-          blue figure, 900-weight values pushed to the right margin — so the same
-          stay read as two different records depending on who opened it.
-          <p>Rent and room share one ruled pair. They are both facts about where
-          the money goes, and each on its own row left the card three rows tall
-          to say two things. Tenancy ID keeps a row to itself: it is the string a
-          tenant is asked to quote, and in half a row the mono code came back
-          shrunk. Property location has gone — the address is on the card above,
-          in full, and printing the city again under it was the same fact
-          twice. */}
-      <FlatCard>
-        <FieldPair
-          left={<ReadonlyField icon={IndianRupee} label="Room rent" value={formatOptionalMoney(rentAmount)} />}
-          right={
-            <ReadonlyField
-              icon={BedDouble}
-              label="Room / Floor"
-              value={`${activeTenancy.room.roomNumber}${
-                activeTenancy.room.floor ? ` · ${formatFloor(activeTenancy.room.floor)}` : ""
-              }`}
-            />
-          }
-        />
-        <CardRule />
-        {/* One line, in the pair's own columns — so the code starts exactly
-            under "101 · Floor 1" rather than at the card's right margin. */}
-        <AlignedFieldRow copyable icon={KeyRound} label="Tenancy ID" mono value={activeTenancy.tenancy.referenceCode} />
-      </FlatCard>
+      {/* Start to end on one card, in place of four tiles. */}
+      <StayTimelineCard
+        billing={humanizeToken(tenancy.billingType)}
+        deposit={formatOptionalMoney(tenancy.depositAmountPaise)}
+        endDate={endDate}
+        startDate={tenancy.startDate}
+        term={term}
+      />
 
       {/* Before the start date only. Nothing renders once the stay has begun. */}
-      <TenancyStartsSoonBubble startDate={activeTenancy.tenancy.startDate} />
+      <TenancyStartsSoonBubble startDate={tenancy.startDate} />
 
-        {/* Bordered, not filled. A pale blue ground is banned app-wide — blue
-            survives here as the glyph and the label. */}
-        <AnimatedPressable
-          accessibilityRole="button"
-          onPress={onViewAgreement}
-          style={{
-            alignItems: "center",
-            borderColor: colors.border,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            borderWidth: 1,
-            flexDirection: "row",
-            gap: spacing.sm,
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm + 2,
-          }}
-        >
-          <FileSignature color={colors.primary} size={16} strokeWidth={2.2} />
-          <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13 }}>
-            Under agreement
-          </Text>
-          <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13 }}>
-            View
-          </Text>
-          <ChevronRight color={colors.primary} size={16} strokeWidth={2.3} />
-        </AnimatedPressable>
+      {/* The checklist and the roommates as a pair (user, 2026-11-11). */}
+      {checklist ? <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>{checklist}<RoommatesCard /></View> : null}
+
+      <AgreementHeroCard
+        onView={onViewAgreement}
+        term={months != null ? `${term} fixed term` : "No fixed end"}
+        termNote={endDate ? `Runs until ${formatDate(endDate)}.` : "Your stay continues until you or the property gives notice."}
+      />
     </>
+  );
+}
+
+/** The stay's status, a slim full-width bar with a dot and since when (user, 2026-11-11). */
+function StayStatusBar({ startDate, status }: { startDate: string; status: string }) {
+  const { colors, fonts } = useTheme();
+  const tone = tenancyStatusTone(status);
+  const dot = tone === "success" ? colors.jade : tone === "warning" ? colors.warningText : tone === "danger" ? colors.danger : colors.muted;
+  const background = tone === "success" ? colors.successSoft : tone === "warning" ? colors.warningSoft : tone === "danger" ? colors.dangerSoft : colors.neutralSoft;
+  const text = tone === "success" ? colors.successText : tone === "warning" ? colors.warningText : tone === "danger" ? colors.danger : colors.neutralText;
+  return (
+    // The checklist tile's edge, in the status's own tone (user, 2026-11-11).
+    <View style={{ alignItems: "center", backgroundColor: background, borderColor: tone === "success" ? "#A6F4C5" : tone === "warning" ? "#FEDF89" : tone === "danger" ? "#FECDCA" : colors.border, borderRadius: 999, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 36, paddingHorizontal: spacing.md }}>
+      <View style={{ backgroundColor: dot, borderRadius: 999, height: 8, width: 8 }} />
+      <Text style={{ color: text, fontFamily: fonts.sansBold, fontSize: 13 }}>{tenancyStatusLabel(status as TenancyStatus)}</Text>
+      {status === "ACTIVE" ? (
+        <Text style={{ color: text, flex: 1, fontFamily: fonts.sansMedium, fontSize: 12.5, opacity: 0.8, textAlign: "right" }}>Since {formatDate(startDate)}</Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -692,417 +357,6 @@ function TenancyStatusPill({ status }: { status: string }) {
   );
 }
 
-/**
- * A section that is really a doorway: one figure and a chevron.
- *
- * <p>
- * Used where the tab used to carry a summary AND a button to the screen that
- * summarises it properly. The number here is the one a tenant would open the
- * screen to check — a balance, a count of open requests — and everything else
- * waits on the other side rather than being previewed badly out here.
- */
-/**
- * The door to every bill on the stay.
- *
- * <p>
- * It used to be one line — "3 to pay", or "12 bills" when nothing was owed —
- * which is two different facts taking turns in the same slot. A reader with
- * nothing outstanding saw a total, a reader with something outstanding saw a
- * count of the outstanding, and neither could tell which they were looking at
- * without already knowing the answer.
- *
- * <p>
- * So all three are stated at once and each is labelled: how many bills there
- * are, how many are still to pay, and what that comes to. A strip of stats
- * rather than a headline, because none of the three is more important than the
- * others — the money is what a tenant acts on, the counts are what they check.
- */
-function AllBillsCard({
-  dueNowPaise,
-  hasUnpaid,
-  onPress,
-  payableCount,
-  totalCount,
-}: {
-  dueNowPaise: number;
-  hasUnpaid: boolean;
-  onPress: () => void;
-  payableCount: number;
-  totalCount: number;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const owing = payableCount > 0;
-
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        gap: spacing.md,
-        padding: spacing.md,
-      }}
-    >
-      {/* Only the header navigates. The metrics below remain readable, static data. */}
-      <AnimatedPressable
-        accessibilityLabel={`View your bills. ${totalCount} bill${totalCount === 1 ? "" : "s"}, ${payableCount} to pay, ${formatMoney(dueNowPaise)} due.`}
-        accessibilityRole="button"
-        onPress={onPress}
-        style={{ alignItems: "center", borderRadius: radii.lg, flexDirection: "row", gap: spacing.md }}
-      >
-        {/* Landscape, so a wider box than a square: `contain` fits to the
-            narrower side, and a 3:2 image in a square renders two thirds the
-            height and reads as a shrunken version of itself. */}
-        <Image
-          accessibilityIgnoresInvertColors
-          accessible={false}
-          resizeMode="contain"
-          source={BILLS_ARTWORK}
-          style={{ height: 44, width: 64 }}
-        />
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>All bills on this stay</Text>
-          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
-            My Bills
-          </FitText>
-        </View>
-        <SummaryChevron hasUpdate={hasUnpaid} />
-      </AnimatedPressable>
-
-      <View style={{ backgroundColor: colors.border, height: 1 }} />
-
-      {/* Three columns, divided by hairlines rather than spaced apart: without
-          the rules the labels drift under the wrong numbers on a narrow phone. */}
-      <View style={{ flexDirection: "row" }}>
-        <BillStat label="Bills" value={String(totalCount)} />
-        <BillStat
-          divided
-          label="To pay"
-          tone={owing ? colors.danger : colors.ink}
-          value={String(payableCount)}
-        />
-        <BillStat divided label="Due now" tone={owing ? colors.danger : colors.ink} value={formatMoney(dueNowPaise)} />
-      </View>
-    </View>
-  );
-}
-
-function StayRequestsCard({
-  hasUpdate,
-  onPress,
-}: {
-  hasUpdate: boolean;
-  onPress: () => void;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        padding: spacing.md,
-      }}
-    >
-      <AnimatedPressable
-        accessibilityLabel="View your requests"
-        accessibilityRole="button"
-        onPress={onPress}
-        style={{ alignItems: "center", borderRadius: radii.lg, flexDirection: "row", gap: spacing.md }}
-      >
-        <Image
-          accessibilityIgnoresInvertColors
-          accessible={false}
-          resizeMode="contain"
-          source={REQUESTS_ARTWORK}
-          style={{ height: 48, width: 64 }}
-        />
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>On this stay</Text>
-          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
-            My Requests
-          </FitText>
-        </View>
-        <SummaryChevron hasUpdate={hasUpdate} />
-      </AnimatedPressable>
-    </View>
-  );
-}
-
-function TenantConcernsCard({
-  closedCount,
-  hasUpdate,
-  onPress,
-  openCount,
-  totalCount,
-}: {
-  closedCount: number;
-  hasUpdate: boolean;
-  onPress: () => void;
-  openCount: number;
-  totalCount: number;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        gap: spacing.md,
-        padding: spacing.md,
-      }}
-    >
-      <AnimatedPressable
-        accessibilityLabel="View your concerns"
-        accessibilityRole="button"
-        onPress={onPress}
-        style={{ alignItems: "center", borderRadius: radii.lg, flexDirection: "row", gap: spacing.md }}
-      >
-        <Image
-          accessibilityIgnoresInvertColors
-          accessible={false}
-          resizeMode="contain"
-          source={CONCERNS_ARTWORK}
-          style={{ height: 50, width: 58 }}
-        />
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>On this stay</Text>
-          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
-            My Concerns
-          </FitText>
-        </View>
-        <SummaryChevron hasUpdate={hasUpdate} />
-      </AnimatedPressable>
-
-      <View style={{ backgroundColor: colors.border, height: 1 }} />
-
-      <View style={{ flexDirection: "row" }}>
-        <ConcernStat label="Open" value={String(openCount)} />
-        <ConcernStat divided label="Closed" value={String(closedCount)} />
-        <ConcernStat divided label="Total" value={String(totalCount)} />
-      </View>
-    </View>
-  );
-}
-
-function SummaryChevron({ hasUpdate }: { hasUpdate?: boolean }) {
-  const { colors } = useTheme();
-  return (
-    <View
-      pointerEvents="none"
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.neutralSoft,
-        borderRadius: 999,
-        height: 34,
-        justifyContent: "center",
-        width: 34,
-      }}
-    >
-      <ChevronRight color={colors.muted} size={17} strokeWidth={2.3} />
-      {hasUpdate ? (
-        <View
-          pointerEvents="none"
-          style={{
-            backgroundColor: colors.danger,
-            borderColor: colors.surface,
-            borderRadius: 999,
-            borderWidth: 2,
-            height: 10,
-            position: "absolute",
-            right: -2,
-            top: -2,
-            width: 10,
-          }}
-        />
-      ) : null}
-    </View>
-  );
-}
-
-function ConcernStat({
-  divided,
-  label,
-  value,
-}: {
-  divided?: boolean;
-  label: string;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        borderLeftColor: colors.border,
-        borderLeftWidth: divided ? 1 : 0,
-        flex: 1,
-        gap: 1,
-        minWidth: 0,
-        paddingHorizontal: spacing.xs,
-      }}
-    >
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 17, textAlign: "left" }}>{value}</Text>
-      <Text style={[type.caption, { color: colors.kicker, textAlign: "left" }]}>{label}</Text>
-    </View>
-  );
-}
-
-/** One column of the bills strip: the number, and what it counts. */
-function BillStat({
-  divided,
-  label,
-  tone,
-  value,
-}: {
-  /** A hairline on the leading edge — every column but the first. */
-  divided?: boolean;
-  label: string;
-  tone?: string;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View
-      style={{
-        borderLeftColor: colors.border,
-        borderLeftWidth: divided ? 1 : 0,
-        flex: 1,
-        gap: 2,
-        minWidth: 0,
-        paddingLeft: divided ? spacing.sm : 0,
-      }}
-    >
-      <FitText numberOfLines={1} style={{ color: tone ?? colors.ink, fontFamily: fonts.sansBold, fontSize: 17 }}>
-        {value}
-      </FitText>
-      <Text style={[type.caption, { color: colors.kicker }]}>{label}</Text>
-    </View>
-  );
-}
-
-function EntryCard({
-  artwork,
-  icon: Icon,
-  label,
-  onPress,
-  value,
-}: {
-  /** A drawing rather than a glyph, where the module already has one. */
-  artwork?: ImageSourcePropType;
-  icon?: typeof CalendarDays;
-  label: string;
-  /** Absent when there is nothing behind the card yet: no chevron, muted value. */
-  onPress?: () => void;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-  const cardStyle = {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.borderStrong,
-    borderCurve: "continuous",
-    borderRadius: radii.card,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.md,
-    padding: spacing.md,
-  } as const;
-  const content = (
-    <>
-      {artwork ? (
-        <Image
-          accessibilityIgnoresInvertColors
-          accessible={false}
-          resizeMode="contain"
-          source={artwork}
-          style={{ height: 38, width: 38 }}
-        />
-      ) : Icon ? (
-        <Icon color={colors.primary} size={26} strokeWidth={2} />
-      ) : null}
-      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>{label}</Text>
-        <FitText
-          numberOfLines={1}
-          style={{ color: onPress ? colors.ink : colors.muted, fontFamily: fonts.sansBold, fontSize: 17 }}
-        >
-          {value}
-        </FitText>
-      </View>
-      {onPress ? <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} /> : null}
-    </>
-  );
-
-  if (!onPress) {
-    return (
-      <View accessibilityLabel={`${label}, ${value}`} style={cardStyle}>
-        {content}
-      </View>
-    );
-  }
-  return (
-    <AnimatedPressable accessibilityLabel={`${label}, ${value}`} accessibilityRole="button" onPress={onPress} style={cardStyle}>
-      {content}
-    </AnimatedPressable>
-  );
-}
-
-/**
- * One of the two things a tenant can ask for.
- *
- * <p>A tile rather than a card with a paragraph. The two are alternatives to
- * each other, and side by side they read as one question — which is what they
- * are — where two stacked cards read as two unrelated features.
- */
-function RequestTile({
-  disabled = false,
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  disabled?: boolean;
-  icon: typeof CalendarDays;
-  label: string;
-  onPress: () => void;
-}) {
-  const { colors, fonts } = useTheme();
-
-  return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={disabled ? undefined : onPress}
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        flex: 1,
-        gap: spacing.xs,
-        justifyContent: "center",
-        opacity: disabled ? 0.55 : 1,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: spacing.md,
-      }}
-    >
-      <Icon color={colors.primary} size={22} strokeWidth={2} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>{label}</Text>
-    </AnimatedPressable>
-  );
-}
 
 function TenancyStat({
   icon: Icon,
@@ -1180,9 +434,6 @@ function ThinDivider() {
 
 /** What the Pay button says, which is always the next thing to do about it. */
 
-type TenantRequestHistoryItem =
-  | (TenancyExitRequest & { requestKind: "EXIT" })
-  | (TenancyRoomChangeRequest & { requestKind: "ROOM_CHANGE" });
 
 function tenancyStatusTone(status: string) {
   if (status === "ACTIVE") {
@@ -1225,30 +476,8 @@ function DetailLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function compareCycles(left: BillingCycle, right: BillingCycle) {
-  return (right.cycleNumber ?? 0) - (left.cycleNumber ?? 0);
-}
 
-function compareRequests(left: { updatedAt: string; createdAt: string }, right: { updatedAt: string; createdAt: string }) {
-  return new Date(right.updatedAt ?? right.createdAt).getTime() - new Date(left.updatedAt ?? left.createdAt).getTime();
-}
 
-function mergedRequests(
-  exitRequests: TenancyExitRequest[] = [],
-  roomChangeRequests: TenancyRoomChangeRequest[] = [],
-  tenancyId?: string,
-): TenantRequestHistoryItem[] {
-  const exits = buildExitRequestChains(exitRequests)
-    .map((chain) => chain.head)
-    .filter((request) => !tenancyId || request.tenancyId === tenancyId)
-    .map((request) => ({ ...request, requestKind: "EXIT" as const }));
-  const roomChanges = buildRoomChangeRequestChains(roomChangeRequests)
-    .map((chain) => chain.head)
-    .filter((request) => !tenancyId || request.tenancyId === tenancyId)
-    .map((request) => ({ ...request, requestKind: "ROOM_CHANGE" as const }));
-
-  return [...exits, ...roomChanges];
-}
 
 function requestStatusTone(status: string) {
   if (status === "APPROVED" || status === "EXECUTED") {
@@ -1260,13 +489,6 @@ function requestStatusTone(status: string) {
   return "neutral";
 }
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat("en-IN", {
-    currency: "INR",
-    maximumFractionDigits: value % 100 === 0 ? 0 : 2,
-    style: "currency",
-  }).format(value / 100);
-}
 
 function formatOptionalMoney(value?: number | null) {
   return typeof value === "number" ? formatMoney(value) : "Not set";
@@ -1287,11 +509,3 @@ function humanizeToken(value: string) {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function uniqueConcerns(concerns: ConcernSummary[]) {
-  const seen = new Set<string>();
-  return concerns.filter((concern) => {
-    if (seen.has(concern.id)) return false;
-    seen.add(concern.id);
-    return true;
-  });
-}

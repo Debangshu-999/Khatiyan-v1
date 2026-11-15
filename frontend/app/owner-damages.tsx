@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { EmptyDamage } from "@/components/empty-art";
 import { ActivityIndicator, Text, View } from "react-native";
-import { Plus } from "lucide-react-native";
+import { ChevronDown, Plus } from "lucide-react-native";
 import { LoadFailed } from "@/components/load-failed";
 import { DamagesIcon } from "@/features/property/property-control-icons";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
+import { InPageDropdown, useInPageDropdown } from "@/components/anchored-dropdown";
+import { PILL_CHOICE_MAX_WIDTH, pillChoice } from "@/components/filtered-queue";
+import { SearchField } from "@/components/search-field";
+import { DAMAGE_LEVEL_OPTIONS, type DamageLevelFilter } from "@/features/damage/tenant-damage-records";
+import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { ListEnd } from "@/components/list-end";
 import { NotchedInput } from "@/components/notched-input";
 import { ScreenHeader } from "@/components/screen-header";
@@ -49,7 +55,7 @@ const ORDER: DamageLevel[] = ["NA", "D1", "D2", "D3"];
  * onboarding never shows the damage. The charge is untouched by a fix.
  */
 export default function OwnerDamagesScreen() {
-  const { colors } = useTheme();
+  const { colors, fonts } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const { managedProperties, ownedProperties, loading: accountsLoading } = useAvailableAccounts();
   const property = [...ownedProperties, ...managedProperties].find((item) => item.id === selectedPropertyId) ?? null;
@@ -66,8 +72,18 @@ export default function OwnerDamagesScreen() {
 
   // Separate infinite caches retain each tab's pages. Tag invalidation refetches all
   // cached pages after a repair, edit, deletion or charge, not just the final page.
-  const openQuery = useGetDamageRecordPagesInfiniteQuery({ history: false, propertyId }, { skip: !propertyId || tab !== "open" });
-  const historyQuery = useGetDamageRecordPagesInfiniteQuery({ history: true, propertyId }, { skip: !propertyId || tab !== "history" });
+  // The tenant screen's sticky search by damage ID or item, with a level dropdown (user, 2026-11-14),
+  // searched on the server so a match on a later page is found too.
+  const [search, setSearch] = useState("");
+  const [level, setLevel] = useState<DamageLevelFilter>("ALL");
+  const searched = useDebouncedValue(search.trim(), 300);
+  const levelArg = level === "ALL" ? null : level;
+  // Drawn in the screen, not a modal window: the modal's list landed over the pill on a phone.
+  const levelMenu = useInPageDropdown();
+  const chosenLevel = DAMAGE_LEVEL_OPTIONS.find((option) => option.value === level) ?? DAMAGE_LEVEL_OPTIONS[0];
+  const filtering = Boolean(searched) || level !== "ALL";
+  const openQuery = useGetDamageRecordPagesInfiniteQuery({ history: false, level: levelArg, propertyId, search: searched }, { skip: !propertyId || tab !== "open" });
+  const historyQuery = useGetDamageRecordPagesInfiniteQuery({ history: true, level: levelArg, propertyId, search: searched }, { skip: !propertyId || tab !== "history" });
   const open = useMemo(() => [...new Map(openQuery.currentData?.pages.flatMap((page) => page.records.items).map((record) => [record.id, record]) ?? []).values()], [openQuery.currentData]);
   const history = useMemo(() => [...new Map(historyQuery.currentData?.pages.flatMap((page) => page.records.items).map((record) => [record.id, record]) ?? []).values()], [historyQuery.currentData]);
   const list = tab === "open" ? open : history;
@@ -81,6 +97,9 @@ export default function OwnerDamagesScreen() {
   const viewportHeight = useRef(0);
   const contentHeight = useRef(0);
   const scrollOffset = useRef(0);
+  // Where the search row rests, and whether the list has scrolled it into its pinned place.
+  const searchRestY = useRef(0);
+  const [searchPinned, setSearchPinned] = useState(false);
   const loadMore = useCallback(() => {
     if (!query.hasNextPage || query.isFetching || query.isError || !pages) return;
     if (viewportHeight.current > 0 && contentHeight.current - scrollOffset.current - viewportHeight.current <= 240) void query.fetchNextPage();
@@ -89,11 +108,19 @@ export default function OwnerDamagesScreen() {
   useEffect(() => { loadMore(); }, [loadMore]);
 
   return (
-    <View style={{ backgroundColor: colors.background, flex: 1 }}>
-      <ScreenScrollView safeAreaEdges={["top"]}
+    <View collapsable={false} ref={levelMenu.host} style={{ backgroundColor: colors.background, flex: 1 }}>
+      <ScreenScrollView safeAreaEdges={["top"]} stickyHeaderIndices={loading ? [] : [2]}
         onLayout={(event) => { viewportHeight.current = event.nativeEvent.layout.height; loadMore(); }}
         onContentSizeChange={(_, height) => { contentHeight.current = height; loadMore(); }}
-        onScroll={({ nativeEvent }) => { scrollOffset.current = nativeEvent.contentOffset.y; loadMore(); }}
+        onScroll={({ nativeEvent }) => {
+          scrollOffset.current = nativeEvent.contentOffset.y;
+          const pinned = searchRestY.current > 0 && nativeEvent.contentOffset.y >= searchRestY.current;
+          if (pinned !== searchPinned) {
+            setSearchPinned(pinned);
+            if (pinned) levelMenu.close();
+          }
+          loadMore();
+        }}
         scrollEventThrottle={16}
       >
         {loading ? <OwnerDamagesScreenSkeleton history={tab === "history"} /> : <>
@@ -116,6 +143,40 @@ export default function OwnerDamagesScreen() {
           ]}
         />
 
+        {/* Sticks under the header. On a phone a sticky child's style moves to a wrapper: the row needs its own View. */}
+        {/* Pinned, the search gets more room under it (user, 2026-11-14): a strip of the
+            page's colour hangs below it while the list scrolls beneath, and goes at the top,
+            so nothing in the layout moves. */}
+        <View
+          onLayout={(event) => { searchRestY.current = event.nativeEvent.layout.y; }}
+          style={{ backgroundColor: colors.background, marginHorizontal: -spacing.lg, paddingBottom: spacing.xs, paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}
+        >
+          {searchPinned ? (
+            <View pointerEvents="none" style={{ backgroundColor: colors.background, bottom: -spacing.sm, height: spacing.sm, left: 0, position: "absolute", right: 0 }} />
+          ) : null}
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <SearchField onChangeText={setSearch} placeholder="Search by damage ID or item" value={search} />
+            </View>
+            <View collapsable={false} ref={levelMenu.ref}>
+              <AnimatedPressable
+                accessibilityLabel={`Damage level: ${chosenLevel.label}`}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: Boolean(levelMenu.trigger) }}
+                // Pinned after a scroll it is a plain pill: no chevron, nothing to open (user, 2026-11-14).
+                disabled={searchPinned}
+                onPress={searchPinned ? undefined : levelMenu.open}
+                style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: `${colors.ink}40`, borderRadius: 999, borderWidth: 1, flexDirection: "row", gap: 4, height: 36, paddingLeft: spacing.md, paddingRight: spacing.sm }}
+              >
+                <Text ellipsizeMode="tail" numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 12.5, maxWidth: PILL_CHOICE_MAX_WIDTH }}>
+                  {pillChoice(chosenLevel.short)}
+                </Text>
+                {searchPinned ? null : <ChevronDown color={colors.ink} size={15} strokeWidth={2.4} />}
+              </AnimatedPressable>
+            </View>
+          </View>
+        </View>
+
         {/* With records, Record sits above them. Without, it sits under the empty state (user, 2026-10-29). */}
         {tab === "open" && openCount > 0 ? (
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
@@ -136,8 +197,9 @@ export default function OwnerDamagesScreen() {
                 <RecordButton onPress={() => setRecording(true)} />
               </View>
             ) : undefined}
-            artworkNode={<DamagesIcon size={72} />}
-            title={tab === "open" ? "No open damages" : "No repairs yet"}
+            artworkNode={<EmptyDamage size={120} />}
+            description={filtering ? "Try another search or damage level." : undefined}
+            title={filtering ? "No matching records" : tab === "open" ? "No open damages" : "No repairs yet"}
           />
         ) : tab === "open" ? (
           <View style={{ gap: spacing.md }}>
@@ -169,6 +231,27 @@ export default function OwnerDamagesScreen() {
         ) : null}
         </>}
       </ScreenScrollView>
+
+      {levelMenu.trigger && !searchPinned ? (
+        <InPageDropdown onClose={levelMenu.close} trigger={levelMenu.trigger} width={180}>
+          {DAMAGE_LEVEL_OPTIONS.map((option) => (
+            <AnimatedPressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: option.value === level }}
+              key={option.value}
+              onPress={() => {
+                setLevel(option.value);
+                levelMenu.close();
+              }}
+              style={{ backgroundColor: option.value === level ? colors.surfaceSunken : colors.surface, padding: spacing.md }}
+            >
+              <Text style={{ color: colors.ink, fontFamily: option.value === level ? fonts.sansBold : fonts.sansMedium, fontSize: 14 }}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </InPageDropdown>
+      ) : null}
 
       {recording ? <RecordDamageSheet onClose={() => setRecording(false)} propertyId={propertyId} /> : null}
       {editing ? <RecordDamageSheet onClose={() => setEditing(null)} propertyId={propertyId} record={editing} /> : null}
@@ -224,20 +307,18 @@ function FixSheet({
   const policiesQuery = useGetPropertyExitPoliciesQuery(propertyId);
   const [repair, repairState] = useRepairDamageRecordMutation();
   const [replace, replaceState] = useReplaceDamageRecordMutation();
-  const below = ORDER.slice(0, ORDER.indexOf(record.damageLevel));
-  const [level, setLevel] = useState<DamageLevel>(below[below.length - 1] ?? "NA");
+  // A fix is recorded with its photos, no level asked (user, 2026-11-07: levels are only price tiers).
   const [photos, setPhotos] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const [tried, setTried] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const levelWords = policiesQuery.data?.damageLevels ?? [];
   const busy = repairState.isLoading || replaceState.isLoading;
   const label = outcome === "repair" ? "Mark repaired" : "Mark replaced";
 
   async function submit() {
     setTried(true);
     if (photos.length === 0) return;
-    const payload = { level: outcome === "repair" ? level : "NA" as DamageLevel, note: note.trim() || null, photoUrls: photos };
+    const payload = { level: null, note: note.trim() || null, photoUrls: photos };
     try {
       if (outcome === "repair") {
         await repair({ payload, propertyId, recordId: record.id, version: record.version }).unwrap();
@@ -265,11 +346,9 @@ function FixSheet({
       title={`${label}: ${record.itemName}`}
     >
       <View style={{ gap: spacing.md }}>
-        {outcome === "repair" ? (
-          <DamageLevelDropdown label="Level now" levels={levelWords} onChange={setLevel} options={below} value={level} />
-        ) : (
-          <Text style={[type.description, { color: colors.muted }]}>A replacement is new, so its level goes to NA.</Text>
-        )}
+        <Text style={[type.description, { color: colors.muted }]}>
+          {outcome === "repair" ? "Records the fix and moves this damage to History." : "Records the new one and moves this damage to History."}
+        </Text>
         <View style={{ gap: spacing.xs }}>
           <MultiImageField
             label={`Photos of the ${outcome === "repair" ? "fix" : "new one"} (${photos.length}/3) *`}
@@ -281,7 +360,6 @@ function FixSheet({
           {tried && photos.length === 0 ? <Text style={[type.caption, { color: colors.danger }]}>Add at least one photo</Text> : null}
         </View>
         <NotchedInput label="Note" maxLength={300} onChangeText={setNote} placeholder={outcome === "repair" ? "Grille straightened" : "New unit fitted"} value={note} />
-        <NoticeBar message="They replace the item's photos for the next onboarding." selectable={false} title="These photos carry over" tone="info" />
         {record.splitNumber ? (
           <Text style={[type.description, { color: colors.muted }]}>There is one {record.itemName}, so this moves every split of {record.code} to History.</Text>
         ) : null}

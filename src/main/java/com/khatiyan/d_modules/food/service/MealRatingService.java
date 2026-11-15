@@ -83,7 +83,7 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 public class MealRatingService {
 
-    private static final int RATING_DAYS = 30;
+    public static final int RATING_DAYS = 30;
     private static final int ANALYSIS_WEEK = 7;
     private static final int MAX_REVIEW_CHARS = 300;
     /** Groq's free tier allows 8K tokens a minute, and 12,000 characters is about 3,000 of them. */
@@ -156,8 +156,17 @@ public class MealRatingService {
     @Transactional(readOnly = true)
     public MealRatingPromptResponse myPrompt(UUID tenantUserId) {
         return offer(tenantUserId)
-                .map(offer -> new MealRatingPromptResponse(offer.date(), offer.meal(), offer.dishes()))
+                .map(offer -> new MealRatingPromptResponse(offer.date(), offer.meal(), offer.dishes(),
+                        oneDecimal(store.mealAverage(offer.tenancy().propertyId(), offer.date(), offer.meal())),
+                        store.mine(offer.tenancy().propertyId(), offer.date(), offer.meal(), offer.tenancy().id()).stream()
+                                .map(rating -> new MealRatingPromptResponse.MyRating(rating.itemId(), rating.rating(),
+                                        rating.review()))
+                                .toList()))
                 .orElse(null);
+    }
+
+    private static Double oneDecimal(Double value) {
+        return value == null ? null : Math.round(value * 10) / 10.0;
     }
 
     @Transactional
@@ -187,11 +196,9 @@ public class MealRatingService {
             }
             ratings.add(new NewRating(entry.itemId(), entry.rating(), review));
         }
-        int inserted = store.insert(offer.tenancy().propertyId(), offer.date(), offer.meal(), offer.tenancy().id(),
+        // A second submit replaces the first while the meal is on offer (user, 2026-11-14).
+        store.replace(offer.tenancy().propertyId(), offer.date(), offer.meal(), offer.tenancy().id(),
                 tenantUserId, offer.profileId(), ratings);
-        if (inserted == 0) {
-            throw new ValidationException("You have already rated this meal.");
-        }
     }
 
     /**
@@ -235,7 +242,9 @@ public class MealRatingService {
         List<MealAttendanceStore.Row> roster = attendanceStore.findForMeal(propertyId, date, meal);
         boolean scanned = roster.stream().anyMatch(row -> row.attendedAt() != null);
         boolean ate = roster.stream().anyMatch(row -> row.tenancyId().equals(tenancy.id()) && row.attendedAt() != null);
-        if ((scanned && !ate) || store.hasRated(propertyId, date, meal, tenancy.id())) {
+        // Rated or not, the meal stays on offer until the next one starts, so a
+        // rating can be changed (user, 2026-11-14).
+        if (scanned && !ate) {
             return Optional.empty();
         }
         Map<UUID, FoodItem> byId = itemRepository.findAllById(items).stream()

@@ -34,7 +34,8 @@ export type DamageRecord = {
   roomLabel: string | null;
   itemName: string;
   section: "ROOM" | "BATHROOM";
-  damageLevel: DamageLevel;
+  /** Null when recorded with the property's damage levels off (2026-11-07). */
+  damageLevel: DamageLevel | null;
   costPaise: number;
   note: string | null;
   photoUrls: string[];
@@ -71,7 +72,8 @@ export type SaveDamageRecordPayload = {
   roomId: string;
   itemName: string;
   section: "ROOM" | "BATHROOM";
-  damageLevel: DamageLevel;
+  /** Null when recorded with the property's damage levels off (2026-11-07). */
+  damageLevel: DamageLevel | null;
   costPaise: number;
   note: string | null;
   photoUrls: string[];
@@ -101,12 +103,16 @@ const base = (propertyId: string) => `/api/v1/billing/properties/${propertyId}/d
 
 export const damageApi = api.injectEndpoints({
   endpoints: (builder) => ({
-    getDamageRecordPages: builder.infiniteQuery<DamageRecordPage, { propertyId: string; history: boolean }, number>({
+    getDamageRecordPages: builder.infiniteQuery<DamageRecordPage, { propertyId: string; history: boolean; search?: string; level?: DamageLevel | null }, number>({
       infiniteQueryOptions: {
         initialPageParam: 0,
         getNextPageParam: (lastPage) => lastPage.records.hasNext ? lastPage.records.page + 1 : undefined,
       },
-      query: ({ queryArg: { propertyId, history }, pageParam }) => `${base(propertyId)}/page?history=${history}&page=${pageParam}&size=10`,
+      // A search on the code or item, and one level, done by the server (user, 2026-11-14).
+      query: ({ queryArg: { propertyId, history, search, level }, pageParam }) =>
+        `${base(propertyId)}/page?history=${history}&page=${pageParam}&size=10`
+        + (search?.trim() ? `&search=${encodeURIComponent(search.trim())}` : "")
+        + (level ? `&level=${level}` : ""),
       providesTags: ["DamageRecords"],
     }),
 

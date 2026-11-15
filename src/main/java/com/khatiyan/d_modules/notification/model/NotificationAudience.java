@@ -28,6 +28,8 @@ public enum NotificationAudience {
         return switch (subtype) {
             case CONCERN_RAISED, CONCERN_ASSIGNED, CONCERN_REOPENED,
                     TENANCY_EXIT_REQUESTED, TENANCY_EXIT_CANCELLED,
+                    // Who is away is the property's to know (2026-11-08).
+                    TENANCY_STAY_OUT_DECLARED, TENANCY_STAY_OUT_CHANGED, TENANCY_STAY_OUT_CANCELLED,
                     MANAGER_ASSIGNED, MANAGER_REMOVED,
                     ROOM_MAINTENANCE_STARTED, ROOM_MAINTENANCE_ENDED,
                     ROOM_DEACTIVATED, ROOM_REACTIVATED,
@@ -102,7 +104,11 @@ public enum NotificationAudience {
                     BOOKING_YOUR_TURN, BOOKING_BOOK_AFTER_VISIT,
                     // A meal on the tenant's plan moved. Only tenants on a meal
                     // plan are told, and they read it in their stay.
-                    FOOD_MEAL_DELAYED -> TENANT;
+                    FOOD_MEAL_DELAYED,
+                    // The rest of the food notices (P1.5.h, 2026-11-08), told
+                    // only to tenants on a plan, read in their stay.
+                    FOOD_DISH_UNAVAILABLE, FOOD_DISH_AVAILABLE, FOOD_MENU_CHANGED,
+                    FOOD_MEAL_TIMINGS_CHANGED -> TENANT;
             // Account-level, like the other auth subtypes: a sign-in belongs to
             // the PERSON, not to a property workspace. Someone with both an
             // owner and a tenant account must see it in whichever they are in.

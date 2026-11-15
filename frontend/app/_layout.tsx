@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { RememberOwnerProperty } from "@/features/owner/remember-owner-property";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { Provider } from "react-redux";
@@ -103,6 +104,8 @@ function ThemedRootStack() {
       <StatusBar style={isDark ? "light" : "dark"} />
       {/* Above the navigator so it can announce an expiry from any screen. */}
       <SessionExpiryGuard />
+      {/* Opens on the property last selected (user, 2026-11-14). */}
+      <RememberOwnerProperty />
       <Stack
         screenLayout={({ children }) => <ScreenBoundary>{children}</ScreenBoundary>}
         screenOptions={{
@@ -128,6 +131,7 @@ function ThemedRootStack() {
         <Stack.Screen name="chat/[threadId]" options={{ headerShown: false }} />
         <Stack.Screen name="my-enquiries" options={{ headerShown: false }} />
         <Stack.Screen name="my-visits" options={{ headerShown: false }} />
+        <Stack.Screen name="saved-properties" options={{ headerShown: false }} />
         <Stack.Screen name="owner-tenancy" options={{ headerShown: false }} />
         <Stack.Screen name="owner-action-center" options={{ headerShown: false }} />
         <Stack.Screen name="owner-quick-actions" options={{ headerShown: false }} />
@@ -144,7 +148,14 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-deposit-manager" options={{ animation: "fade", headerShown: false }} />
         <Stack.Screen name="owner-deposit-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exit-requests" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-exit-request-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-exits-today" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-stay-outs" options={{ headerShown: false }} />
+        <Stack.Screen name="tenancy-stay-outs" options={{ headerShown: false }} />
+        <Stack.Screen name="tenancy-tools" options={{ headerShown: false }} />
+        <Stack.Screen name="concerns-closed" options={{ headerShown: false }} />
+        <Stack.Screen name="tenancy-request-desk" options={{ headerShown: false }} />
+        <Stack.Screen name="tenancy-damages" options={{ headerShown: false }} />
         <Stack.Screen name="owner-payments-today" options={{ headerShown: false }} />
         <Stack.Screen name="owner-move-ins-today" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concerns-today" options={{ headerShown: false }} />
@@ -159,6 +170,7 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-meal-attendance-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-meal-ratings" options={{ headerShown: false }} />
         <Stack.Screen name="owner-room-change-requests" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-room-change-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-edit-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property" options={{ headerShown: false }} />
         <Stack.Screen name="owner-booking-settings" options={{ headerShown: false }} />
@@ -172,6 +184,7 @@ function ThemedRootStack() {
         <Stack.Screen name="my-booking-detail" options={{ headerShown: false }} />
         <Stack.Screen name="booking-request" options={{ headerShown: false }} />
         <Stack.Screen name="owner-manage-listing" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-listing-preview" options={{ headerShown: false }} />
         <Stack.Screen name="owner-property-visits" options={{ headerShown: false }} />
         <Stack.Screen name="owner-room-types" options={{ headerShown: false }} />
         <Stack.Screen name="owner-add-rooms" options={{ headerShown: false }} />
@@ -200,6 +213,9 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-leads" options={{ headerShown: false }} />
         <Stack.Screen name="owner-lead-detail" options={{ headerShown: false }} />
         <Stack.Screen name="owner-visits-earlier" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-visits-history" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-roll-call" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-roll-call-settings" options={{ headerShown: false }} />
         <Stack.Screen name="owner-external-visit" options={{ headerShown: false }} />
         <Stack.Screen name="owner-booking-onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="owner-external-booking" options={{ headerShown: false }} />
@@ -207,6 +223,7 @@ function ThemedRootStack() {
         <Stack.Screen name="owner-notice-create" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concerns" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concern-monitor" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-concern-history" options={{ headerShown: false }} />
         <Stack.Screen name="owner-concern-detail" options={{ headerShown: false }} />
         <Stack.Screen name="concern-detail" options={{ headerShown: false, presentation: "card" }} />
         <Stack.Screen

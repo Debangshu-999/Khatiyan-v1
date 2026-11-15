@@ -97,12 +97,17 @@ function damageScreen(query, { tab = "open", accountsLoading = false } = {}) {
   const components = Object.fromEntries(["View", "Text", "ScreenScrollView", "ScreenHeader", "OwnerDamagesScreenSkeleton", "SelectionTabs", "StatusPill",
     "RecordButton", "LoadFailed", "NoticeBar", "ActionButton", "EmptyState", "DamagesIcon", "DamageRecordCard", "DamageRepairHistoryCard", "ActivityIndicator", "ListEnd"].map((name) => [name, name]));
   const result = compile(declaration("app/owner-damages.tsx", "OwnerDamagesScreen"), {}, {
-    ...components, useTheme: () => ({ colors: {} }), spacing: { xs: 6, sm: 10, md: 14, lg: 18 },
+    ...components, useTheme: () => ({ colors: {}, fonts: {} }), spacing: { xs: 6, sm: 10, md: 14, lg: 18 },
     useState: (initial) => [initial === "open" ? tab : initial, () => {}], useMemo: (fn) => fn(), useRef: (current) => ({ current }), useCallback: (fn) => fn, useEffect() {},
     useAppSelector: (select) => select({ ownerWorkspace: { selectedPropertyId: "p1" } }),
     useAvailableAccounts: () => ({ ownedProperties: [{ id: "p1", name: "Property" }], managedProperties: [], loading: accountsLoading }),
     usePropertyPermissions: () => ({ canManage: () => true }), useQuickActionIntent() {},
     useGetDamageRecordPagesInfiniteQuery: () => state, errorMessage: () => "Request failed",
+    // The sticky search and level dropdown (2026-11-14).
+    useDebouncedValue: (value) => value, useInPageDropdown: () => ({ close() {}, host: {}, open() {}, ref: {}, trigger: null }),
+    SearchField: "SearchField", AnimatedPressable: "AnimatedPressable", ChevronDown: "ChevronDown", InPageDropdown: "InPageDropdown",
+    PILL_CHOICE_MAX_WIDTH: 56, pillChoice: (label) => label,
+    DAMAGE_LEVEL_OPTIONS: [{ label: "All levels", short: "All", value: "ALL" }],
   });
   const tree = result.default();
   return { tree, nodes: nodes(tree), loaded: () => loaded };
@@ -165,7 +170,7 @@ test("the item catalogue waits for required data and exits its skeleton on a loa
       useAvailableAccounts: () => ({ ownedProperties: [{ id: "p1" }], managedProperties: [], loading: false }),
       usePropertyPermissions: () => ({ canManage: () => true }),
       useGetPropertyExitPoliciesQuery: () => query, useListPropertyRoomsQuery: () => ({ data: [] }), useListMyPropertiesQuery: () => ({ data: [] }),
-      useUpdatePropertyExitPoliciesMutation: () => [() => {}, {}], useState: (initial) => [initial, () => {}], useEffect() {},
+      useUpdatePropertyExitPoliciesMutation: () => [() => {}, {}], useState: (initial) => [initial, () => {}], useEffect() {}, useRef: (current) => ({ current }), usePullRefreshed() {},
       useFormErrors: () => ({ serverError: null }), errorMessage: () => "Request failed", PINNED_FOOTER_CLEARANCE: 80,
     });
     return nodes(result.default());

@@ -23,10 +23,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.khatiyan.support.TestTransactions;
 import com.khatiyan.d_modules.notice.api.dto.CreateNoticeRequest;
 import com.khatiyan.d_modules.notice.api.dto.CreateRecurringNoticeRequest;
+import com.khatiyan.d_modules.notice.api.dto.RecurringNoticeResponse;
 import com.khatiyan.c_shared.exception.ValidationException;
 import com.khatiyan.d_modules.notice.model.Notice;
 import com.khatiyan.d_modules.notice.model.NoticePriority;
@@ -195,5 +197,41 @@ class RecurringNoticeServiceTest {
         RecurringNotice saved = captureSaved();
         assertThat(saved.getDaysOfWeek()).isEmpty();
         assertThat(saved.getDaysOfMonth()).isEmpty();
+    }
+
+    /**
+     * The desk reads today's real copy, not the template's times (user, 2026-11-15).
+     *
+     * <p>An edit reaches tomorrow's copy only. A template moved to 12:00 to 14:30
+     * whose copy for today ran 13:00 to 14:00 must report that copy's window, so the
+     * owner's desk stops calling it live at 14:12 when tenants no longer see it.
+     */
+    @Test
+    void listReportsTodaysCopyWindowNotTheEditedTemplateTimes() {
+        RecurringNotice template = RecurringNotice.create(
+                PROPERTY, ACTOR, "Lunch ready", "Lunch is ready.", NoticePriority.URGENT,
+                RecurringNoticeFrequency.DAILY, null, null,
+                LocalTime.of(12, 0), LocalTime.of(14, 30), LocalDate.of(2026, 8, 1), null);
+        ReflectionTestUtils.setField(template, "id", UUID.randomUUID());
+        RecurringNotice idle = RecurringNotice.create(
+                PROPERTY, ACTOR, "Water tanker", "Arrives.", NoticePriority.NORMAL,
+                RecurringNoticeFrequency.DAILY, null, null,
+                LocalTime.of(18, 0), LocalTime.of(19, 0), LocalDate.of(2026, 8, 1), null);
+        ReflectionTestUtils.setField(idle, "id", UUID.randomUUID());
+        Instant from = Instant.parse("2026-08-17T07:30:00Z");
+        Instant until = Instant.parse("2026-08-17T08:30:00Z");
+        Notice copy = Notice.publishOccurrence(
+                template.getId(), LocalDate.of(2026, 8, 17), PROPERTY, ACTOR,
+                "Lunch ready", "Lunch is ready.", NoticePriority.URGENT, from, until, from);
+        when(recurringNoticeRepository.findActiveByPropertyId(PROPERTY)).thenReturn(List.of(template, idle));
+        when(noticeRepository.findCurrentOccurrencesByPropertyId(any(UUID.class), any(Instant.class)))
+                .thenReturn(List.of(copy));
+
+        List<RecurringNoticeResponse> listed = service.listActiveRecurringNotices(ACTOR, PROPERTY);
+
+        assertThat(listed.get(0).todayVisibleFrom()).isEqualTo(from);
+        assertThat(listed.get(0).todayVisibleUntil()).isEqualTo(until);
+        assertThat(listed.get(1).todayVisibleFrom()).isNull();
+        assertThat(listed.get(1).todayVisibleUntil()).isNull();
     }
 }

@@ -22,6 +22,8 @@ export const COMPACT_HEADER_BACK_BUTTON = true;
 const BACK_SIZE = 36;
 
 export type CompactHeaderContent = {
+  /** The title at the left, beside the back button, instead of centred (Saved properties, user, 2026-11-14). */
+  alignLeft?: boolean;
   badge?: ReactNode;
   italicTail?: string;
   /** Instead of leaving the screen. Return true when it dealt with the press, false to leave anyway. */
@@ -48,13 +50,13 @@ export function CompactScreenHeader({
   surface?: string;
 }) {
   const slot = useContext(CompactHeaderSlotContext);
-  const { badge, italicTail, onBack, onDark, title, trailing } = content;
+  const { alignLeft, badge, italicTail, onBack, onDark, title, trailing } = content;
 
   useLayoutEffect(() => {
     if (!slot) return;
-    slot({ badge, italicTail, onBack, onDark, title, trailing });
+    slot({ alignLeft, badge, italicTail, onBack, onDark, title, trailing });
     return () => slot(null);
-  }, [badge, italicTail, onBack, onDark, slot, title, trailing]);
+  }, [alignLeft, badge, italicTail, onBack, onDark, slot, title, trailing]);
 
   return slot ? null : <CompactHeaderBar content={content} inlineMargin={inlineMargin} surface={surface} />;
 }
@@ -72,7 +74,7 @@ export function CompactHeaderBar({
   const router = useGuardedRouter();
   const segments = useSegments();
   const [rightWidth, setRightWidth] = useState(0);
-  const { badge, italicTail, onBack, onDark, title, trailing } = content;
+  const { alignLeft, badge, italicTail, onBack, onDark, title, trailing } = content;
 
   // A tab is a root, with nothing behind it to go back to. Every other screen
   // has the button even with no history, as after a reload on web, which goes Home.
@@ -80,7 +82,7 @@ export function CompactHeaderBar({
   const hasRight = Boolean(badge || trailing);
   // A tab's title starts at the left (user, 2026-10-31). Everywhere else both
   // sides take the wider one's width, so the title stays on the screen's centre.
-  const leftAligned = segments[0] === "(tabs)" && !showBack;
+  const leftAligned = (segments[0] === "(tabs)" && !showBack) || Boolean(alignLeft);
   const sideWidth = Math.max(showBack ? BACK_SIZE : 0, hasRight ? rightWidth : 0);
 
   return (
@@ -99,7 +101,7 @@ export function CompactHeaderBar({
         zIndex: 2,
       }}
     >
-      <View style={{ display: leftAligned ? "none" : "flex", width: sideWidth }}>
+      <View style={{ display: leftAligned && !showBack ? "none" : "flex", width: leftAligned ? BACK_SIZE : sideWidth }}>
         {showBack ? (
           <AnimatedPressable
             accessibilityLabel="Back"
@@ -116,10 +118,10 @@ export function CompactHeaderBar({
         ) : null}
       </View>
 
-      <FitText style={[type.brand, { color: onDark ? "#FFFFFF" : colors.ink, flex: 1, fontSize: 21, lineHeight: 27, textAlign: leftAligned ? "left" : "center" }]}>
+      <FitText style={[type.brand, { color: onDark ? "#FFFFFF" : colors.ink, flex: 1, fontSize: 22, lineHeight: 28, textAlign: leftAligned ? "left" : "center" }]}>
         {title}
         {italicTail ? (
-          <Text style={[type.brandItalic, { color: onDark ? "#FFE4AA" : colors.accent, fontSize: 21, lineHeight: 27 }]}>{` ${italicTail}`}</Text>
+          <Text style={[type.brandItalic, { color: onDark ? "#FFE4AA" : colors.accent, fontSize: 22, lineHeight: 28 }]}>{` ${italicTail}`}</Text>
         ) : null}
       </FitText>
 

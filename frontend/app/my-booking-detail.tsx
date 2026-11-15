@@ -6,6 +6,7 @@ import { AlertTriangle, CalendarCheck, CalendarDays, CircleAlert, CircleHelp, Cl
 import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
 import { LoadFailed } from "@/components/load-failed";
 import { Card } from "@/components/card";
+import { ConfirmedBookingTicket } from "@/features/booking/confirmed-booking-ticket";
 import { BookingTokenAmountIcon } from "@/components/booking-vector-icons";
 import { EmptyState } from "@/components/empty-state";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
@@ -116,7 +117,7 @@ function TenantBookingSummary({ booking }: { booking: BookingRequest }) {
   timeline.sort((left, right) => left.at.localeCompare(right.at));
 
   return <>
-    <Card style={{ gap: spacing.xs, padding: spacing.md, paddingBottom: spacing.xxs }}>
+    {booking.status === "CONFIRMED" ? <ConfirmedBookingTicket referenceCode={booking.referenceCode} roomNumber={booking.roomNumber} moveInDate={booking.moveInDate} handlerName={booking.handlerName} /> : <Card style={{ gap: spacing.xs, padding: spacing.md, paddingBottom: spacing.xxs }}>
       <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
           <Text style={labelStyle}>Ref</Text>
@@ -125,7 +126,7 @@ function TenantBookingSummary({ booking }: { booking: BookingRequest }) {
         <CardStatus><TenantBookingStatus status={booking.status} /></CardStatus>
       </CardNameRow>
       {booking.handlerName ? <Text style={[type.description, { color: colors.muted }]}>Handled by {booking.handlerName}</Text> : null}
-    </Card>
+    </Card>}
     {booking.status === "AWAITING_HANDLER" ? <NoticeBar title="Waiting for the property" message="Your request holds one bed while the property reviews it. You can return here to see its answer." tone="info" /> : null}
     {booking.status === "AWAITING_TENANT" ? <NoticeBar title={booking.currentOfferNegotiable ? "The property has made an offer" : "This is the property's final price"} message={booking.currentOfferNegotiable ? "Accept, counter or withdraw using the actions below." : "You can accept this rent or withdraw. This offer cannot be countered."} tone="info" /> : null}
     {booking.agreedAt && !booking.tenancyId ? <NoticeBar title={booking.status === "TOKEN_RECEIVED" ? "Token received" : booking.status === "CONFIRMED" ? "Booking confirmed" : "Agreed terms are frozen"} message={booking.status === "TOKEN_RECEIVED" ? "The property has verified your token payment. Your booking is awaiting final confirmation." : "Your agreed rent, deposit, room and term are fixed. The property creates your stay when you arrive. Any available date-change action appears below."} tone={booking.status === "CONFIRMED" || booking.status === "TOKEN_RECEIVED" ? "success" : "info"} /> : null}

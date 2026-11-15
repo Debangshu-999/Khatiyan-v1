@@ -41,11 +41,16 @@ export const API_TAGS = [
   // Its own tag, so saving visit slots does not refetch every property read.
   "PropertyVisits",
   "Tenancy",
+  // Declared stay outs (2026-11-08): the tenant's list and the property board.
+  "StayOut",
+  "RollCall",
   "BillingCycle",
   "Concern",
   "Notice",
   "Notification",
   "Discovery",
+  // Saved properties (2026-11-14): the bookmark and the Saved properties screen.
+  "SavedProperty",
   "Payment",
   "Deposit",
   "Staff",
@@ -130,9 +135,29 @@ function isFirstLoad(queries: Record<string, { data?: unknown; endpointName?: st
   return Object.values(queries).some((query) => query?.endpointName === endpoint && query.status === "pending" && query.data === undefined);
 }
 
+/**
+ * Every request, made safe (user, 2026-11-14): anything that THROWS while a request is
+ * handled becomes an ordinary "no answer" error instead of an unhandled exception. One did
+ * on a phone while the backend was down ("undefined is not a function" in
+ * getChatUnreadCount), and RTK showed it as a red crash and dropped the query's tags. It is
+ * logged once with its stack, so the real line can be found when it happens again.
+ */
+type ApiBaseQuery = Parameters<typeof createApi>[0]["baseQuery"];
+
+function safely(handle: ApiBaseQuery): ApiBaseQuery {
+  return async (args, apiContext, extraOptions) => {
+    try {
+      return await handle(args, apiContext, extraOptions);
+    } catch (thrown) {
+      if (__DEV__) console.warn(`[api] ${apiContext.endpoint} threw while being handled`, thrown);
+      return { error: { error: String(thrown), status: "FETCH_ERROR" as const } };
+    }
+  };
+}
+
 export const api = createApi({
   reducerPath: "api",
-  baseQuery: async (args, apiContext, extraOptions) => {
+  baseQuery: safely(async (args, apiContext, extraOptions) => {
     const state = apiContext.getState() as RootState;
     // Read before the request: by the time it returns, another failing call may
     // already have cleared the token, and this one would then look like an
@@ -212,7 +237,10 @@ export const api = createApi({
     // Dev-only: a failed read otherwise leaves no trace at all. Screens that
     // render nothing when a query fails look exactly like screens whose data is
     // legitimately empty, and telling those apart used to need a proxy.
-    if (__DEV__ && result.error && !isExpectedFailure(apiContext.endpoint, result.error.status)) {
+    // A 401 while staying signed in through a failed renewal (the backend down or
+    // restarting) is expected, and every poll would repeat it (2026-11-14).
+    const expectedWhileRenewing = result.error?.status === 401 && keptSignedIn;
+    if (__DEV__ && result.error && !expectedWhileRenewing && !isExpectedFailure(apiContext.endpoint, result.error.status)) {
       const detail =
         typeof result.error.data === "string"
           ? result.error.data
@@ -256,7 +284,7 @@ export const api = createApi({
     }
 
     return result;
-  },
+  }),
   endpoints: () => ({}),
   tagTypes: API_TAGS,
 });

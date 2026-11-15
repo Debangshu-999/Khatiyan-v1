@@ -75,7 +75,9 @@ public interface VisitRepository extends JpaRepository<Visit, UUID> {
     /**
      * Past visit dates and cancellations, including records whose enquiry has
      * ended. {@code filter} narrows it by status (user, 2026-10-19): ALL,
-     * VISITED, NO_VISIT (a past visit nobody checked in) or CANCELLED.
+     * VISITED, NO_VISIT (a past visit nobody checked in) or CANCELLED. {@code like}
+     * (user, 2026-11-14) matches the visit ID or the visitor's name, held on the
+     * visit's lead; empty for every record.
      */
     @Query("""
             SELECT visit FROM Visit visit
@@ -88,9 +90,13 @@ public interface VisitRepository extends JpaRepository<Visit, UUID> {
                    OR (:filter = 'NO_VISIT'
                        AND visit.status <> com.khatiyan.d_modules.lead.model.VisitStatus.VISITED
                        AND visit.status <> com.khatiyan.d_modules.lead.model.VisitStatus.CANCELLED))
+              AND (:like = ''
+                   OR LOWER(visit.referenceCode) LIKE :like
+                   OR EXISTS (SELECT 1 FROM Lead lead
+                              WHERE lead.id = visit.leadId AND LOWER(lead.prospectName) LIKE :like))
             ORDER BY visit.visitDate DESC, visit.slotStartMinute DESC, visit.id DESC
             """)
-    Page<Visit> findPropertyHistory(UUID propertyId, LocalDate today, String filter, Pageable pageable);
+    Page<Visit> findPropertyHistory(UUID propertyId, LocalDate today, String filter, String like, Pageable pageable);
 
     /** The signed-in prospect's own history, never another visitor's records. */
     @Query("""

@@ -1,8 +1,9 @@
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Text, View } from "react-native";
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { ClipboardList, FolderPlus, Pencil, Plus, X, type LucideProps } from "lucide-react-native";
@@ -15,9 +16,10 @@ import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { Section } from "@/components/section";
+import { SectionHeading } from "@/components/section-heading";
 import { OwnerBoardCategoriesSkeleton } from "@/components/skeletons/owner";
 import { AlertModal } from "@/components/alert-modal";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom } from "@/components/use-keyboard-inset";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ActionButton, ConfirmDialog, FormInput, IconButton, ViewOnlyChip } from "@/features/owner/owner-ui";
@@ -42,14 +44,9 @@ import { useQuickActionIntent } from "@/features/quick-actions/quick-action-inte
 
 const NO_CATEGORY_ILLUSTRATION = require("../assets/empty-states/No-Category_512x512.png");
 
-/** White on the filled red button; the disabled state follows the button's muted foreground. */
-function CategoryDeleteIcon(props: LucideProps) {
-  return <Trash2 {...props} inheritColor />;
-}
-
 export default function OwnerBoardScreen() {
   const router = useGuardedRouter();
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
@@ -116,21 +113,36 @@ export default function OwnerBoardScreen() {
             categories.map((category) => {
               const categoryItems = items.filter((item) => item.categoryId === category.id);
               return (
-                <Section
-                  key={category.id}
-
+                // Each category in its own card (user, 2026-11-14): the title with its edit
+                // and delete, a line under it, then its items and Add item.
+                <Card key={category.id} style={{ gap: spacing.md, padding: spacing.md }}>
+                  <SectionHeading
+                  dash={false}
+                  // Its display number in a grey pill, where a subheading has its dash (user, 2026-11-14).
+                  leading={
+                    <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 999, justifyContent: "center", minWidth: 26, paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12, fontVariant: ["tabular-nums"] }}>{category.displayOrder}</Text>
+                    </View>
+                  }
                   title={category.name}
-                >
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                    <ActionButton disabled={!canManageBoard} icon={Pencil} label="Edit category" onPress={() => setCategoryModal({ category })} variant="secondary" />
-                    <ActionButton
-                      disabled={!canManageBoard}
-                      icon={CategoryDeleteIcon}
-                      label="Delete"
-                      onPress={() => setPendingDelete({ id: category.id, kind: "category", label: category.name })}
-                      variant="dangerFilled"
-                    />
-                  </View>
+                  // Edit and delete as icons at the end of the category's own line,
+                  // like each item's (user, 2026-11-14), not a row of buttons under it.
+                  trailing={
+                    canManageBoard ? (
+                      // Both in one white pill with the search bar's edge, a hairline between them (user, 2026-11-14).
+                      <View style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: `${colors.ink}40`, borderRadius: 999, borderWidth: 1, flexDirection: "row", paddingHorizontal: 2 }}>
+                        <IconButton accessibilityLabel={`Edit ${category.name}`} icon={Pencil} onPress={() => setCategoryModal({ category })} />
+                        <View style={{ backgroundColor: `${colors.ink}30`, height: 18, width: 1 }} />
+                        <IconButton
+                          accessibilityLabel={`Delete ${category.name}`}
+                          icon={Trash2}
+                          onPress={() => setPendingDelete({ id: category.id, kind: "category", label: category.name })}
+                        />
+                      </View>
+                    ) : undefined
+                  }
+                  />
+                  <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: -spacing.md }} />
                   {categoryItems.length === 0 ? (
                     <Text style={[type.description, { color: colors.muted }]}>
                       No items in this category yet.
@@ -155,7 +167,7 @@ export default function OwnerBoardScreen() {
                       variant="secondary"
                     />
                   </View>
-                </Section>
+                </Card>
               );
             })
           )}
@@ -253,7 +265,7 @@ function BoardItemCard({
 function CategoryModal({ category, onClose, propertyId }: { category: BoardCategory | null; onClose: () => void; propertyId: string }) {
   const { colors, fonts } = useTheme();
   const insets = useSafeAreaInsets();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom(insets.bottom);
   const [name, setName] = useState(category?.name ?? "");
   const [order, setOrder] = useState(category ? String(category.displayOrder) : "");
   const form = useFormErrors<"name">();
@@ -289,7 +301,8 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
       {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
       <View style={{ flex: 1, justifyContent: "flex-end", width: "100%" }}>
-        <View style={{ alignSelf: "stretch", backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, paddingBottom: spacing.lg + (keyboardInset > 0 ? 0 : insets.bottom), paddingHorizontal: spacing.lg, paddingTop: spacing.lg, width: "100%" }}>
+        <SheetCloseButton onClose={() => dismiss()} />
+        <Animated.View style={{ alignSelf: "stretch", backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, gap: spacing.md, paddingBottom: Animated.add(keyboardRoom, spacing.lg), paddingHorizontal: spacing.lg, paddingTop: spacing.lg, width: "100%" }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {category ? "Edit category" : "New category"}
@@ -313,7 +326,7 @@ function CategoryModal({ category, onClose, propertyId }: { category: BoardCateg
           {form.serverError ? (
             <AlertModal message={form.serverError} onClose={form.dismissServerError} />
           ) : null}
-        </View>
+        </Animated.View>
       </View>
       </KeyboardAvoidingView>
       )}
@@ -334,7 +347,7 @@ function ItemModal({
 }) {
   const { colors, fonts } = useTheme();
   const insets = useSafeAreaInsets();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom(insets.bottom);
   const [title, setTitle] = useState(item?.title ?? "");
   const [body, setBody] = useState(item?.body ?? "");
   const form = useFormErrors<"title" | "body">();
@@ -375,7 +388,8 @@ function ItemModal({
       {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
       <View style={{ flex: 1, justifyContent: "flex-end", width: "100%" }}>
-        <View style={{ alignSelf: "stretch", backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, gap: spacing.md, marginBottom: keyboardInset, paddingBottom: spacing.lg + (keyboardInset > 0 ? 0 : insets.bottom), paddingHorizontal: spacing.lg, paddingTop: spacing.lg, width: "100%" }}>
+        <SheetCloseButton onClose={() => dismiss()} />
+        <Animated.View style={{ alignSelf: "stretch", backgroundColor: colors.surface, borderColor: colors.border, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, gap: spacing.md, paddingBottom: Animated.add(keyboardRoom, spacing.lg), paddingHorizontal: spacing.lg, paddingTop: spacing.lg, width: "100%" }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, }}>
               {item ? "Edit item" : "New item"}
@@ -409,7 +423,7 @@ function ItemModal({
           {form.serverError ? (
             <AlertModal message={form.serverError} onClose={form.dismissServerError} />
           ) : null}
-        </View>
+        </Animated.View>
       </View>
       </KeyboardAvoidingView>
       )}

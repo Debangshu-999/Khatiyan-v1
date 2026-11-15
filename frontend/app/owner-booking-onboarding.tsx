@@ -1,4 +1,5 @@
 import { LoadFailed } from "@/components/load-failed";
+import { EmptyBookings } from "@/components/empty-art";
 import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
@@ -110,7 +111,7 @@ export default function OwnerBookingOnboardingScreen() {
       {list.isError ? <LoadFailed error={list.error} onReload={() => void list.refetch()} /> : null}
       {list.currentData && items.length === 0 ? (
         <EmptyState
-          artworkNode={<BookingsIcon size={64} />}
+          artworkNode={<EmptyBookings size={120} />}
           title={tab === "TODAY" ? "Nobody is moving in today" : "No missed move-ins"}
         />
       ) : null}

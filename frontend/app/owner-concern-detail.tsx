@@ -1,11 +1,12 @@
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
-import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useKeyboardRoom, useRevealInputScroll } from "@/components/use-keyboard-inset";
 import { useLocalSearchParams } from "expo-router";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { CheckCircle2, Clock3, ImageOff, Images, RotateCcw, ShieldAlert, UserRoundPlus, X } from "lucide-react-native";
@@ -70,7 +71,9 @@ export default function OwnerConcernDetailScreen() {
   const [statusNote, setStatusNote] = useState("");
   const [resolutionNote, setResolutionNote] = useState("");
   const [resolveOpen, setResolveOpen] = useState(false);
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom();
+  // The list scrolls to the focused input with the keyboard up (user, 2026-11-08).
+  const revealInput = useRevealInputScroll();
   const [assignOpen, setAssignOpen] = useState(false);
   // Action results route to the global toast; failures/validation read as errors.
   // Failures raised anywhere on this screen; no field owns them.
@@ -261,9 +264,9 @@ export default function OwnerConcernDetailScreen() {
           {resolveOpen && canAct && mode === "taken" && concern.status === "IN_PROGRESS" ? (
             <CenterModal animationType="fade" transparent visible statusBarTranslucent navigationBarTranslucent onRequestClose={() => { if (!resolveState.isLoading) setResolveOpen(false); }}>
               <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-              <View style={{ flex: 1, justifyContent: "center", backgroundColor: colors.overlay, padding: spacing.lg, paddingBottom: spacing.lg + keyboardInset }}>
+              <Animated.View style={{ flex: 1, justifyContent: "center", backgroundColor: colors.overlay, padding: spacing.lg, paddingBottom: Animated.add(keyboardRoom, spacing.lg) }}>
               <Card style={{ width: "100%", maxWidth: 520, maxHeight: "100%", alignSelf: "center", flexShrink: 1 }}>
-              <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <ScrollView {...revealInput} style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <View style={{ gap: spacing.md }}>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                   <ModalTitle style={[type.display, { color: colors.ink, fontSize: 20 }]}>Resolve concern</ModalTitle>
@@ -276,7 +279,7 @@ export default function OwnerConcernDetailScreen() {
               </View>
               </ScrollView>
               </Card>
-              </View>
+              </Animated.View>
               </KeyboardAvoidingView>
             </CenterModal>
           ) : null}
@@ -311,10 +314,10 @@ function AssignConcernModal({
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end", padding: spacing.lg }}>
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, maxHeight: "78%", padding: spacing.lg }}>
+        <SheetCloseButton onClose={() => dismiss()} />
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, gap: spacing.md, maxHeight: "100%", padding: spacing.lg }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1, gap: spacing.xxs }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>Assign concern</Text>
               <ModalTitle style={[type.display, { color: colors.ink, fontSize: 24, lineHeight: 30 }]}>Choose a manager</ModalTitle>
             </View>
           </View>

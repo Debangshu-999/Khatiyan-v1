@@ -14,7 +14,7 @@ import { SkeletonList } from "@/components/skeleton";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, ConfirmDialog, NoticeBar } from "@/features/owner/owner-ui";
+import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
 import {
   useAddPropertyContactManagerMutation,
   useListPropertyContactsQuery,
@@ -22,7 +22,8 @@ import {
   type PropertyContact,
 } from "@/store/services/discovery-api";
 import { useListPropertyManagersQuery } from "@/store/services/property-api";
-import { spacing } from "@/theme/spacing";
+import { cardShadow, softShadow } from "@/theme/shadows";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
@@ -40,14 +41,24 @@ const NO_PERSON_ILLUSTRATION = require("../../../assets/empty-states/No-Person_5
  * <p>Each change is written the moment it is made, like the gallery above it:
  * there is no submit to batch it into.
  */
-export function PropertyContactsSection({ canManage, propertyId }: { canManage: boolean; propertyId: string }) {
+export function PropertyContactsSection({ canManage, picker, propertyId }: {
+  canManage: boolean;
+  /**
+   * The add-manager picker, opened from a button in the section's heading (user,
+   * 2026-11-07). Given, the section draws no button of its own.
+   */
+  picker?: { open: boolean; setOpen: (open: boolean) => void };
+  propertyId: string;
+}) {
   const { colors, type } = useTheme();
   const toast = useToast();
   const opErrors = useFormErrors<never>();
   const contactsQuery = useListPropertyContactsQuery(propertyId, { skip: !propertyId });
   const [addContact, addState] = useAddPropertyContactManagerMutation();
   const [removeContact, removeState] = useRemovePropertyContactManagerMutation();
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [ownPickerOpen, setOwnPickerOpen] = useState(false);
+  const pickerOpen = picker ? picker.open : ownPickerOpen;
+  const setPickerOpen = picker ? picker.setOpen : setOwnPickerOpen;
   const [pendingRemoval, setPendingRemoval] = useState<PropertyContact | null>(null);
 
   const contacts = contactsQuery.data ?? [];
@@ -83,7 +94,7 @@ export function PropertyContactsSection({ canManage, propertyId }: { canManage: 
       {contactsQuery.isLoading ? <SkeletonList rows={2} /> : null}
 
       {!contactsQuery.isLoading ? (
-        <View style={{ borderColor: colors.border, borderRadius: 14, borderWidth: 1, overflow: "hidden" }}>
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, ...cardShadow(colors.shadow) }}>
           {contacts.map((contact, index) => (
             <ContactRow
               contact={contact}
@@ -96,7 +107,7 @@ export function PropertyContactsSection({ canManage, propertyId }: { canManage: 
         </View>
       ) : null}
 
-      {canManage ? (
+      {canManage && !picker ? (
         <View style={{ flexDirection: "row" }}>
           <ActionButton
             disabled={busy}
@@ -107,12 +118,6 @@ export function PropertyContactsSection({ canManage, propertyId }: { canManage: 
           />
         </View>
       ) : null}
-
-      <NoticeBar
-        message="The owner cannot be removed. Managers you add here appear on the public listing."
-        title="Owner is always listed"
-        tone="info"
-      />
 
       {pickerOpen ? (
         <ManagerPickerSheet
@@ -195,7 +200,7 @@ function ContactRow({
           greyed bin invites the question "why not", and the answer is that this
           is not a choice anyone gets to make. */}
       {contact.owner ? (
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
           Owner
         </Text>
       ) : (

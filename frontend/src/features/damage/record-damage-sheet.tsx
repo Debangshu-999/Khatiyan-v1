@@ -5,10 +5,8 @@ import { ChevronDown, ChevronUp, UserRound } from "lucide-react-native";
 import { damageRecordName } from "./damage-record-card";
 import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
-import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { NotchedInput } from "@/components/notched-input";
-import { SectionHeading } from "@/components/section-heading";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
@@ -16,12 +14,13 @@ import { ActionButton, NoticeBar, formatMoneyPaise } from "@/features/owner/owne
 import { AMENITY_LABELS } from "@/features/property/amenity-picker";
 import { compareFloors, formatFloor } from "@/features/property/floor";
 import { ItemIcon } from "@/features/property/item-icon";
-import { DamageLevelDropdown, DamageLevelPill } from "@/features/tenancy/damage-level";
+import { DamageLevelDropdown, DamageLevelPill, DamageLevelsSheet } from "@/features/tenancy/damage-level";
 import { MultiImageField } from "@/features/uploads/multi-image-field";
 import { SplitIcon } from "@/features/damage/split-icon";
 import { cardName } from "@/lib/person-name";
 import {
   useCreateDamageRecordMutation,
+  useGetDamageRecordsQuery,
   useGetRoomItemConditionsQuery,
   useUpdateDamageRecordMutation,
   type DamageRecord,
@@ -43,13 +42,25 @@ type Section = "ROOM" | "BATHROOM";
 type ItemOption = { name: string; section: Section; now: DamageLevel };
 
 const SPLIT = "SPLIT";
-const RANK: Record<DamageLevel, number> = { D1: 1, D2: 2, D3: 3, NA: 0 };
 const DAMAGE_OPTIONS: DamageLevel[] = ["D1", "D2", "D3"];
 
-/** The catalogue's price for an item at a level, when it has one. */
-function catalogueCost(charges: PropertyDamageCharge[], name: string, level: DamageLevel) {
+/** The levels an item is priced at in the catalogue, D1 first (user, 2026-11-07: price tiers only). */
+function pricedLevels(charges: PropertyDamageCharge[], name: string | null): DamageLevel[] {
+  if (!name) return [];
+  const charge = charges.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
+  if (!charge) return [];
+  return (["D1", "D2", "D3"] as const).filter((level) =>
+    (level === "D1" ? charge.d1Paise : level === "D2" ? charge.d2Paise : charge.d3Paise) != null);
+}
+
+/**
+ * The catalogue's price for an item at a level, when it has one. Without a level, the
+ * item's one flat price (2026-11-07: levels off).
+ */
+function catalogueCost(charges: PropertyDamageCharge[], name: string, level: DamageLevel | null) {
   const charge = charges.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
   if (!charge) return null;
+  if (level === null) return charge.d1Paise ?? (charge.chargePaise > 0 ? charge.chargePaise : null);
   return level === "D1" ? charge.d1Paise : level === "D2" ? charge.d2Paise : level === "D3" ? charge.d3Paise : null;
 }
 
@@ -90,7 +101,8 @@ export function RecordDamageSheet({
 
   const [roomId, setRoomId] = useState<string | null>(record?.roomId ?? fixedStay?.roomId ?? null);
   const [itemName, setItemName] = useState<string | null>(record?.itemName ?? null);
-  const [level, setLevel] = useState<DamageLevel>(record?.damageLevel ?? "D1");
+  // Nothing picked on a new record: "Pick a level" (user, 2026-11-07).
+  const [level, setLevel] = useState<DamageLevel | null>(record?.damageLevel ?? null);
   const [cost, setCost] = useState(record ? String(Math.round(record.costPaise / 100)) : "");
   const [costTouched, setCostTouched] = useState(Boolean(record));
   const [responsible, setResponsible] = useState<string | null>(
@@ -105,6 +117,8 @@ export function RecordDamageSheet({
   const oneSplit = Boolean(record?.splitNumber);
 
   const conditionsQuery = useGetRoomItemConditionsQuery({ propertyId, roomId: roomId ?? "" }, { skip: !roomId });
+  // Open damages, to warn about one still open on the picked item. Nothing is blocked (2026-11-07).
+  const openQuery = useGetDamageRecordsQuery({ history: false, propertyId });
   const charges = policiesQuery.data?.damageCharges ?? [];
   const rooms = roomsQuery.data ?? [];
   const stays = tenanciesQuery.data ?? [];
@@ -141,37 +155,55 @@ export function RecordDamageSheet({
     return list;
   }, [charges, conditionsQuery.data, room]);
   const item = items.find((entry) => entry.name === itemName) ?? null;
+  // Levels are only price tiers (user, 2026-11-07): one is asked for only when the item is
+  // priced at more than one, or the record being edited has one.
+  const tiers = pricedLevels(charges, itemName);
+  const asksLevel = Boolean(record?.damageLevel) || tiers.length > 1;
+  const openOnItem = itemName
+    ? (openQuery.data ?? []).find((other) => other.roomId === roomId
+      && other.itemName.trim().toLowerCase() === itemName.trim().toLowerCase()
+      && other.code !== record?.code)?.code ?? null
+    : null;
+  // One open damage per item at a time (user, 2026-11-07): the next waits for the fix.
+  const blockedByOpen = openOnItem !== null;
 
   const tenants = stays.filter((stay) => livesHere(stay, roomId));
 
-  // The cost follows the catalogue until the owner types their own.
-  function suggest(name: string | null, at: DamageLevel) {
-    if (costTouched || !name) return;
-    const price = catalogueCost(charges, name, at);
-    setCost(price ? String(Math.round(price / 100)) : "");
+  // The catalogue's price fills the cost whenever the item or level changes, and the
+  // owner can still type their own (user, 2026-11-07). No price leaves a typed cost alone.
+  function suggest(name: string | null, at: DamageLevel | null) {
+    if (!name) return;
+    // Several tiers and none picked yet: no price to fill until one is.
+    const price = !at && pricedLevels(charges, name).length > 1 ? null : catalogueCost(charges, name, at);
+    if (price) {
+      setCost(String(Math.round(price / 100)));
+    } else if (!costTouched) {
+      setCost("");
+    }
   }
+  const levelOptions = tiers.length > 1 ? tiers : DAMAGE_OPTIONS;
 
   const costPaise = Math.round(Number(cost || "0") * 100);
-  const catalogue = itemName ? catalogueCost(charges, itemName, level) : null;
+  const catalogue = itemName && (level || !asksLevel) ? catalogueCost(charges, itemName, asksLevel ? level : null) : null;
   const errors = {
     room: roomId ? undefined : "Pick the room",
     item: itemName ? undefined : "Pick the item",
+    level: !asksLevel || level ? undefined : "Pick a level",
     cost: costPaise >= 100 ? undefined : "Enter the cost",
     responsible: responsible ? undefined : "Pick who is responsible",
     photos: photos.length > 0 ? undefined : "Add at least one photo",
   };
   const valid = Object.values(errors).every((error) => !error);
   const busy = createState.isLoading || updateState.isLoading;
-  const levelWords = policiesQuery.data?.damageLevels ?? [];
   // The photos field's own label, for every label in the sheet (user, 2026-10-29).
   const labelStyle = [type.caption, { color: colors.muted, fontWeight: "700" as const }];
 
   async function submit(chargeNow: boolean) {
     setTried(true);
-    if (!valid || !roomId || !itemName) return;
+    if (!valid || !roomId || !itemName || (asksLevel && !level)) return;
     const payload: SaveDamageRecordPayload = {
       costPaise,
-      damageLevel: level,
+      damageLevel: asksLevel ? level : null,
       itemName,
       note: note.trim() || null,
       photoUrls: photos,
@@ -215,8 +247,9 @@ export function RecordDamageSheet({
             />
           ) : null}
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionButton disabled={busy} label={busy ? "Saving…" : "Save"} onPress={() => void submit(false)} variant="primary" />
-            {record?.charged || fixedStay ? null : <ActionButton disabled={busy} label="Charge now" onPress={() => void submit(true)} />}
+            {/* Blocked while the item has an open damage (user, 2026-11-07). */}
+            <ActionButton disabled={busy || blockedByOpen} label={busy ? "Saving…" : "Save"} onPress={() => void submit(false)} variant="primary" />
+            {record?.charged || fixedStay ? null : <ActionButton disabled={busy || blockedByOpen} label="Charge now" onPress={() => void submit(true)} />}
           </View>
         </View>
       }
@@ -225,13 +258,14 @@ export function RecordDamageSheet({
       size="tall"
       title={record ? "Edit damage" : "Record damage"}
     >
-      {/* Out to the sheet's edges, the padding put back inside, so the bands reach the edge. */}
+      {/* Out to the sheet's edges, the padding put back inside. */}
       <ScrollView
-        contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.sm, paddingHorizontal: spacing.lg }}
+        contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}
         keyboardShouldPersistTaps="handled"
         style={{ marginHorizontal: -spacing.lg }}
       >
-        <SectionHeading title="Room & item" />
+        {/* Each part titled, lines between them, no subheading bands or boxes (user, 2026-11-07). */}
+        <FormCard first title="Room & item">
         {oneSplit && record ? (
           <Text style={[type.bodyStrong, { color: colors.ink }]}>
             {`${damageRecordName(record)} · ${record.damageLevel} · Room ${record.roomLabel ?? "unavailable"}`}
@@ -259,41 +293,53 @@ export function RecordDamageSheet({
                   key={entry.name}
                   onPress={() => {
                     setItemName(entry.name);
-                    suggest(entry.name, level);
+                    // Another item has its own tiers: its level is picked again.
+                    const keep = record ? level : null;
+                    if (keep !== level) setLevel(keep);
+                    suggest(entry.name, keep);
                   }}
                   selected={entry.name === itemName}
                 >
                   <ItemIcon color={colors.inkSoft} name={entry.name} size={18} />
                   <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flexShrink: 1 }]}>{entry.name}</Text>
-                  {entry.now === "NA" ? null : <DamageLevelPill level={entry.now} />}
                 </ChoiceTile>
               ))}
             </View>
             {tried && errors.item ? <FieldError message={errors.item} /> : null}
+            {/* A nudge, not a rule (user, 2026-11-07). */}
+            {openOnItem ? (
+              <NoticeBar
+                message={`${openOnItem} is still open for ${itemName}. Mark it repaired or replaced before recording a new damage.`}
+                selectable={false}
+                title="Open damage record"
+                tone="warning"
+              />
+            ) : null}
           </View>
         ) : null}
+        </FormCard>
 
-        <SectionHeading title="The damage" />
-        {oneSplit ? null : <View style={{ gap: spacing.xs }}>
+        <FormCard title="The damage">
+        {oneSplit || !asksLevel ? null : <View style={{ gap: spacing.xs }}>
           <DamageLevelDropdown
             label="New damage level"
-            levels={levelWords}
             onChange={(next) => {
               setLevel(next);
               suggest(itemName, next);
             }}
+            inline
             onHelp={() => setLevelHelp(true)}
-            options={DAMAGE_OPTIONS}
+            options={levelOptions}
+            placeholder="Pick a level"
             value={level}
           />
-          {item && RANK[level] <= RANK[item.now] ? (
-            <Text style={[type.caption, { color: colors.muted }]}>It is already {item.now}. The room keeps the worse level.</Text>
-          ) : null}
+          {tried && errors.level ? <FieldError message={errors.level} /> : null}
         </View>}
         <View style={{ gap: spacing.xs }}>
           <NotchedInput
             invalid={tried && Boolean(errors.cost)}
             keyboardType="number-pad"
+            editable={!blockedByOpen}
             label="Cost"
             maxLength={7}
             onChangeText={(value) => {
@@ -306,11 +352,14 @@ export function RecordDamageSheet({
           />
           {tried && errors.cost ? <FieldError message={errors.cost} /> : null}
           {catalogue ? (
-            <Text style={[type.caption, { color: colors.muted }]}>Catalogue price at {level}: {formatMoneyPaise(catalogue)}</Text>
+            <Text style={[type.caption, { color: colors.muted }]}>
+              {asksLevel ? `Catalogue price at ${level}: ` : "Catalogue price: "}{formatMoneyPaise(catalogue)}
+            </Text>
           ) : null}
         </View>
+        </FormCard>
 
-        <SectionHeading title="Who is responsible" />
+        <FormCard title="Who is responsible">
         {oneSplit && record ? (
           <Text style={[type.bodyStrong, { color: colors.ink }]}>{cardName(record.shares[0]?.tenantName ?? "Tenant")}</Text>
         ) : !roomId ? (
@@ -341,8 +390,9 @@ export function RecordDamageSheet({
             {tried && errors.responsible ? <FieldError message={errors.responsible} /> : null}
           </View>
         )}
+        </FormCard>
 
-        <SectionHeading title="Photos & notes" />
+        <FormCard title="Photos & notes">
         <View style={{ gap: spacing.xs }}>
           <MultiImageField
             label={`All photos (${photos.length}/3)`}
@@ -358,20 +408,36 @@ export function RecordDamageSheet({
           <Text style={labelStyle}>Notes</Text>
           <NotchedInput maxLength={300} multiline onChangeText={setNote} placeholder="What exactly is damaged" value={note} />
         </View>
+        </FormCard>
 
       </ScrollView>
       {serverError ? <AlertModal message={serverError} onClose={() => setServerError(null)} /> : null}
       {/* What each level means here, as points marked by their pill, no numbers (user, 2026-10-29). */}
       {levelHelp ? (
-        <HowItWorksSheet
-          eyebrow="Damage levels"
-          markers={levelWords.map((entry) => <DamageLevelPill key={entry.level} level={entry.level} />)}
-          onClose={() => setLevelHelp(false)}
-          steps={levelWords.map((entry) => ({ body: entry.description, title: entry.level }))}
-          title="Damage levels"
-        />
+        <DamageLevelsSheet onClose={() => setLevelHelp(false)} />
       ) : null}
     </SheetShell>
+  );
+}
+
+/**
+ * One part of the form: its title, then its fields, a line above every part but the
+ * first (user, 2026-11-07: the same structure as the cards, without the boxes).
+ */
+function FormCard({ children, first = false, title }: { children: React.ReactNode; first?: boolean; title: string }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <View
+      style={{
+        borderTopColor: colors.border,
+        borderTopWidth: first ? 0 : 1,
+        gap: spacing.md,
+        paddingTop: first ? 0 : spacing.lg,
+      }}
+    >
+      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17, lineHeight: 22 }}>{title}</Text>
+      {children}
+    </View>
   );
 }
 
@@ -381,16 +447,24 @@ function FieldError({ message }: { message: string }) {
 }
 
 /** A tile picked from a wrap: the item it names, bordered blue and ticked when chosen. */
-function ChoiceTile({ children, onPress, selected }: { children: React.ReactNode; onPress: () => void; selected: boolean }) {
-  const { colors } = useTheme();
+function ChoiceTile({ blocked = null, children, onPress, selected }: {
+  /** Greyed out with this word when the item takes no new damage (user, 2026-11-07). */
+  blocked?: string | null;
+  children: React.ReactNode;
+  onPress: () => void;
+  selected: boolean;
+}) {
+  const { colors, fonts } = useTheme();
   return (
     <AnimatedPressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ disabled: Boolean(blocked), selected }}
+      disabled={Boolean(blocked)}
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: selected ? colors.primarySoft : colors.surface,
+        backgroundColor: selected ? colors.primarySoft : blocked ? colors.surfaceSunken : colors.surface,
+        opacity: blocked ? 0.55 : 1,
         borderColor: selected ? colors.primary : colors.border,
         borderCurve: "continuous",
         borderRadius: radii.card,
@@ -403,6 +477,7 @@ function ChoiceTile({ children, onPress, selected }: { children: React.ReactNode
       }}
     >
       {children}
+      {blocked ? <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 11 }}>{blocked}</Text> : null}
     </AnimatedPressable>
   );
 }
@@ -446,6 +521,9 @@ function ChoiceRow({ icon, label, onPress, selected, trailing }: {
  * field: each floor in building order, its rooms in number order as tiles with
  * how many live there.
  */
+/** No floor open: a key no floor can have. */
+const CLOSED_ALL = "\u0000";
+
 function RoomByFloorField({
   error,
   onChange,
@@ -464,7 +542,8 @@ function RoomByFloorField({
   const [open, setOpen] = useState(!value);
   // Three to a row, filling it edge to edge (user, 2026-10-29).
   const [rowWidth, setRowWidth] = useState(0);
-  const tileWidth = rowWidth > 0 ? (rowWidth - spacing.sm * 2) / 3 : undefined;
+  // The row is padded by md each side inside its floor.
+  const tileWidth = rowWidth > 0 ? Math.floor((rowWidth - spacing.md * 2 - spacing.sm * 2) / 3) - 1 : undefined;
   const chosen = rooms.find((room) => room.id === value) ?? null;
   const floors = useMemo(() => {
     const byFloor = new Map<string, OwnerRoom[]>();
@@ -480,6 +559,13 @@ function RoomByFloorField({
       }));
   }, [rooms]);
   const living = (roomId: string) => stays.filter((stay) => livesHere(stay, roomId)).length;
+  // One floor open at a time (user, 2026-11-07): the chosen room's, else the first.
+  // CLOSED_ALL marks every floor folded by hand.
+  const [openFloor, setOpenFloor] = useState<string | null>(() => {
+    const at = rooms.find((room) => room.id === value);
+    return at ? at.floor ?? "" : null;
+  });
+  const shownFloor = openFloor ?? floors[0]?.floor ?? null;
 
   return (
     <View style={{ gap: spacing.xs }}>
@@ -518,24 +604,34 @@ function RoomByFloorField({
         </View>
       </AnimatedPressable>
       {open ? (
-        <View style={{ borderColor: colors.border, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.md, padding: spacing.md }}>
-          {floors.map(({ floor, rooms: inFloor }, index) => (
-            <View
-              key={floor || "none"}
-              style={{ borderTopColor: colors.border, borderTopWidth: index === 0 ? 0 : 1, gap: spacing.sm, paddingTop: index === 0 ? 0 : spacing.md }}
-            >
-              {/* The floor, and its room count in a grey pill (user, 2026-10-29). */}
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-                <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 13 }}>{formatFloor(floor)}</Text>
+        // A card under the field, its floors folding open one at a time (user, 2026-11-07).
+        <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, overflow: "hidden" }}>
+          {floors.map(({ floor, rooms: inFloor }, index) => {
+            const expanded = floor === shownFloor;
+            return (
+            <View key={floor || "none"} style={{ borderTopColor: colors.border, borderTopWidth: index === 0 ? 0 : 1 }}>
+              <AnimatedPressable
+                accessibilityLabel={`${formatFloor(floor)}, ${inFloor.length} ${inFloor.length === 1 ? "room" : "rooms"}`}
+                accessibilityRole="button"
+                accessibilityState={{ expanded }}
+                onPress={() => setOpenFloor(expanded ? CLOSED_ALL : floor)}
+                style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2 }}
+              >
+                {/* The floor, and its room count in a grey pill (user, 2026-10-29). */}
+                <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>{formatFloor(floor)}</Text>
                 <View style={{ backgroundColor: colors.surfaceSunken, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
                   <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12 }}>
                     {inFloor.length} {inFloor.length === 1 ? "room" : "rooms"}
                   </Text>
                 </View>
-              </View>
+                <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 12, height: 24, justifyContent: "center", width: 24 }}>
+                  {expanded ? <ChevronUp color={colors.muted} size={16} /> : <ChevronDown color={colors.muted} size={16} />}
+                </View>
+              </AnimatedPressable>
+              {expanded ? (
               <View
                 onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}
-                style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}
+                style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, paddingBottom: spacing.md, paddingHorizontal: spacing.md }}
               >
                 {inFloor.map((room) => {
                   const selected = room.id === value;
@@ -579,8 +675,10 @@ function RoomByFloorField({
                   );
                 })}
               </View>
+              ) : null}
             </View>
-          ))}
+            );
+          })}
         </View>
       ) : null}
       {error ? <Text style={[type.caption, { color: colors.danger }]}>{error}</Text> : null}

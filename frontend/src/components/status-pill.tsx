@@ -2,6 +2,7 @@ import { View, type TextStyle, type ViewStyle } from "react-native";
 
 import { cardText, smallerCardText } from "@/components/card-name-row";
 import { MarqueeText } from "@/components/marquee-text";
+import { GhostPill, useIsSkeleton } from "@/components/skeletons/boundary";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -16,6 +17,7 @@ type StatusPillProps = {
 // no dots or icons inside pills, the colour and the word carry the status.
 export function StatusPill({ label, style, textStyle, tone = "neutral" }: StatusPillProps) {
   const { colors, type } = useTheme();
+  const ghost = useIsSkeleton();
   const toneColors = {
     success: { background: colors.successSoft, text: colors.successText },
     warning: { background: colors.warningSoft, text: colors.warningText },
@@ -26,6 +28,8 @@ export function StatusPill({ label, style, textStyle, tone = "neutral" }: Status
   };
   const selected = toneColors[tone];
 
+  // Inside a skeleton a grey bar about its own size, never the sample's words (user, 2026-11-15).
+  if (ghost) return <GhostPill height={24} width={Math.min(140, 24 + label.length * 7)}><View /></GhostPill>;
   return (
     <View
       style={[

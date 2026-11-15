@@ -28,6 +28,7 @@ import com.khatiyan.d_modules.discovery.metro.MetroProximity;
 import com.khatiyan.d_modules.discovery.metro.MetroService;
 import com.khatiyan.d_modules.discovery.model.PropertyDiscoveryProfile;
 import com.khatiyan.d_modules.discovery.repository.PropertyDiscoveryProfileRepository;
+import com.khatiyan.d_modules.food.FoodModule;
 import com.khatiyan.d_modules.property.PropertyModule;
 import com.khatiyan.d_modules.property.api.dto.PropertyResponse;
 import com.khatiyan.d_modules.property.api.dto.RoomMoldResponse;
@@ -51,6 +52,7 @@ public class PropertyDiscoveryService {
     private final PropertyImageService propertyImageService;
     private final PropertyContactService propertyContactService;
     private final MetroService metroService;
+    private final FoodModule foodModule;
 
     public PropertyDiscoveryService(
             PropertyDiscoveryProfileRepository discoveryProfileRepository,
@@ -59,8 +61,10 @@ public class PropertyDiscoveryService {
             AuthModule authModule,
             PropertyImageService propertyImageService,
             PropertyContactService propertyContactService,
-            MetroService metroService) {
+            MetroService metroService,
+            FoodModule foodModule) {
         this.metroService = metroService;
+        this.foodModule = foodModule;
         this.discoveryProfileRepository = discoveryProfileRepository;
         this.propertyModule = propertyModule;
         this.discoveryAccessPolicy = discoveryAccessPolicy;
@@ -333,7 +337,29 @@ public class PropertyDiscoveryService {
         PropertyDiscoveryProfile profile = discoveryProfileRepository.findVisibleByPropertyId(propertyId)
                 .orElseThrow(() -> new NotFoundException("DiscoveryProperty", propertyId));
 
+        return detail(propertyModule.getActiveProperty(propertyId), profile, latitude, longitude);
+    }
+
+    /** The listing as people will see it, for the owner's preview. Works before it is listed. */
+    @Transactional
+    public PropertyDiscoveryDetailResponse previewManagedProperty(UUID actorUserId, UUID propertyId) {
+        discoveryAccessPolicy.ensureCanViewListing(actorUserId, propertyId);
+
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
+        PropertyDiscoveryProfile profile = getOrCreateProfile(
+                property,
+                property.name() + " in " + property.city(),
+                defaultDescription(property),
+                null);
+        return detail(property, profile, null, null);
+    }
+
+    private PropertyDiscoveryDetailResponse detail(
+            PropertyResponse property,
+            PropertyDiscoveryProfile profile,
+            BigDecimal latitude,
+            BigDecimal longitude) {
+        UUID propertyId = property.id();
         String directionsUrl = DiscoveryGeoSupport.propertyDirectionsUrl(
                 property.latitude(),
                 property.longitude(),
@@ -353,6 +379,7 @@ public class PropertyDiscoveryService {
         return PropertyDiscoveryDetailResponse.from(
                 property,
                 profile,
+                profile.isShowMealRating() && property.foodIncluded() ? foodModule.currentMealRating(propertyId) : null,
                 DiscoveryGeoSupport.distanceKm(latitude, longitude, property.latitude(), property.longitude()),
                 directionsUrl,
                 startingRoomRentPaise,
@@ -406,7 +433,7 @@ public class PropertyDiscoveryService {
                 property.name() + " in " + property.city(),
                 defaultDescription(property),
                 null);
-        return PropertyDiscoveryProfileResponse.from(profile);
+        return PropertyDiscoveryProfileResponse.from(profile, foodModule.currentMealRating(propertyId));
     }
 
     @Transactional
@@ -428,9 +455,12 @@ public class PropertyDiscoveryService {
                 request.profileImageUrl(),
                 request.showOwnerContact(),
                 request.showManagerContact());
+        if (request.showMealRating() != null) {
+            profile.showMealRating(request.showMealRating());
+        }
 
         log.info("Discovery profile updated propertyId={} actorUserId={}", propertyId, actorUserId);
-        return PropertyDiscoveryProfileResponse.from(profile);
+        return PropertyDiscoveryProfileResponse.from(profile, foodModule.currentMealRating(propertyId));
     }
 
     @Transactional
@@ -446,7 +476,7 @@ public class PropertyDiscoveryService {
         profile.publish();
 
         log.info("Discovery profile published propertyId={} actorUserId={}", propertyId, actorUserId);
-        return PropertyDiscoveryProfileResponse.from(profile);
+        return PropertyDiscoveryProfileResponse.from(profile, foodModule.currentMealRating(propertyId));
     }
 
     @Transactional
@@ -462,7 +492,7 @@ public class PropertyDiscoveryService {
         profile.unpublish();
 
         log.info("Discovery profile unpublished propertyId={} actorUserId={}", propertyId, actorUserId);
-        return PropertyDiscoveryProfileResponse.from(profile);
+        return PropertyDiscoveryProfileResponse.from(profile, foodModule.currentMealRating(propertyId));
     }
 
     @Transactional
@@ -491,7 +521,7 @@ public class PropertyDiscoveryService {
         propertyModule.markDiscoveryProfileCreated(propertyId);
 
         log.info("Discovery profile repaired propertyId={} actorUserId={}", propertyId, actorUserId);
-        return PropertyDiscoveryProfileResponse.from(profile);
+        return PropertyDiscoveryProfileResponse.from(profile, foodModule.currentMealRating(propertyId));
     }
 
     private PropertyDiscoveryProfile getOrCreateProfile(
@@ -517,6 +547,60 @@ public class PropertyDiscoveryService {
 
     private String defaultDescription(PropertyResponse property) {
         return "Located at " + property.address() + ", " + property.city() + " " + property.pincode() + ".";
+    }
+
+    /**
+     * Listing cards for these properties, in the order given, leaving out any
+     * no longer listed or no longer active (user, 2026-11-14, for Saved
+     * properties). Four reads whatever the count: profiles, properties, rents
+     * and photos. With a point, each card carries its distance from it.
+     */
+    @Transactional(readOnly = true)
+    public List<PropertyDiscoveryCardResponse> cardsFor(List<UUID> propertyIds, BigDecimal latitude, BigDecimal longitude) {
+        if (propertyIds == null || propertyIds.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, PropertyDiscoveryProfile> profiles = discoveryProfileRepository.findVisibleByPropertyIds(propertyIds)
+                .stream()
+                .collect(Collectors.toMap(PropertyDiscoveryProfile::getPropertyId, profile -> profile, (a, b) -> a));
+        if (profiles.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, PropertyResponse> properties = propertyModule.findActiveProperties(profiles.keySet())
+                .stream()
+                .collect(Collectors.toMap(PropertyResponse::id, property -> property, (a, b) -> a));
+        Map<UUID, Long> rents = propertyModule.findLowestActiveRoomRentsPaise(properties.keySet());
+        Map<UUID, List<String>> images = propertyImageService.imageUrlsFor(properties.keySet());
+        List<PropertyDiscoveryCardResponse> cards = new ArrayList<>();
+        for (UUID propertyId : propertyIds) {
+            PropertyDiscoveryProfile profile = profiles.get(propertyId);
+            PropertyResponse property = properties.get(propertyId);
+            if (profile == null || property == null) {
+                continue;
+            }
+            String directionsUrl = DiscoveryGeoSupport.propertyDirectionsUrl(
+                    property.latitude(),
+                    property.longitude(),
+                    property.address(),
+                    property.area(),
+                    property.city(),
+                    property.state(),
+                    property.pincode());
+            cards.add(PropertyDiscoveryCardResponse.from(
+                    property,
+                    profile,
+                    DiscoveryGeoSupport.distanceKm(latitude, longitude, property.latitude(), property.longitude()),
+                    directionsUrl,
+                    rents.get(propertyId),
+                    images.getOrDefault(propertyId, List.of())));
+        }
+        return cards;
+    }
+
+    /** Whether a property is listed now, for saving it. */
+    @Transactional(readOnly = true)
+    public boolean isVisible(UUID propertyId) {
+        return discoveryProfileRepository.findVisibleByPropertyId(propertyId).isPresent();
     }
 
     private PropertyDiscoveryCardResponse toCardResponseIfPropertyVisible(

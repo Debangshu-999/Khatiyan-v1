@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { EmptyVisits } from "@/components/empty-art";
 import { ActivityIndicator, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -8,27 +9,31 @@ import {
   CalendarX,
   CheckCheck,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   CircleCheck,
   CirclePlay,
   Clock,
-  ClipboardList,
   ClipboardPenLine,
   ClockAlert,
   Hourglass,
+  Plus,
   UserCheck,
   UserPlus,
 } from "lucide-react-native";
 
 import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
 import { LoadFailed } from "@/components/load-failed";
-import { AddRecordCard } from "@/components/add-record-card";
+import { EarlierTodayArt, RecordExternalArt, VisitHistoryArt } from "@/features/visits/visit-desk-art";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
-import { FilteredQueue } from "@/components/filtered-queue";
+import { FilteredQueue, PILL_CHOICE_MAX_WIDTH, pillChoice } from "@/components/filtered-queue";
+import { InPageDropdown, useInPageDropdown } from "@/components/anchored-dropdown";
+import { SearchField } from "@/components/search-field";
+import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { ListEnd } from "@/components/list-end";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -56,6 +61,7 @@ import {
   type VisitHistoryStatus,
 } from "@/store/services/enquiry-chat-api";
 import { useListMyPropertiesQuery } from "@/store/services/property-api";
+import { cardShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -79,6 +85,14 @@ const INDIA = "Asia/Kolkata";
  * changes over. Tightened twice at the user's asking (2026-10-04).
  */
 const EARLIER_CARD_GAP = spacing.md;
+
+/** Visit history's status menu, All first and by default (user, 2026-10-19). */
+const HISTORY_STATUS_OPTIONS: { label: string; value: VisitHistoryStatus }[] = [
+  { label: "All", value: "ALL" },
+  { label: "Visited", value: "VISITED" },
+  { label: "No visit", value: "NO_VISIT" },
+  { label: "Cancelled", value: "CANCELLED" },
+];
 
 const HISTORY_HEADINGS: Record<VisitHistoryStatus, string> = {
   ALL: "All past visits",
@@ -135,8 +149,8 @@ export default function OwnerVisitsScreen() {
  * component again, in another view, because the cards and everything their
  * buttons open are the same: the route file only names the view.
  */
-export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
-  const { colors } = useTheme();
+export function VisitsScreen({ view }: { view: "main" | "earlier" | "history" }) {
+  const { colors, fonts } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useGuardedRouter();
   const toast = useToast();
@@ -160,18 +174,27 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
   });
   const [markMissed, markMissedState] = useMarkMissedCheckInMutation();
 
-  const [tab, setTab] = useState<Tab>("today");
+  // History is its own screen now (user, 2026-11-14), this component in its history view.
+  const [tab, setTab] = useState<Tab>(view === "history" ? "history" : "today");
   const [historyPage, setHistoryPage] = useState(0);
   // All by default (user, 2026-10-19).
   const [historyStatus, setHistoryStatus] = useState<VisitHistoryStatus>("ALL");
-  const historyQuery = useGetPropertyVisitHistoryQuery({ propertyId: property?.id ?? "", page: historyPage, status: historyStatus }, {
-    skip: !property || tab !== "history" || view !== "main",
+  // Visit history's sticky search by name or visit ID (user, 2026-11-14), searched on the server.
+  const [historySearch, setHistorySearch] = useState("");
+  const historySearched = useDebouncedValue(historySearch.trim(), 300);
+  const historyFiltering = Boolean(historySearched) || historyStatus !== "ALL";
+  // The status menu drawn in the screen, as Damages' level menu is.
+  const statusMenu = useInPageDropdown();
+  const searchRestY = useRef(0);
+  const [searchPinned, setSearchPinned] = useState(false);
+  const historyQuery = useGetPropertyVisitHistoryQuery({ propertyId: property?.id ?? "", page: historyPage, search: historySearched, status: historyStatus }, {
+    skip: !property || tab !== "history",
     refetchOnMountOrArgChange: true,
   });
   const history = historyQuery.currentData;
   // Infinite scroll on every list tab (user, 2026-10-29): History's pages are
   // kept as they arrive, for its status and property only.
-  const historyKey = `${property?.id ?? ""}:${historyStatus}`;
+  const historyKey = `${property?.id ?? ""}:${historyStatus}:${historySearched}`;
   const [historyPages, setHistoryPages] = useState<{ key: string; items: VisitCard[] }>({ items: [], key: "" });
   useEffect(() => {
     if (!history) return;
@@ -182,7 +205,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     });
   }, [history, historyKey]);
   const historyItems = historyPages.key === historyKey ? historyPages.items : history?.items ?? [];
-  useEffect(() => setHistoryPage(0), [property?.id, historyStatus]);
+  useEffect(() => setHistoryPage(0), [property?.id, historyStatus, historySearched]);
   const [range, setRange] = useState<Range>("ALL");
   // Today first: the Missed tab is where the day's no-shows are reviewed (user, 2026-10-18). With none
   // today it opens on All instead, so missed visits from earlier days are never hidden (user, 2026-10-27).
@@ -221,11 +244,6 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
   }
   // Upcoming and Missed arrive whole and are drawn a screenful at a time.
   const [shown, setShown] = useState(VISIT_PAGE_SIZE);
-  // History's total, for its tab's count, whichever tab is open: page 0 of all
-  // statuses, the tab's own first page when it opens on All.
-  const historyCountQuery = useGetPropertyVisitHistoryQuery({ propertyId: property?.id ?? "", page: 0, status: "ALL" }, {
-    skip: !property || view !== "main",
-  });
 
   // The Earlier today card is fixed to the bottom of the screen, always
   // (user, 2026-10-04): with one slot left the list is short, and a card
@@ -308,8 +326,11 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     }
   }
 
+  // History shows the skeleton until its first page for this filter is in (user, 2026-11-14),
+  // including while the property is still being read, never an empty state first.
   const loading = tab === "history"
-    ? historyQuery.isFetching && !history
+    ? !historyQuery.isError && historyItems.length === 0 && (!history || historyQuery.isFetching)
+      && (Boolean(property) || propertiesQuery.isLoading)
     : visitsQuery.isLoading && !visitsQuery.data;
   const list = tab === "today" ? today : tab === "upcoming" ? upcomingBy[range] : tab === "history" ? historyItems : missedBy[missedRange];
   useEffect(() => setShown(VISIT_PAGE_SIZE), [tab, range, missedRange, property?.id]);
@@ -345,6 +366,10 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
   // Always there on Today, with or without anything in it yet: it is where
   // a slot's visits will go when it ends (user, 2026-10-04).
   const showEarlierCard = view === "main" && tab === "today" && Boolean(property);
+  // The fixed strip's height, so an empty Today centres above it rather than keeping a spacer the
+  // strip's size, which made the empty screen scroll (user, 2026-11-14).
+  const [stripHeight, setStripHeight] = useState<number | undefined>(undefined);
+  const todayEmpty = tab === "today" && slots.length === 0;
 
   const cards = tab === "history" && historyQuery.isError ? (
     <LoadFailed error={historyQuery.error} onReload={() => void historyQuery.refetch()} />
@@ -370,13 +395,14 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
               ? "Pick another range to see the rest."
               : "Visits booked from tomorrow onwards show here."
             : tab === "history"
-              ? "Past visits and cancellations for this property are kept here."
+              ? historyFiltering ? "Try another name, visit ID or status." : "Past visits and cancellations for this property are kept here."
               : missed.length > 0
                 ? "Pick another range to see the rest."
                 : "A visit nobody was checked in for shows here until its enquiry ends."
       }
       // The Property screen's own Visiting Hours mark (user, 2026-10-04).
-      artworkNode={<PropertyVisitsIcon size={64} />}
+      artworkNode={<EmptyVisits size={120} />}
+      footerHeight={showEarlierCard && tab === "today" ? stripHeight : undefined}
       title={
         tab === "today"
           ? earlier.length > 0
@@ -384,7 +410,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
             : "No visits today"
           : tab === "upcoming"
             ? "No upcoming visits"
-            : tab === "history" ? "No visitor history yet" : "No missed visits"
+            : tab === "history" ? (historyFiltering ? "No matching visits" : "No visitor history yet") : "No missed visits"
       }
     />
   ) : tab === "today" && shownSlot ? (
@@ -487,6 +513,109 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     </>
   );
 
+  // Visit history: its own screen (user, 2026-11-14), with the skeleton, and a sticky search by
+  // name or visit ID beside the status menu, laid out as Damages' is.
+  if (view === "history") {
+    const chosenStatus = HISTORY_STATUS_OPTIONS.find((option) => option.value === historyStatus) ?? HISTORY_STATUS_OPTIONS[0];
+    return (
+      <View collapsable={false} ref={statusMenu.host} style={{ backgroundColor: colors.background, flex: 1 }}>
+        <ScreenScrollView
+          onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+            const pinned = searchRestY.current > 0 && contentOffset.y >= searchRestY.current;
+            if (pinned !== searchPinned) {
+              setSearchPinned(pinned);
+              if (pinned) statusMenu.close();
+            }
+            if (contentSize.height - contentOffset.y - layoutMeasurement.height <= 240) loadMore();
+          }}
+          safeAreaEdges={["top", "bottom"]}
+          scrollEventThrottle={16}
+          stickyHeaderIndices={property ? [1] : []}
+        >
+          <ScreenHeader
+            italicTail="history."
+            subtitle={
+              property
+                ? `Past visits and cancellations at ${property.name}.`
+                : "Select a property from Home first."
+            }
+            title="Visit"
+          />
+          {property ? (
+            // Sticks under the header. On a phone a sticky child's style moves to a wrapper: the row needs its own View.
+            <View
+              onLayout={(event) => { searchRestY.current = event.nativeEvent.layout.y; }}
+              style={{ backgroundColor: colors.background, marginHorizontal: -spacing.lg, paddingBottom: spacing.xs, paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}
+            >
+              {searchPinned ? (
+                <View pointerEvents="none" style={{ backgroundColor: colors.background, bottom: -spacing.sm, height: spacing.sm, left: 0, position: "absolute", right: 0 }} />
+              ) : null}
+              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <SearchField onChangeText={setHistorySearch} placeholder="Search by name or visit ID" value={historySearch} />
+                </View>
+                <View collapsable={false} ref={statusMenu.ref}>
+                  <AnimatedPressable
+                    accessibilityLabel={`Status: ${chosenStatus.label}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: Boolean(statusMenu.trigger) }}
+                    // Pinned after a scroll it is a plain pill: no chevron, nothing to open.
+                    disabled={searchPinned}
+                    onPress={searchPinned ? undefined : statusMenu.open}
+                    style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: `${colors.ink}40`, borderRadius: 999, borderWidth: 1, flexDirection: "row", gap: 4, height: 36, paddingLeft: spacing.md, paddingRight: spacing.sm }}
+                  >
+                    <Text ellipsizeMode="tail" numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 12.5, maxWidth: PILL_CHOICE_MAX_WIDTH }}>
+                      {pillChoice(chosenStatus.label)}
+                    </Text>
+                    {searchPinned ? null : <ChevronDown color={colors.ink} size={15} strokeWidth={2.4} />}
+                  </AnimatedPressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+          {!property && !propertiesQuery.isFetching ? (
+            <EmptyState
+              artworkNode={<EmptyVisits size={120} />}
+              description="Visits are scoped to the active owner property."
+              title="No property selected"
+            />
+          ) : (
+            <View style={{ gap: spacing.md }}>
+              {loading || historyItems.length === 0 ? null : (
+                <View style={{ flexDirection: "row" }}>
+                  <CountPill count={history?.totalElements ?? historyItems.length} noun={["visit", "visits"]} />
+                </View>
+              )}
+              {cards}
+              {listFoot}
+            </View>
+          )}
+          {sheets}
+        </ScreenScrollView>
+        {statusMenu.trigger && !searchPinned ? (
+          <InPageDropdown onClose={statusMenu.close} trigger={statusMenu.trigger} width={180}>
+            {HISTORY_STATUS_OPTIONS.map((option) => (
+              <AnimatedPressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: option.value === historyStatus }}
+                key={option.value}
+                onPress={() => {
+                  setHistoryStatus(option.value);
+                  statusMenu.close();
+                }}
+                style={{ backgroundColor: option.value === historyStatus ? colors.surfaceSunken : colors.surface, padding: spacing.md }}
+              >
+                <Text style={{ color: colors.ink, fontFamily: option.value === historyStatus ? fonts.sansBold : fonts.sansMedium, fontSize: 14 }}>
+                  {option.label}
+                </Text>
+              </AnimatedPressable>
+            ))}
+          </InPageDropdown>
+        ) : null}
+      </View>
+    );
+  }
+
   // Earlier today: the visits of the slots that have ended, as their own screen.
   if (view === "earlier") {
     return (
@@ -510,7 +639,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
           </SkeletonBoundary>
         ) : earlier.length === 0 ? (
           <EmptyState
-            artworkNode={<PropertyVisitsIcon size={64} />}
+            artworkNode={<EmptyVisits size={120} />}
             description="Visits move here once their slot has ended."
             title="Nothing earlier today"
           />
@@ -541,14 +670,18 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
 
   // Record external visit above Earlier today (user, 2026-10-19), for the slot
   // shown. The form starts on that slot and can pick another of the day's.
+  // History beside it (user, 2026-11-14): it was the fourth tab.
   const earlierCard = (
     <View style={{ gap: spacing.sm }}>
-      <RecordExternalVisitCard
-        onPress={() => router.push(shownSlot
-          ? { params: { slot: shownSlot.key }, pathname: "/owner-external-visit" }
-          : "/owner-external-visit")}
-        slot={shownSlot}
-      />
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <RecordExternalVisitCard
+          onPress={() => router.push(shownSlot
+            ? { params: { slot: shownSlot.key }, pathname: "/owner-external-visit" }
+            : "/owner-external-visit")}
+          slot={shownSlot}
+        />
+        <VisitHistoryCard onPress={() => router.push("/owner-visits-history")} />
+      </View>
       <EarlierTodayCard
         count={earlier.length}
         onPress={() => router.push("/owner-visits-earlier")}
@@ -582,7 +715,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
 
       {!property && !propertiesQuery.isFetching ? (
         <EmptyState
-          artworkNode={<PropertyVisitsIcon size={64} />}
+          artworkNode={<EmptyVisits size={120} />}
           description="Visits are scoped to the active owner property."
           title="No property selected"
         />
@@ -605,13 +738,13 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
               { badge: tab === "today" ? undefined : stillListedToday, label: "Today", value: "today" },
               { badge: tab === "upcoming" ? undefined : upcoming.length, label: "Upcoming", value: "upcoming" },
               { badge: tab === "missed" ? undefined : missed.length, label: "Missed", value: "missed" },
-              { badge: tab === "history" ? undefined : historyCountQuery.currentData?.totalElements ?? 0, label: "History", value: "history" },
             ]}
           />
 
           {tab === "upcoming" ? (
             <FilteredQueue<Range>
               count={loading ? undefined : upcomingBy[range].length}
+              hideHeader={!loading && upcoming.length === 0}
               heading={RANGE_HEADINGS[range]}
               headingNode={loading ? undefined : <CountPill count={upcomingBy[range].length} noun={["visit", "visits"]} />}
               onChange={setRange}
@@ -629,6 +762,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
           ) : tab === "missed" ? (
             <FilteredQueue<MissedRange>
               count={loading ? undefined : missedBy[missedRange].length}
+              hideHeader={!loading && missed.length === 0}
               heading={MISSED_HEADINGS[missedRange]}
               headingNode={loading ? undefined : <CountPill count={missedBy[missedRange].length} kind="missed" noun={["visit", "visits"]} />}
               onChange={setMissedRange}
@@ -644,25 +778,6 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
               {cards}
               {listFoot}
             </FilteredQueue>
-          ) : tab === "history" ? (
-            // A status filter, All first and by default (user, 2026-10-19). Counted on the server, so
-            // only the chosen one has a number.
-            <FilteredQueue<VisitHistoryStatus>
-              count={loading ? undefined : history?.totalElements ?? 0}
-              heading={HISTORY_HEADINGS[historyStatus]}
-              headingNode={loading ? undefined : <CountPill count={history?.totalElements ?? 0} noun={["visit", "visits"]} />}
-              onChange={setHistoryStatus}
-              options={[
-                { label: "All", value: "ALL" },
-                { label: "Visited", value: "VISITED" },
-                { label: "No visit", value: "NO_VISIT" },
-                { label: "Cancelled", value: "CANCELLED" },
-              ]}
-              value={historyStatus}
-            >
-              {cards}
-              {listFoot}
-            </FilteredQueue>
           ) : (
             // Today carries no count: the slot bar says who is coming (user, 2026-10-19).
             <View style={{ gap: spacing.md }}>{cards}</View>
@@ -673,7 +788,7 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
       {/* The space the list keeps at its foot for the card below: the card
           itself, unseen and untouchable, so the space is exactly its size
           whatever the font scale. */}
-      {showEarlierCard && !loading ? (
+      {showEarlierCard && !loading && !todayEmpty ? (
         <View
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
@@ -692,7 +807,10 @@ export function VisitsScreen({ view }: { view: "main" | "earlier" }) {
     {showEarlierCard && !loading ? (
       <View
         collapsable={false}
-        onLayout={measureEmptySpace}
+        onLayout={(event) => {
+          setStripHeight(event.nativeEvent.layout.height);
+          measureEmptySpace();
+        }}
         pointerEvents="box-none"
         ref={stripRef}
         style={{
@@ -1060,7 +1178,7 @@ function todayStatus(visit: VisitCard, now: number): VisitStatus {
  * slot bar and Record external visit centres it.
  */
 function EmptySlot() {
-  return <EmptyState artworkNode={<PropertyVisitsIcon size={48} />} compact title="No visits in this slot" />;
+  return <EmptyState artworkNode={<EmptyVisits size={72} />} compact title="No visits in this slot" />;
 }
 
 type Slot = { key: string; slotEnd: string; slotEndsAt: string; slotStart: string; slotStartsAt: string; visits: VisitCard[] };
@@ -1124,30 +1242,20 @@ function EarlierTodayCard({
       accessibilityLabel={`Earlier today, ${count === 0 ? "no visits yet" : count === 1 ? "1 visit" : `${count} visits`}`}
       accessibilityRole="button"
       onPress={onPress}
-      style={{
-        alignItems: "center",
-        // Pale yellow with brown text, the Upcoming pill's own colours, and
-        // no border (user, 2026-10-04).
-        backgroundColor: colors.warningSoft,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        flexDirection: "row",
-        gap: spacing.sm,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.md,
-      }}
+      style={deskCardStyle(colors, { alignItems: "center", flexDirection: "row", gap: spacing.md })}
     >
-      <ClipboardList color={colors.warningText} size={22} strokeWidth={2.1} />
+      {/* A white card with its own coloured drawing (user, 2026-11-14). It was a pale yellow fill. */}
+      <EarlierTodayArt size={40} />
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ color: colors.warningText, fontFamily: fonts.sansBold, fontSize: 16 }}>Earlier today</Text>
+        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 16 }}>Earlier today</Text>
         {count === 0 ? (
-          <Text style={[type.caption, { color: colors.warningText }]}>Visits move here when their slot ends</Text>
+          <Text style={[type.caption, { color: colors.muted }]}>Visits move here when their slot ends</Text>
         ) : (
           // How many, and how many still ask for something, as two points
           // rather than one run-on line (user, 2026-10-04).
           <View style={{ gap: 1 }}>
             <EarlierPoint
-              color={colors.warningText}
+              color={colors.muted}
               text={count === 1 ? "1 visit from a slot that has ended" : `${count} visits from slots that have ended`}
             />
             {/* "Pending review" here, in full: only the chip on a card is the one word (user, 2026-10-04). */}
@@ -1155,20 +1263,66 @@ function EarlierTodayCard({
           </View>
         )}
       </View>
-      <ChevronRight color={colors.warningText} size={18} strokeWidth={2.4} />
+      <ChevronRight color={colors.muted} size={18} strokeWidth={2.4} />
     </AnimatedPressable>
   );
 }
 
-/** Record external visit, over Earlier today (user, 2026-10-19), naming the slot it records into. */
+/** The bottom cards' frame (user, 2026-11-14): white, the app's card edge and depth. */
+function deskCardStyle(colors: ReturnType<typeof useTheme>["colors"], extra: object) {
+  return {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderCurve: "continuous" as const,
+    borderRadius: radii.card,
+    borderWidth: 1,
+    padding: spacing.md,
+    ...cardShadow(colors.shadow),
+    ...extra,
+  };
+}
+
+/**
+ * Record external, half the row beside History (user, 2026-11-14): its drawing and a +
+ * on top, the words under them, and the slot it records into.
+ */
 function RecordExternalVisitCard({ onPress, slot }: { onPress: () => void; slot: Slot | null }) {
+  const { colors, fonts, type } = useTheme();
+  const caption = slot ? formatSlotDash(slot.slotStart, slot.slotEnd) : null;
   return (
-    <AddRecordCard
-      caption={slot ? formatSlotDash(slot.slotStart, slot.slotEnd) : null}
-      icon={UserPlus}
-      label="Record external visit"
+    <AnimatedPressable
+      accessibilityLabel={caption ? `Record external visit, ${caption}` : "Record external visit"}
+      accessibilityRole="button"
       onPress={onPress}
-    />
+      style={deskCardStyle(colors, { flex: 1, gap: spacing.xs })}
+    >
+      <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
+        <RecordExternalArt size={38} />
+        <Plus color={colors.muted} size={18} strokeWidth={2.4} />
+      </View>
+      <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>Record external</Text>
+      {caption ? <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>{caption}</Text> : null}
+    </AnimatedPressable>
+  );
+}
+
+/** History (user, 2026-11-14), beside Record external: it was the fourth tab, and opens Visit history. */
+function VisitHistoryCard({ onPress }: { onPress: () => void }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityLabel="Visit history"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={deskCardStyle(colors, { flex: 1, gap: spacing.xs })}
+    >
+      <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
+        <VisitHistoryArt size={38} />
+        <ChevronRight color={colors.muted} size={18} strokeWidth={2.4} />
+      </View>
+      <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>History</Text>
+      <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>Past visits</Text>
+    </AnimatedPressable>
   );
 }
 

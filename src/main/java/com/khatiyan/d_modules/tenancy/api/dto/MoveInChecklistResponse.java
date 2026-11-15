@@ -28,7 +28,9 @@ public record MoveInChecklistResponse(
         List<com.khatiyan.d_modules.property.api.dto.PropertyExitPolicyResponse.DamageLevelView> levels) {
 
     public record Item(String name, DamageLevel damageLevel, String note, boolean custom, List<String> photoUrls,
-            com.khatiyan.d_modules.tenancy.model.MoveInSection section) {
+            com.khatiyan.d_modules.tenancy.model.MoveInSection section,
+            /** Working, Damaged or Broken (2026-11-07). */
+            com.khatiyan.d_modules.tenancy.model.ItemCondition condition) {
     }
 
     public static MoveInChecklistResponse from(MoveInChecklist checklist, Instant now, boolean viewerIsTenant,
@@ -38,7 +40,7 @@ public record MoveInChecklistResponse(
                 checklist.getTenancyId(),
                 checklist.getItems().stream()
                         .map(item -> new Item(item.getName(), item.getDamageLevel(), item.getNote(), item.isCustom(),
-                                List.copyOf(item.getPhotoUrls()), item.getSection()))
+                                List.copyOf(item.getPhotoUrls()), item.getSection(), item.condition()))
                         .toList(),
                 checklist.getKeysHandedOver(),
                 checklist.getRecordedAt(),

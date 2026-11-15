@@ -1,8 +1,11 @@
 import { ModalTitle } from "@/components/modal-title";
+import { SectionHeading } from "@/components/section-heading";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { CenterModal } from "@/components/center-modal";
+import { SheetShell } from "@/components/sheet-shell";
 import type { ComponentType, PropsWithChildren, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePullRefreshed } from "@/lib/pull-refresh";
 import {
   ActivityIndicator,
   Image,
@@ -23,6 +26,7 @@ import {
   ChevronRight,
   Fingerprint,
   Hash,
+  Info,
   Mail,
   MapPin,
   Moon,
@@ -47,8 +51,8 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { AlertModal } from "@/components/alert-modal";
 import { classifyToast } from "@/components/toast";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { Section } from "@/components/section";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { HowItWorksSheet, type HowItWorksStep } from "@/components/how-it-works-sheet";
+import { AnimatedKeyboardAvoidingView, useKeyboardRoom } from "@/components/use-keyboard-inset";
 import { requestNotificationDeviceRegistration } from "@/features/notifications/device-registration";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -86,6 +90,10 @@ export default function AccountSettingsScreen() {
   const dispatch = useAppDispatch();
   const { colors, fonts, type } = useTheme();
   const auth = useAppSelector((state) => state.auth);
+  const activeAccount = useAppSelector((state) => state.account.activeAccount);
+  // The owner side, falling back to the account's own role while the active one resolves.
+  const isOwnerAccount = activeAccount === "owner" || (!activeAccount && auth.user?.role === "OWNER");
+  const [identityInfoOpen, setIdentityInfoOpen] = useState(false);
   const phone = auth.user?.phone ?? "";
   const devicesQuery = useListMyDevicesQuery(undefined, { skip: !auth.accessToken });
   const [registerDevice, registerDeviceState] = useRegisterDeviceMutation();
@@ -173,11 +181,39 @@ export default function AccountSettingsScreen() {
               photoUrl={auth.user?.profilePhotoUrl ?? null}
             />
 
-            <Section title="Identity">
+            {/* No subheadings or lines between sections (user, 2026-11-08), except the
+                Identity card, which keeps its title, with what the details are for behind an i
+                on its right, worded for who is reading: a tenant never onboards anyone. */}
+            {/* A plain title, as Registered properties on the Account tab, not a heading band
+                (user, 2026-11-08). */}
+            <View style={{ gap: spacing.sm }}>
+              <PlainTitle
+                title="Identity"
+                trailing={
+                <AnimatedPressable
+                  accessibilityLabel="What your identity details are for"
+                  accessibilityRole="button"
+                  hitSlop={10}
+                  onPress={() => setIdentityInfoOpen(true)}
+                  style={{ alignItems: "center", height: 26, justifyContent: "center", width: 26 }}
+                  tapLockMs={0}
+                >
+                  <Info color={colors.kicker} size={20} strokeWidth={2.4} />
+                </AnimatedPressable>
+                }
+              />
               <IdentityCard />
-            </Section>
+            </View>
+            {identityInfoOpen ? (
+              <HowItWorksSheet
+                eyebrow="Identity"
+                onClose={() => setIdentityInfoOpen(false)}
+                steps={isOwnerAccount ? OWNER_IDENTITY_STEPS : TENANT_IDENTITY_STEPS}
+                title="How it works"
+              />
+            ) : null}
 
-            <Section title="PIN">
+              <PlainTitle tight title="PIN" />
               <Card>
                 <SettingsRow
                   icon={DialpadIcon}
@@ -193,13 +229,11 @@ export default function AccountSettingsScreen() {
                   onPress={() => setPinModalMode("forgot")}
                 />
               </Card>
-            </Section>
 
-            <Section title="Signed-in devices">
+              <PlainTitle tight title="Signed-in devices" />
               <SignedInDevices />
-            </Section>
 
-            <Section title="Device alerts">
+              <PlainTitle tight title="Device alerts" />
               <Card>
                 {devicesQuery.isLoading && !devicesQuery.data ? (
                   <AccountDeviceAlertSkeleton />
@@ -227,9 +261,8 @@ export default function AccountSettingsScreen() {
                   </>
                 )}
               </Card>
-            </Section>
 
-            <Section title="Display">
+              <PlainTitle tight title="Display" />
               <Card>
                 <PreferenceRow
                   icon={Moon}
@@ -265,7 +298,6 @@ export default function AccountSettingsScreen() {
                   }
                 />
               </Card>
-            </Section>
 
             {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
           </ScreenScrollView>
@@ -390,8 +422,9 @@ function ProfileCard({
           <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 19 }}>
             {cardName(fullName || "Add your name")}
           </FitText>
-          <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.mono }]}>
-            {formatIndianPhone(phone)}
+          {/* The app's own type, not mono, and the ten digits unbroken (user, 2026-11-08). */}
+          <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansMedium }]}>
+            {formatIndianPhone(phone).replace(/^(\+91) (\d{5}) (\d{5})$/, "$1 $2$3")}
           </Text>
         </View>
       </View>
@@ -435,8 +468,7 @@ function PinVerificationModal({
   // Refusals inside the PIN flow: wrong PIN, expired code.
   const pinErrors = useFormErrors<never>();
 
-  const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const { colors, type } = useTheme();
   const toast = useToast();
   const [step, setStep] = useState<PinFlowStep>("details");
   const [currentPin, setCurrentPin] = useState("");
@@ -559,131 +591,75 @@ function PinVerificationModal({
   // The number is named inline rather than given its own labelled block: it is
   // one fact, and the block cost enough height to push the tallest step off a
   // static (non-scrolling) card once the keypad was up.
+  // A new PIN ends every session the account holds, so that is said up front, in the same
+  // lines as what to do, with the OTP straight after it (user, 2026-11-08).
   const subtitle = step === "otp"
     ? `Enter the OTP sent to ${formatIndianPhone(phone)}.`
     : step === "pin"
       ? "OTP verified. Choose and confirm a fresh PIN."
       : mode === "change"
-        ? `Enter your current PIN and a new one. We'll send an OTP to ${formatIndianPhone(phone)}.`
-        : `We'll send an OTP to ${formatIndianPhone(phone)} before you choose a fresh PIN.`;
+        ? `Enter your current PIN and a new one. This signs you out everywhere. We will send an OTP to ${formatIndianPhone(phone)}.`
+        : `Choose a fresh PIN after a quick check. This signs you out everywhere. We will send an OTP to ${formatIndianPhone(phone)}.`;
 
+  if (!visible) return null;
+
+  // A bottom-up sheet with the dark cross above it (user, 2026-11-08), sized to its content.
   return (
-    <CenterModal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={resetAndClose}>
-      {/* A plain dim, not a blur — see ProfileEditModal for the reasoning: a
-          Modal is its own window on Android, so expo-blur has nothing it is
-          allowed to sample. */}
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.overlay,
-          flex: 1,
-          justifyContent: "center",
-          padding: spacing.lg,
-        }}
-      >
-        {/* iOS keeps the platform avoider. Android measures the keyboard and
-            lifts the card by margin — "padding" there is broken under
-            edge-to-edge, where it never returns to zero and left the card
-            stranded up the screen after the keyboard closed. */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{
-            marginBottom: keyboardInset,
-            maxWidth: 520,
-            width: "100%",
-          }}
-        >
-          {/* Deliberately not scrollable. The whole flow is short enough to sit
-              on one static page, and a scroll view here made a five-field form
-              feel like a document — the tallest step is three PIN fields and a
-              button, which fits with room to spare. */}
-          <Card
-            style={{
-              borderRadius: 18,
-              gap: spacing.lg,
-              overflow: "hidden",
-              paddingBottom: spacing.xl,
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.lg,
-            }}
-          >
-            <View style={{ gap: spacing.lg }}>
-              <View style={{ gap: spacing.md }}>
-              {/* flex-start, not center: the left column is three lines tall, so
-                  centring floated the close button down to its middle instead of
-                  pinning it to the card's top corner. */}
-              <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-                <View style={{ flex: 1, gap: spacing.xs }}>
-                  <Text style={[type.eyebrow, { color: colors.primary }]}>
-                    PIN verification
-                  </Text>
-                  <ModalTitle
-                    style={{
-                      color: colors.ink,
-                      fontFamily: fonts.display,
-                      fontSize: 24,
-                    }}
-                  >
-                    {title}
-                  </ModalTitle>
-                  <Text style={[type.modalDescription, { color: colors.muted }]}>
-                    {subtitle}
-                  </Text>
-                </View>
-                <CloseButton onPress={resetAndClose} />
-              </View>
-
-              </View>
-
-              <View style={{ gap: spacing.md, paddingTop: spacing.xs }}>
-                {/* Said before the PIN is typed, not after the sign-out. A new
-                    PIN invalidates every token the account holds, so any other
-                    phone or tablet still signed in is dropped too — surprising
-                    if you are mid-task on one of them, and unguessable from a
-                    screen that only talks about this device. */}
-                <NoticeBar
-                  message="Any other phone or tablet signed in to this account is signed out too."
-                  title="This signs you out everywhere"
-                  tone="warning"
-                />
-                {step === "details" ? (
-                  <>
-                    {mode === "change" ? (
-                      <>
-                        <CodeField label="Current PIN" secureTextEntry value={currentPin} onChangeText={setCurrentPin} />
-                        <CodeField label="New PIN" secureTextEntry value={newPin} onChangeText={setNewPin} />
-                        <CodeField label="Retype PIN" secureTextEntry value={confirmPin} onChangeText={setConfirmPin} />
-                      </>
-                    ) : null}
-                    <PrimaryButton busy={busy} label="Send OTP" onPress={() => void handleRequestOtp()} />
-                  </>
-                ) : step === "otp" ? (
-                  <>
-                    <CodeField label="OTP" value={otp} onChangeText={setOtp} />
-                    <PrimaryButton
-                      busy={busy}
-                      label={mode === "change" ? "Change PIN" : "Verify OTP"}
-                      onPress={() => void (mode === "change" ? handleConfirm() : handleVerifyOtp())}
-                    />
-                    <SecondaryButton busy={busy} label="Resend OTP" onPress={() => void handleRequestOtp()} />
-                  </>
-                ) : (
-                  <>
-                    <CodeField label="New PIN" secureTextEntry value={newPin} onChangeText={setNewPin} />
-                    <CodeField label="Retype PIN" secureTextEntry value={confirmPin} onChangeText={setConfirmPin} />
-                    <PrimaryButton busy={busy} label="Reset PIN" onPress={() => void handleConfirm()} />
-                  </>
-                )}
-              </View>
-            </View>
-
-            {/* Measured inside the modal window so the card clears the gesture
-                bar; without it the last button ends up under the nav area. */}
-            <SafeAreaView edges={["bottom"]} />
-          </Card>
-        </KeyboardAvoidingView>
+    <SheetShell
+      onClose={resetAndClose}
+      size="content"
+      title={title}
+    >
+      {/* The description under the title's line (user, 2026-11-08). */}
+      <Text style={[type.description, { color: colors.muted }]}>
+        {subtitle}
+      </Text>
+      {/* Room above the first field: its label floats over the field's top edge (user, 2026-11-08). */}
+      <View style={{ gap: spacing.md, paddingTop: spacing.xs }}>
+      {step === "details" ? (
+        <>
+          {mode === "change" ? (
+            <>
+              <CodeField label="Current PIN" secureTextEntry value={currentPin} onChangeText={setCurrentPin} />
+              <CodeField label="New PIN" secureTextEntry value={newPin} onChangeText={setNewPin} />
+              <CodeField label="Retype PIN" secureTextEntry value={confirmPin} onChangeText={setConfirmPin} />
+            </>
+          ) : null}
+          <PrimaryButton busy={busy} label="Send OTP" onPress={() => void handleRequestOtp()} />
+        </>
+      ) : step === "otp" ? (
+        <>
+          <CodeField label="OTP" value={otp} onChangeText={setOtp} />
+          <PrimaryButton
+            busy={busy}
+            label={mode === "change" ? "Change PIN" : "Verify OTP"}
+            onPress={() => void (mode === "change" ? handleConfirm() : handleVerifyOtp())}
+          />
+          <SecondaryButton busy={busy} label="Resend OTP" onPress={() => void handleRequestOtp()} />
+        </>
+      ) : (
+        <>
+          <CodeField label="New PIN" secureTextEntry value={newPin} onChangeText={setNewPin} />
+          <CodeField label="Retype PIN" secureTextEntry value={confirmPin} onChangeText={setConfirmPin} />
+          <PrimaryButton busy={busy} label="Reset PIN" onPress={() => void handleConfirm()} />
+        </>
+      )}
       </View>
-    </CenterModal>
+    </SheetShell>
+  );
+}
+
+/**
+ * A section's title as plain text, not a heading band (user, 2026-11-08), the Account tab's
+ * Registered properties look. `tight` pulls the section under it up to the title, out of the
+ * screen's larger gap.
+ */
+function PlainTitle({ tight = false, title, trailing }: { tight?: boolean; title: string; trailing?: ReactNode }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <View style={{ marginBottom: tight ? spacing.sm - spacing.lg : 0 }}>
+      <SectionHeading title={title} trailing={trailing} />
+    </View>
   );
 }
 
@@ -915,6 +891,22 @@ function formatRelativeTime(iso: string) {
  * rather than printing a blank, so nobody has to answer a question they would
  * rather not to let a tenancy start.
  */
+/** What the identity details are for, to an owner (user, 2026-11-08). */
+const OWNER_IDENTITY_STEPS: HowItWorksStep[] = [
+  { title: "On your tenancy agreements", body: "Each agreement names you as the landlord with these details." },
+  { title: "Address before onboarding", body: "Add your permanent address before you onboard a tenant." },
+  { title: "Age and gender are optional", body: "They are left off the agreement when blank." },
+  { title: "Locked once verified", body: "A verified ID fixes your date of birth and gender." },
+];
+
+/** The same, to a tenant: their agreement and their verification, never onboarding. */
+const TENANT_IDENTITY_STEPS: HowItWorksStep[] = [
+  { title: "On your tenancy agreement", body: "Your agreement names you with these details." },
+  { title: "Used for verification", body: "Verifying your ID checks your date of birth and gender against it." },
+  { title: "Locked once verified", body: "After verification, your date of birth and gender cannot be changed here." },
+  { title: "Age and gender are optional", body: "They are left off your agreement when blank." },
+];
+
 /** Beside a field whose value comes from a verified ID and is locked. */
 function VerifiedFlag() {
   return <StatusPill label="Verified" tone="success" />;
@@ -943,7 +935,23 @@ function IdentityCard() {
     setPincode(held.permanentAddressPincode ?? "");
     setDob(held.dateOfBirth ?? "");
     setGender(held.gender);
+    seededIdentity.current = held;
   }, [identityQuery.data?.id]);
+  // A pull-to-refresh reloads these from the fresh copy when they have no edits (2026-11-07).
+  const seededIdentity = useRef<typeof identityQuery.data>(undefined);
+  usePullRefreshed(() => {
+    const fresh = identityQuery.data;
+    const base = seededIdentity.current;
+    if (!fresh || !base) return;
+    const untouched = address === (base.permanentAddress ?? "") && pincode === (base.permanentAddressPincode ?? "")
+      && dob === (base.dateOfBirth ?? "") && gender === base.gender;
+    if (!untouched) return;
+    setAddress(fresh.permanentAddress ?? "");
+    setPincode(fresh.permanentAddressPincode ?? "");
+    setDob(fresh.dateOfBirth ?? "");
+    setGender(fresh.gender);
+    seededIdentity.current = fresh;
+  });
 
   /**
    * Whether anything actually differs from the stored copy.
@@ -992,11 +1000,6 @@ function IdentityCard() {
 
   return (
     <Card>
-      <Text style={[type.description, { color: colors.muted }]}>
-        Used on tenancy agreements. Your permanent address is needed before you can onboard a tenant. Age and
-        gender are optional, and are left off the agreement when blank.
-      </Text>
-
       {/* The icon rides on each field's LABEL rather than in a column beside
           it. Wrapped in a row, every input started where its icon ended, so the
           boxes sat indented from the paragraph above and from each other's

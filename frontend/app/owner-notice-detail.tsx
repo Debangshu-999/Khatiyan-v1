@@ -5,6 +5,7 @@ import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useState } from "react";
+import { usePullRefreshed } from "@/lib/pull-refresh";
 import { Modal, Pressable, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -111,7 +112,18 @@ export default function OwnerNoticeDetailScreen() {
     setBody(notice.body);
     setPriority(notice.priority);
     setSeededNoticeId(notice.id);
+    setSeededText({ body: notice.body, priority: notice.priority, title: notice.title });
   }, [notice, seededNoticeId]);
+  // What the fields were filled from, so a pull-to-refresh reloads them only when untouched (2026-11-07).
+  const [seededText, setSeededText] = useState<{ body: string; priority: typeof priority; title: string } | null>(null);
+  usePullRefreshed(() => {
+    if (!notice || !seededText) return;
+    if (title !== seededText.title || body !== seededText.body || priority !== seededText.priority) return;
+    setTitle(notice.title);
+    setBody(notice.body);
+    setPriority(notice.priority);
+    setSeededText({ body: notice.body, priority: notice.priority, title: notice.title });
+  });
 
   // Seeded separately from the text fields: those are seeded once so an edit in
   // progress is not overwritten, but attachments have no draft state — every

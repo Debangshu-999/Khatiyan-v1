@@ -130,6 +130,15 @@ export default function MyEnquiriesScreen() {
         title="My"
       />
 
+      {/* No enquiries at all: the empty state alone, no filter to choose from (user, 2026-11-13). */}
+      {!query.isLoading && query.data && byFilter.ALL.length === 0 ? (
+        <EmptyState
+          artwork={ENQUIRIES_ILLUSTRATION}
+          artworkTextGap={-6}
+          description="Ask a property a question from its page in Discover."
+          title="No enquiries yet"
+        />
+      ) : (
       <FilteredQueue
         count={query.isLoading ? undefined : visible.length}
         heading={FILTER_HEADINGS[filter]}
@@ -199,6 +208,7 @@ export default function MyEnquiriesScreen() {
           </View>
         )}
       </FilteredQueue>
+      )}
 
       {changingMind ? (
         <ConfirmDialog

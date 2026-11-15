@@ -122,6 +122,12 @@ export type RecurringNoticeSummary = {
   updatedAt: string;
   /** Files copied onto every day this template generates. */
   attachments: NoticeAttachment[];
+  /**
+   * The window of the copy tenants see today (live or still to come), null when none.
+   * Can differ from start/end time: an edit only reaches tomorrow's copy.
+   */
+  todayVisibleFrom?: string | null;
+  todayVisibleUntil?: string | null;
 };
 
 export type PropertyBoardItem = {

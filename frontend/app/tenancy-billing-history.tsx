@@ -14,13 +14,20 @@ import { CountTabPills } from "@/components/filter-bubbles";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SearchField } from "@/components/search-field";
+import { SearchField, SearchFilterButton } from "@/components/search-field";
 import { SkeletonList } from "@/components/skeleton";
 import { BillPaymentIntentsSheet } from "@/features/billing/bill-payment-intents-sheet";
 import { TenantBillCard } from "@/features/billing/tenant-bill-card";
 import { TenantBillReceiptSheet } from "@/features/billing/tenant-bill-receipt-sheet";
 import { IconButton } from "@/features/owner/owner-ui";
-import { billTitle, useListMyTenancyBillingCyclesQuery, type BillingCycle } from "@/store/services/billing-api";
+import { billTitle, isDamageBill, useListMyTenancyBillingCyclesQuery, type BillingCycle } from "@/store/services/billing-api";
+
+function matchesPastFilter(cycle: BillingCycle, filter: "ALL" | "RENT_CYCLE" | "DAMAGE" | "ONE_OFF") {
+  if (filter === "RENT_CYCLE") return cycle.category === "RENT_CYCLE";
+  if (filter === "DAMAGE") return cycle.category === "ONE_OFF" && isDamageBill(cycle);
+  if (filter === "ONE_OFF") return cycle.category === "ONE_OFF" && !isDamageBill(cycle);
+  return true;
+}
 import { useListMyLivePaymentIntentsQuery, type PaymentIntent } from "@/store/services/payment-intent-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { spacing } from "@/theme/spacing";
@@ -39,7 +46,7 @@ const PAGE_SIZE = 5;
 /** How close to the bottom counts as "reached the end", in px. */
 const LOAD_MORE_THRESHOLD_PX = 240;
 
-type BillFilter = "ALL" | "RENT_CYCLE" | "ONE_OFF";
+type BillFilter = "ALL" | "RENT_CYCLE" | "DAMAGE" | "ONE_OFF";
 
 /**
  * Paid, or not paid.
@@ -121,7 +128,7 @@ export default function TenancyBillingHistoryScreen() {
   const shown = useMemo(() => {
     const term = search.trim().toLowerCase();
     return past
-      .filter((cycle) => filter === "ALL" || cycle.category === filter)
+      .filter((cycle) => matchesPastFilter(cycle, filter))
       .filter((cycle) => {
         if (status === "ALL") {
           return true;
@@ -188,7 +195,9 @@ export default function TenancyBillingHistoryScreen() {
         options={[
           { count: past.length, label: "All", value: "ALL" },
           { count: past.filter((cycle) => cycle.category === "RENT_CYCLE").length, label: "Rent cycles", value: "RENT_CYCLE" },
-          { count: past.filter((cycle) => cycle.category === "ONE_OFF").length, label: "Others", value: "ONE_OFF" },
+          // Damage bills on their own, Others the rest of the one-offs (user, 2026-11-11).
+          { count: past.filter((cycle) => matchesPastFilter(cycle, "DAMAGE")).length, label: "Damage bills", value: "DAMAGE" },
+          { count: past.filter((cycle) => matchesPastFilter(cycle, "ONE_OFF")).length, label: "Others", value: "ONE_OFF" },
         ]}
         value={filter}
       />
@@ -198,11 +207,7 @@ export default function TenancyBillingHistoryScreen() {
         onChangeText={setSearch}
         placeholder="Search by bill reference"
         trailing={
-          <IconButton
-            accessibilityLabel="Filter bills by payment status"
-            icon={SlidersHorizontal}
-            onPress={() => setStatusPickerOpen(true)}
-          />
+          <SearchFilterButton accessibilityLabel="Filter bills by payment status" active={status !== "ALL"} inside onPress={() => setStatusPickerOpen(true)} />
         }
         value={search}
       />

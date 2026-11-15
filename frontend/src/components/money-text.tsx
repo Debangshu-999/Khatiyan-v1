@@ -13,12 +13,15 @@ export function MoneyText({
   color,
   paise,
   size = 18,
+  symbolColor,
   weight = "500",
 }: {
   animate?: boolean;
   color?: string;
   paise: number;
   size?: number;
+  /** Optional contrast override for a headline on a dark surface. */
+  symbolColor?: string;
   weight?: "500" | "700";
 }) {
   const { colors, fonts } = useTheme();
@@ -52,7 +55,7 @@ export function MoneyText({
       }}
     >
       {negative ? "−" : ""}
-      <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: Math.round(size * 0.72), }}>
+      <Text style={{ color: symbolColor ?? colors.muted, fontFamily: fonts.sansMedium, fontSize: Math.round(size * 0.72), }}>
         {"₹"}
       </Text>
       {figure}

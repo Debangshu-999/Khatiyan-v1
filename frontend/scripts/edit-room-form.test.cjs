@@ -47,7 +47,8 @@ const props = {
 test("Edit room uses Room type and Amenities bands, without a duplicate type label or changing its inputs", () => {
   const tree = RoomDraftRow({ ...props, headingBands: true });
   assert.equal(tree.props.children[0].props.title, "Room type");
-  assert.equal(tree.props.children[0].props.trailingInline, true);
+  // No star beside the band's title (user, 2026-11-08).
+  assert.equal(tree.props.children[0].props.trailing, undefined);
   assert.equal(tree.props.children[1].type, "Card");
   const amenities = tree.props.children[2];
   assert.equal(amenities.type, "AmenityPicker");

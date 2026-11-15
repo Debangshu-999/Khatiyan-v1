@@ -20,6 +20,13 @@ test("a refusal signs out, no answer does not", () => {
   assert.match(api, /status === 401 && hadToken && !keptSignedIn/);
 });
 
+test("only the server's REFRESH_REFUSED signs out, never a bare 400, 401 or 403", () => {
+  // A backend failing mid-restart answered 401 from its error page (user, 2026-11-07).
+  assert.match(refresh, /response\.status === 401 && \(await refusalCode\(response\)\) === "REFRESH_REFUSED"/);
+  assert.doesNotMatch(refresh, /response\.status === 400 \|\|/);
+  assert.doesNotMatch(refresh, /response\.status === 403/);
+});
+
 test("the new refresh token is saved at once, as the old one no longer works", () => {
   assert.match(refresh, /tokensRefreshed\([\s\S]*?await saveSession\(\{ accessToken: body\.accessToken, refreshToken: body\.refreshToken/);
 });

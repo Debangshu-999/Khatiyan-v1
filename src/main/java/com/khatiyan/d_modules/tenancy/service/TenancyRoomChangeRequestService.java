@@ -1,5 +1,6 @@
 package com.khatiyan.d_modules.tenancy.service;
 
+import java.util.HashMap;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -379,7 +380,7 @@ public class TenancyRoomChangeRequestService {
 
     @Transactional(readOnly = true)
     public List<TenancyRoomChangeRequestResponse> listMine(UUID tenantUserId) {
-        return withNames(roomChangeRequestRepository.findByTenantUserId(tenantUserId));
+        return withPlaces(withNames(roomChangeRequestRepository.findByTenantUserId(tenantUserId)));
     }
 
     @Transactional(readOnly = true)
@@ -610,4 +611,31 @@ public class TenancyRoomChangeRequestService {
                         request, names, bookedSourceIds.contains(request.getId()), roles))
                 .toList();
     }
+
+    /**
+     * The property and room names on the tenant's own list (2026-11-11), so a
+     * card can say where it was raised. One lookup per property, not per request.
+     */
+    private List<TenancyRoomChangeRequestResponse> withPlaces(List<TenancyRoomChangeRequestResponse> responses) {
+        Set<UUID> propertyIds = new HashSet<>();
+        responses.forEach(response -> propertyIds.add(response.propertyId()));
+        Map<UUID, String> propertyNames = new HashMap<>();
+        propertyModule.findActiveProperties(propertyIds).forEach(property -> propertyNames.put(property.id(), property.name()));
+        Map<UUID, Map<UUID, RoomResponse>> rooms = new HashMap<>();
+        for (UUID propertyId : propertyIds) {
+            Set<UUID> roomIds = new HashSet<>();
+            responses.stream().filter(response -> response.propertyId().equals(propertyId)).forEach(response -> { roomIds.add(response.currentRoomId()); roomIds.add(response.targetRoomId()); });
+            rooms.put(propertyId, propertyModule.findRoomsForDisplay(propertyId, roomIds));
+        }
+        return responses.stream().map(response -> {
+            Map<UUID, RoomResponse> here = rooms.getOrDefault(response.propertyId(), Map.of());
+            return response.withPlaces(propertyNames.get(response.propertyId()), roomNumber(here, response.currentRoomId()), roomNumber(here, response.targetRoomId()));
+        }).toList();
+    }
+
+    private static String roomNumber(Map<UUID, RoomResponse> rooms, UUID roomId) {
+        RoomResponse room = roomId == null ? null : rooms.get(roomId);
+        return room == null ? null : room.roomNumber();
+    }
+
 }

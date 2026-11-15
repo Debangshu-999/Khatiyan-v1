@@ -125,6 +125,22 @@ public interface NoticeRepository extends JpaRepository<Notice, UUID> {
     """)
     Optional<Notice> findUpcomingOccurrence(UUID recurringNoticeId, Instant now);
 
+    /**
+     * A property's generated copies that are live now or still to come, earliest first.
+     * The owner's desk reads each template's real window for today from these, since
+     * an edit to the template only reaches tomorrow's copy (user, 2026-11-15).
+     */
+    @Query("""
+        SELECT notice
+        FROM Notice notice
+        WHERE notice.propertyId = :propertyId
+          AND notice.generatedFromRecurringNoticeId IS NOT NULL
+          AND notice.status = com.khatiyan.d_modules.notice.model.NoticeStatus.PUBLISHED
+          AND (notice.visibleUntil IS NULL OR notice.visibleUntil >= :now)
+        ORDER BY notice.visibleFrom ASC
+    """)
+    List<Notice> findCurrentOccurrencesByPropertyId(UUID propertyId, Instant now);
+
     /** Occurrences still published — live or upcoming. Archived days are excluded. */
     @Query("""
         SELECT notice

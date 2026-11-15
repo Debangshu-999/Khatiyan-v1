@@ -14,11 +14,14 @@ public record PropertyDiscoveryProfileResponse(
         boolean publicVisible,
         boolean showOwnerContact,
         boolean showManagerContact,
+        boolean showMealRating,
+        /** The current meal rating, whether or not the listing shows it. Null with none. */
+        Double mealRating,
         Instant publishedAt,
         boolean active
 ) {
 
-    public static PropertyDiscoveryProfileResponse from(PropertyDiscoveryProfile profile) {
+    public static PropertyDiscoveryProfileResponse from(PropertyDiscoveryProfile profile, Double mealRating) {
         return new PropertyDiscoveryProfileResponse(
                 profile.getId(),
                 profile.getPropertyId(),
@@ -28,6 +31,8 @@ public record PropertyDiscoveryProfileResponse(
                 profile.isPublicVisible(),
                 profile.isShowOwnerContact(),
                 profile.isShowManagerContact(),
+                profile.isShowMealRating(),
+                mealRating,
                 profile.getPublishedAt(),
                 profile.isActive());
     }

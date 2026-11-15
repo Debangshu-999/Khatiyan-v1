@@ -4,6 +4,7 @@ import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -11,8 +12,8 @@ import {
   Pressable,
   ScrollView,
   Text,
-  View,
   useWindowDimensions,
+  View,
 } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { useLocalSearchParams } from "expo-router";
@@ -26,7 +27,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ImageCarousel } from "@/components/image-carousel";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom } from "@/components/use-keyboard-inset";
 import {
   type ConcernStatus,
   type ConcernSummary,
@@ -474,12 +475,12 @@ function ReopenConcernModal({
   reason: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom();
 
   return (
     <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View
+        <Animated.View
           style={{
             alignItems: "center",
             backgroundColor: colors.overlay,
@@ -488,7 +489,7 @@ function ReopenConcernModal({
             padding: spacing.lg,
             // Shrinks the centring box so the dialog rises with the
             // keyboard rather than sitting behind it.
-            paddingBottom: spacing.lg + keyboardInset,
+            paddingBottom: Animated.add(keyboardRoom, spacing.lg),
           }}
         >
           <View
@@ -505,9 +506,6 @@ function ReopenConcernModal({
           >
             <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
-                <Text style={[type.eyebrow, { color: colors.primary }]}>
-                  Reopen concern
-                </Text>
                 <ModalTitle
                   style={{
                     color: colors.ink,
@@ -593,7 +591,7 @@ function ReopenConcernModal({
               )}
             </AnimatedPressable>
           </View>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </CenterModal>
   );

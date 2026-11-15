@@ -1,4 +1,5 @@
 import { ModalTitleRule } from "@/components/modal-title-rule";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -55,8 +56,9 @@ function receiptLineItems(cycle: BillingCycle) {
 
 /** Damage records encode their reference in the charge label; keep it on a separate line. */
 function receiptChargeLabel(label: string): { label: string; reference?: string } {
-  const damage = /^Damage (DMG-\d{4}-\d+): (.+) \((D[123])\)(, split \d+)?$/.exec(label);
-  return damage ? { label: `Damage: ${damage[2]} - ${damage[3]}${damage[4] ?? ""}`, reference: `(${damage[1]})` } : { label };
+  // The level is optional: a damage recorded with levels off has none (2026-11-07).
+  const damage = /^Damage (DMG-\d{4}-\d+): (.+?)(?: \((D[123])\))?(, split \d+)?$/.exec(label);
+  return damage ? { label: `Damage: ${damage[2]}${damage[3] ? ` - ${damage[3]}` : ""}${damage[4] ?? ""}`, reference: `(${damage[1]})` } : { label };
 }
 
 /**
@@ -98,10 +100,12 @@ export function BillReceiptDocument({
   // Money received, not a discount, so its own row under it (2026-10-28), as the PDF prints it.
   const token = bookingTokenPaise(cycle);
   const title = receiptChargeLabel(billTitle(cycle));
+  const damageCount = extras.filter((item) => receiptChargeLabel(item.label).reference).length;
   const billDetails: ReceiptDetail[] = [
     { code: true, label: "Bill Number", value: cycle.referenceCode },
     { label: cycle.category === "ONE_OFF" ? "Bill name" : "Bill Cycle", value: cycle.category === "ONE_OFF" && title.reference ? "Damage bill" : title.label },
-    { label: "Bill Date", value: formatDate(cycle.createdAt) },
+    // The day the bill was made (user, 2026-11-13).
+    { label: "Generated On", value: formatDate(cycle.createdAt) },
     { label: "Due Date", value: formatDate(cycle.rentDueDate) },
     { label: "Bill Status", value: humanizeToken(cycle.status) },
     { label: "Paid On", value: paidOn ? formatDate(paidOn) : "—" },
@@ -119,7 +123,7 @@ export function BillReceiptDocument({
       {/* The property's details on the left, the logo on the right (user, 2026-10-28). */}
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 17, lineHeight: 21 }}>
+          <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 19, lineHeight: 24 }}>
             {property?.name ?? "Tenancy bill"}
           </FitText>
           {/* Each line under its own icon, the icons on the name's left edge (user, 2026-10-18). */}
@@ -162,6 +166,12 @@ export function BillReceiptDocument({
         <DocRow amount={formatReceiptMoney(cycle.totalAmountPaise)} amountRight label="Total Amount Due" strong />
       </View>
 
+      {/* Damages raised together share one bill (user, 2026-11-07), so it says so. */}
+      {damageCount > 1 ? (
+        <Text style={[type.description, { color: colors.muted }]}>
+          {`This bill covers ${damageCount} damages raised together. Each line is one damage, with its DMG code under it.`}
+        </Text>
+      ) : null}
       {paidOn ? null : (
         <Text style={[type.description, { color: colors.muted }]}>
           Please make the payment by the due date. Thank you for your support.
@@ -179,17 +189,18 @@ function ReceiptDetailTable({ rows, title }: { rows: ReceiptDetail[]; title: str
     <View style={{ alignSelf: "stretch", borderColor: RECEIPT_BORDER, borderRadius: 9, borderWidth: 1, minWidth: 0, overflow: "hidden" }}>
       <ReceiptTableHeader title={title} />
       {rows.map((row) => (
-        <View key={row.label} style={{ borderTopColor: RECEIPT_BORDER, borderTopWidth: 1, flexDirection: "row", minHeight: 34 }}>
-          <View style={{ backgroundColor: RECEIPT_LABEL, justifyContent: "center", paddingHorizontal: 7, paddingVertical: 6, width: "42%" }}>
-            <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.sans, fontSize: 9, lineHeight: 12 }}>
+        <View key={row.label} style={{ borderTopColor: RECEIPT_BORDER, borderTopWidth: 1, flexDirection: "row", minHeight: 42 }}>
+          {/* Sized for the full width: the tables stack now, they used to sit two abreast (user, 2026-11-07). */}
+          <View style={{ backgroundColor: RECEIPT_LABEL, justifyContent: "center", paddingHorizontal: spacing.sm, paddingVertical: 8, width: "40%" }}>
+            <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: fonts.sans, fontSize: 13, lineHeight: 18 }}>
               {row.label}
             </FitText>
           </View>
-          <View style={{ borderLeftColor: RECEIPT_BORDER, borderLeftWidth: 1, flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: 7, paddingVertical: 6 }}>
+          <View style={{ borderLeftColor: RECEIPT_BORDER, borderLeftWidth: 1, flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: spacing.sm, paddingVertical: 8 }}>
             <FitText
               minimumFontScale={0.65}
               numberOfLines={row.label === "Email" || row.label === "Bill name" ? 2 : 1}
-              style={{ color: RECEIPT_NAVY, fontFamily: row.code ? fonts.mono : fonts.sansSemiBold, fontSize: row.code ? 8 : 9, lineHeight: 12 }}
+              style={{ color: RECEIPT_NAVY, fontFamily: row.code ? fonts.mono : fonts.sansSemiBold, fontSize: row.code ? 12 : 13, lineHeight: 18 }}
             >
               {row.value}
             </FitText>
@@ -204,7 +215,7 @@ function ReceiptTableHeader({ title }: { title: string }) {
   const { fonts } = useTheme();
   return (
     <View style={{ backgroundColor: RECEIPT_HEADER, justifyContent: "center", minHeight: 38, paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
-      <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 14, lineHeight: 19 }}>
+      <Text style={{ color: RECEIPT_NAVY, fontFamily: fonts.display, fontSize: 16, lineHeight: 21 }}>
         {title}
       </Text>
     </View>
@@ -228,18 +239,18 @@ function DocRow({
 }) {
   const { fonts } = useTheme();
   return (
-    <View style={{ backgroundColor: head ? RECEIPT_HEADER : "#FFFFFF", borderTopColor: RECEIPT_BORDER, borderTopWidth: head ? 0 : 1, flexDirection: "row", minHeight: strong ? 54 : 38 }}>
+    <View style={{ backgroundColor: head ? RECEIPT_HEADER : "#FFFFFF", borderTopColor: RECEIPT_BORDER, borderTopWidth: head ? 0 : 1, flexDirection: "row", minHeight: strong ? 58 : 44 }}>
       <View style={{ borderRightColor: RECEIPT_BORDER, borderRightWidth: head ? 1 : 0, flex: 2, justifyContent: "center", paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
-        <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 14 : head ? 13 : 11, lineHeight: strong ? 19 : 16 }}>
+        <FitText numberOfLines={2} style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 16 : head ? 14 : 13, lineHeight: strong ? 21 : 18 }}>
           {label}
         </FitText>
-        {reference ? <FitText numberOfLines={1} style={{ color: RECEIPT_NAVY, fontFamily: fonts.mono, fontSize: 9, lineHeight: 13, marginTop: 2 }}>{reference}</FitText> : null}
+        {reference ? <FitText numberOfLines={1} style={{ color: RECEIPT_NAVY, fontFamily: fonts.mono, fontSize: 11, lineHeight: 15, marginTop: 2 }}>{reference}</FitText> : null}
       </View>
       <View style={{ flex: 1, justifyContent: "center", minWidth: 0, paddingHorizontal: spacing.sm, paddingVertical: 7 }}>
         <FitText
           minimumFontScale={0.65}
           numberOfLines={1}
-          style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 20 : head ? 13 : 11, lineHeight: strong ? 25 : 16, textAlign: amountRight ? "right" : "left" }}
+          style={{ color: RECEIPT_NAVY, fontFamily: strong || head ? fonts.sansBold : fonts.sans, fontSize: strong ? 22 : head ? 14 : 13, lineHeight: strong ? 28 : 18, textAlign: amountRight ? "right" : "left" }}
         >
           {amount}
         </FitText>
@@ -262,10 +273,10 @@ function ReceiptContactLine({ icon: Icon, lines, text }: { icon: LucideIcon; lin
   const { colors, type } = useTheme();
   return (
     <View style={{ alignItems: "flex-start", flexDirection: "row", gap: 4, marginTop: 2 }}>
-      <View style={{ height: 13, justifyContent: "center" }}>
-        <Icon color={RECEIPT_NAVY} size={9} strokeWidth={2.2} />
+      <View style={{ height: 17, justifyContent: "center" }}>
+        <Icon color={RECEIPT_NAVY} size={12} strokeWidth={2.2} />
       </View>
-      <FitText numberOfLines={lines} style={[type.caption, { color: colors.inkSoft, flex: 1, fontSize: 9, lineHeight: 13 }]}>
+      <FitText numberOfLines={lines} style={[type.caption, { color: colors.inkSoft, flex: 1, fontSize: 12, lineHeight: 17 }]}>
         {text}
       </FitText>
     </View>
@@ -328,6 +339,7 @@ export function BillReceiptSheet({
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <SheetCloseButton onClose={() => dismiss()} />
         <View
           style={{
             backgroundColor: colors.surface,
@@ -336,7 +348,7 @@ export function BillReceiptSheet({
             borderTopRightRadius: 22,
             borderWidth: 1,
             gap: spacing.md,
-            maxHeight: "88%",
+            maxHeight: "100%",
             // No side padding on the sheet itself. The receipt runs to both
             // edges, and cancelling the gutter with a negative margin instead
             // pushed the document wider than the ScrollView, which clips — the

@@ -1,4 +1,5 @@
 import { Image, ScrollView, Text, View } from "react-native";
+import { EmptySearch } from "@/components/empty-art";
 import { Search } from "lucide-react-native";
 
 import { AiGradient, aiGradientSpans } from "@/components/ai-style";
@@ -7,7 +8,7 @@ import { Card } from "@/components/card";
 import { MarqueeText } from "@/components/marquee-text";
 import type { ListingSort } from "@/store/services/discovery-api";
 import type { SmartSearchListing, SmartSearchResult } from "@/store/services/intelligence-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -69,11 +70,11 @@ export function AiResults({
 
   return (
     <>
-      <View style={{ gap: spacing.sm }}>
+      <View style={{ gap: spacing.xxs }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
           {/* One line, always. On a phone the sentence wrapped beside the sort button. */}
           <View style={{ flex: 1, minWidth: 0 }}>
-            <MarqueeText spans={aiGradientSpans(foundLine)} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+            <MarqueeText spans={aiGradientSpans(foundLine)} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
               {foundLine}
             </MarqueeText>
           </View>
@@ -95,7 +96,7 @@ export function AiResults({
               // Two layers: the shadow on the outer, as the gradient edge needs overflow hidden.
               <View
                 key={requirement}
-                style={{ backgroundColor: colors.surface, borderRadius: 999, ...softShadow(colors.shadow, 2, 6) }}
+                style={{ backgroundColor: colors.surface, borderRadius: 999, ...cardShadow(colors.shadow) }}
               >
                 <View style={{ borderCurve: "continuous", borderRadius: 999, overflow: "hidden", padding: 1.5 }}>
                   <AiGradient />
@@ -124,13 +125,7 @@ export function AiResults({
               paddingTop: spacing.sm,
             }}
           >
-            <Image
-              resizeMethod="resize"
-              accessibilityIgnoresInvertColors
-              resizeMode="contain"
-              source={EMPTY_SEARCH_ILLUSTRATION}
-              style={{ height: 144, width: 144 }}
-            />
+            <EmptySearch size={144} />
             <Text
               style={{
                 color: colors.ink,
@@ -178,25 +173,10 @@ export function AiResults({
 
       {related.length > 0 ? (
         <>
-          {/* One block, so the explanation sits right under its heading
-              instead of at the list's own spacing, and the section reads as a
-              clear break from the answers above it. */}
-          <View style={{ gap: 2, marginTop: spacing.md }}>
-            <Text
-              style={{
-                color: colors.ink,
-                fontFamily: fonts.sansBold,
-                fontSize: 17,
-                letterSpacing: -0.3,
-                lineHeight: 22,
-              }}
-            >
-              Related results
-            </Text>
-            <Text style={[type.description, { color: colors.muted }]}>
-              These match part of your search. Each one says what it does not.
-            </Text>
-          </View>
+          {/* The heading of the AI review card, closer in on both sides than the list's own spacing. */}
+          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15, marginBottom: -spacing.xs, marginTop: -spacing.xs }}>
+            Related results
+          </Text>
           {related.map((listing) => (
             <Listing
               hideDeviceDistance={result.landmark !== null}

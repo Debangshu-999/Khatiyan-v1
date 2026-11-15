@@ -1,8 +1,10 @@
 import { ModalTitleRule } from "@/components/modal-title-rule";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { useState, type ComponentType } from "react";
-import { ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Animated, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
+import { useKeyboardRoom, useRevealInputScroll } from "@/components/use-keyboard-inset";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -247,6 +249,9 @@ function FacilitiesPickerModal({
   onClose: () => void;
 }) {
   const { colors, fonts, type } = useTheme();
+  const { room: keyboardRoom } = useKeyboardRoom();
+  // The list scrolls to the focused input with the keyboard up (user, 2026-11-08).
+  const revealInput = useRevealInputScroll();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [draft, setDraft] = useState("");
@@ -280,13 +285,16 @@ function FacilitiesPickerModal({
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        <View
+        <SheetCloseButton onClose={() => dismiss()} />
+        <Animated.View
           style={{
             backgroundColor: colors.background,
             borderTopLeftRadius: 28,
             borderTopRightRadius: 28,
-            maxHeight: "92%",
+            maxHeight: "100%",
             overflow: "hidden",
+            // Room for the keyboard, inside the sheet, rising with it (user, 2026-11-08).
+            paddingBottom: keyboardRoom,
           }}
         >
           <View
@@ -301,9 +309,6 @@ function FacilitiesPickerModal({
             }}
           >
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[type.eyebrow, { color: colors.accent }]}>
-                Amenities
-              </Text>
               <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, letterSpacing: -0.3 }}>
                 Select facilities
               </ModalTitle>
@@ -311,7 +316,7 @@ function FacilitiesPickerModal({
           </View>
           <ModalTitleRule inset={0} />
 
-          <ScrollView
+          <ScrollView {...revealInput}
             contentContainerStyle={{ gap: spacing.lg, padding: spacing.lg }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -424,7 +429,7 @@ function FacilitiesPickerModal({
           >
             <ActionButton label="Done" onPress={() => dismiss()} />
           </View>
-        </View>
+        </Animated.View>
       </View>}
     </BottomSheetModal>
   );

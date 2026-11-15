@@ -71,9 +71,7 @@ export function GenderPicker({
         {labelAccessory}
       </View>
 
-      {/* The clear button is a SIBLING of the field, never a child: nested, its
-          press bubbles to the field underneath and reopens the picker it just
-          closed — and on web it is a button inside a button. */}
+      {/* No clear button beside it (user, 2026-11-08): Undeclared is the answer for not saying. */}
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <AnimatedPressable
           accessibilityRole="button"
@@ -107,24 +105,6 @@ export function GenderPicker({
           <ChevronDown color={colors.muted} size={18} strokeWidth={2.2} />
         </AnimatedPressable>
 
-        {value && !disabled ? (
-          <AnimatedPressable
-            accessibilityLabel="Clear gender"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={() => onChange(null)}
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.surfaceSunken,
-              borderRadius: 999,
-              height: 32,
-              justifyContent: "center",
-              width: 32,
-            }}
-          >
-            <X color={colors.inkSoft} size={15} strokeWidth={2.6} />
-          </AnimatedPressable>
-        ) : null}
       </View>
 
       {open ? (
@@ -161,6 +141,8 @@ export function GenderPicker({
                   alignItems: "center",
                   flexDirection: "row",
                   gap: spacing.sm,
+                  // The title is 80% wide, so the × is pushed to the right edge (user, 2026-11-08).
+                  justifyContent: "space-between",
                   paddingLeft: spacing.lg,
                   paddingRight: spacing.md,
                   paddingVertical: spacing.sm,

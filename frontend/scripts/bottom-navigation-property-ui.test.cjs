@@ -139,19 +139,18 @@ test("reduced-motion preference checks cannot update an unmounted tab bar", asyn
 });
 
 const picker = component("app/(tabs)/index.tsx", "OwnerPropertyPicker", {
-  useTheme: () => theme, spacing, radii, softShadow: () => ({}), PROPERTY_CARD_ART: "property-art",
+  useTheme: () => theme, spacing, radii, softShadow: () => ({}), cardShadow: () => ({}), PROPERTY_CARD_ART: "property-art", PropertyCardScenery: "PropertyCardScenery", PropertyHouseIcon: "PropertyHouseIcon", fancyName: (name) => { const words = name.trim().split(/\s+/); return words.length < 2 ? { lead: "", tail: name } : { lead: words.slice(0, -1).join(" "), tail: words[words.length - 1] }; }, propertyCardGround: () => "#FFFFFF",
   AnimatedPressable: "AnimatedPressable", FitText: "Text", Text: "Text", View: "View", Image: "Image", PropertyArtwork: "PropertyArtwork", Ionicons: "Ionicons", ChevronUp: "ChevronUp", ChevronDown: "ChevronDown",
 });
 const property = { id: "p1", name: "Sample property", address: "A very long street and building address that should stay clear of the disclosure button", city: "Kolkata", state: "West Bengal", pincode: "700091" };
 const pickerProps = { properties: [property, { ...property, id: "p2" }], selectedProperty: property, workspaceRole: "Owner", renderOptions: false, open: false, onToggle() {}, onSelect() {} };
 
-test("Home property selector reserves a glassy right-side chevron slot with constrained address text", () => {
+test("Home property selector shows the name without its address, and keeps a glassy right-side chevron slot", () => {
+  // No address on the card once a property is chosen (user, 2026-11-14).
   const tree = picker(pickerProps);
-  const card = nodes(tree, "AnimatedPressable")[0]; const address = nodes(card, "Text").find((node) => String(node.props.children).includes(property.address));
-  assert.equal(address.props.numberOfLines, 2); assert.equal(address.props.ellipsizeMode, "tail");
-  assert.equal(address.props.style[1].maxWidth, "100%");
-  const column = nodes(card, "View").find((node) => node.props.children?.includes?.(address));
-  assert.equal(column.props.style.flex, 1); assert.equal(column.props.style.minWidth, 0);
+  const card = nodes(tree, "AnimatedPressable")[0];
+  assert.equal(nodes(card, "Text").some((node) => String(node.props.children).includes(property.address)), false);
+  assert.equal(nodes(card, "PropertyHouseIcon").length, 1);
   const circle = nodes(card, "View").find((node) => node.props.style?.width === 36 && node.props.style?.height === 36);
   assert.equal(circle.props.style.alignSelf, "center"); assert.equal(circle.props.style.flexShrink, 0);
   assert.equal(circle.props.style.backgroundColor, "rgba(255, 255, 255, 0.5)");

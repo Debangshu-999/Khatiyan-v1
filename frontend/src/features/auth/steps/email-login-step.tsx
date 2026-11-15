@@ -1,10 +1,8 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { ArrowLeft, Mail } from "lucide-react-native";
 
-import { AnimatedPressable } from "@/components/animated-pressable";
-import { AuthChipLink, AuthTextField, CodeField, LinkButton, PrimaryButton } from "@/features/auth/auth-ui";
+import { AuthChipLink, AuthTextField, EmailSummaryRow, OtpBoxes, otpTimerLabel, PrimaryButton } from "@/features/auth/auth-ui";
 import { spacing } from "@/theme/spacing";
-import { useTheme } from "@/theme/use-theme";
 
 /**
  * OTP sign-in via a verified email — the phoneless fallback.
@@ -35,53 +33,46 @@ export function EmailLoginStep({
   resendBusy: boolean;
   busy: boolean;
   onRequestOtp: () => void;
-  onConfirm: () => void;
+  /** The code from the boxes when they fill, or nothing to use the one typed. */
+  onConfirm: (code?: string) => void;
   onBackToLogin: () => void;
   emailError?: string;
   otpError?: string;
   onEditEmail: () => void;
 }) {
-  const { colors, type } = useTheme();
+  // Once the code is on its way, the same screen as verifying a phone (user,
+  // 2026-11-14): where it went with Edit, the six boxes that verify themselves,
+  // then Resend OTP (counting down) beside Verify.
+  if (otpRequested) {
+    return (
+      <>
+        <EmailSummaryRow email={email} onEdit={onEditEmail} />
+        <OtpBoxes value={otp} onChangeText={onOtpChange} onComplete={onConfirm} busy={busy} error={otpError} />
+        <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <PrimaryButton
+              label={cooldownSeconds > 0 ? otpTimerLabel(cooldownSeconds) : "Resend OTP"}
+              onPress={onRequestOtp}
+              busy={resendBusy}
+              disabled={cooldownSeconds > 0}
+              muted
+              grow
+            />
+            <PrimaryButton label="Verify" onPress={() => onConfirm()} busy={busy} grow />
+          </View>
+          <AuthChipLink icon={ArrowLeft} label="Back to PIN login" onPress={onBackToLogin} />
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
       <AuthTextField label="Verified email" value={email} onChangeText={onEmailChange} placeholder="you@example.com" icon={Mail} error={emailError} locked={otpRequested} onEdit={onEditEmail} />
 
-      {/* Resend sits with the address it will send to rather than among the
-          submit actions: it is a fact about the email just entered. It counts
-          down before it can be tapped, so the cooldown is the visible half of
-          the server's rate limit instead of a refusal after the fact. */}
-      {otpRequested ? (
-        <View style={{ alignItems: "flex-start", marginTop: -spacing.xs }}>
-          {cooldownSeconds > 0 ? (
-            <Text style={[type.caption, { color: colors.muted }]}>
-              Resend in {cooldownSeconds}s
-            </Text>
-          ) : resendBusy ? (
-            <Text style={[type.caption, { color: colors.muted }]}>
-              Sending…
-            </Text>
-          ) : (
-            // Deliberately not LinkButton: its own font size is larger, so the
-            // row would jump as the countdown flipped to the link. Same caption
-            // style, primary colour — only the colour changes on swap.
-            <AnimatedPressable accessibilityRole="button" onPress={onRequestOtp} tapLockMs={0}>
-              <Text style={[type.caption, { color: colors.primary, fontWeight: "800" }]}>
-                Resend
-              </Text>
-            </AnimatedPressable>
-          )}
-        </View>
-      ) : null}
-
-      {otpRequested ? <CodeField label="Email OTP" value={otp} onChangeText={onOtpChange} error={otpError} /> : null}
-
       <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
-        {otpRequested ? (
-          <PrimaryButton label="Sign in with email" onPress={onConfirm} busy={busy} />
-        ) : (
-          <PrimaryButton label="Send email OTP" onPress={onRequestOtp} busy={busy} />
-        )}
+        {/* No timer here (user, 2026-11-14): pressed during the wait, it says so in a popup. */}
+        <PrimaryButton label="Send email OTP" onPress={onRequestOtp} busy={busy} />
         <AuthChipLink icon={ArrowLeft} label="Back to PIN login" onPress={onBackToLogin} />
       </View>
     </>

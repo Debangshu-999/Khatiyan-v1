@@ -206,6 +206,17 @@ export default function OwnerNoticeCreateScreen() {
     const apply =
       target.field === "from" ? setFrom : target.field === "to" ? setTo : setStartDate;
     apply(next);
+    clearTimeErrors();
+  }
+
+  /**
+   * A new start or end clears both times' errors (user, 2026-11-13). "The end must come after
+   * the start" sits on the end, but moving the start fixes it as well, and the create button
+   * stayed blocked until every error was gone. Create checks the order again.
+   */
+  function clearTimeErrors() {
+    form.clearField("from");
+    form.clearField("to");
   }
 
   // Dirty against the template when editing one, against empty when creating.
@@ -503,7 +514,10 @@ export default function OwnerNoticeCreateScreen() {
                     error={form.errors.from}
                     label={recurring ? "Shows from" : "Goes live"}
                     mode={recurring ? "time" : "datetime"}
-                    onClear={() => setFrom(null)}
+                    onClear={() => {
+                      setFrom(null);
+                      clearTimeErrors();
+                    }}
                     onPickDate={() => setPicker({ field: "from", mode: "date" })}
                     onPickTime={() => setPicker({ field: "from", mode: "time" })}
                     value={from}
@@ -512,7 +526,10 @@ export default function OwnerNoticeCreateScreen() {
                     error={form.errors.to}
                     label={recurring ? "Shown until" : "Stops showing"}
                     mode={recurring ? "time" : "datetime"}
-                    onClear={() => setTo(null)}
+                    onClear={() => {
+                      setTo(null);
+                      clearTimeErrors();
+                    }}
                     onPickDate={() => setPicker({ field: "to", mode: "date" })}
                     onPickTime={() => setPicker({ field: "to", mode: "time" })}
                     value={to}

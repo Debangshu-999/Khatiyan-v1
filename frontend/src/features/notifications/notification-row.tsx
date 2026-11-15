@@ -3,8 +3,8 @@ import { Text, View } from "react-native";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import type { NotificationItem } from "@/store/services/notification-api";
 import type { MealType } from "@/store/services/property-api";
-import { MEAL_LABEL, formatMealWindow } from "@/features/food/food-ui";
-import { softShadow } from "@/theme/shadows";
+import { MEAL_LABEL, MEAL_ORDER, formatMealWindow } from "@/features/food/food-ui";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -53,7 +53,7 @@ export function NotificationRow({ notification, onPress, unread }: Props) {
         padding: spacing.md,
         // softShadow, not useSoftShadow: this list is a tab, whose shadow a phone
         // does not draw (user, 2026-10-31).
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       {/* No icons (user, 2026-11-01). The property on the left and the time on
@@ -423,6 +423,35 @@ function notificationDetails(notification: NotificationItem) {
       add(details, "Meal", data.mealType ? MEAL_LABEL[data.mealType as MealType] : undefined);
       add(details, "New time", data.startTime && data.endTime ? formatMealWindow(data.startTime, data.endTime) : undefined);
       add(details, "Delayed by", data.delayMinutes ? `${data.delayMinutes} min` : undefined);
+      break;
+    // A tenant's stay out, as a table (user, 2026-11-09).
+    case "TENANCY_STAY_OUT_DECLARED":
+    case "TENANCY_STAY_OUT_CHANGED":
+    case "TENANCY_STAY_OUT_CANCELLED":
+      add(details, "Property", data.propertyName);
+      add(details, "Tenancy", code(data.tenancyReferenceCode));
+      add(details, "Leaving", data.leaving);
+      add(details, "Back", data.back);
+      add(details, "Reason", data.reason);
+      break;
+    // The rest of the food notices (P1.5.h, 2026-11-08).
+    case "FOOD_DISH_UNAVAILABLE":
+    case "FOOD_DISH_AVAILABLE":
+      add(details, "Property", data.propertyName);
+      add(details, "Meal", data.mealType ? MEAL_LABEL[data.mealType as MealType] : undefined);
+      add(details, "Dish", data.itemName);
+      break;
+    case "FOOD_MENU_CHANGED":
+      add(details, "Property", data.propertyName);
+      add(details, "Plan", data.profileName);
+      break;
+    case "FOOD_MEAL_TIMINGS_CHANGED":
+      add(details, "Property", data.propertyName);
+      // One "time_<MEAL>" key per meal that moved, as "08:00-09:30".
+      for (const meal of MEAL_ORDER) {
+        const [start, end] = (data[`time_${meal}`] ?? "").split("-");
+        add(details, MEAL_LABEL[meal], start && end ? formatMealWindow(start, end) : undefined);
+      }
       break;
     case "MANAGER_ASSIGNED":
     case "MANAGER_REMOVED":

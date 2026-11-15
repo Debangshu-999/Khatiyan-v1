@@ -144,7 +144,7 @@ export const authApi = api.injectEndpoints({
       invalidatesTags: ["Session"],
     }),
 
-    loginWithPin: builder.mutation<TokenResponse, { phone: string; pin: string; signOutSessionId?: string }>({
+    loginWithPin: builder.mutation<TokenResponse, { phone: string; pin: string; signOutAll?: boolean; signOutSessionId?: string }>({
       query: (body) => ({ url: "/api/v1/auth/pin/login", method: "POST", body }),
       invalidatesTags: ["Profile", "Notification"],
     }),
@@ -160,6 +160,14 @@ export const authApi = api.injectEndpoints({
     }),
     registerOwner: builder.mutation<void, { phone: string; email: string; fullName: string }>({
       query: (body) => ({ url: "/api/v1/auth/owner/register", method: "POST", body }),
+    }),
+    /**
+     * Seconds before another code may be sent to this number or address (user,
+     * 2026-11-14), read from the server's database, so a screen opened again
+     * mid-wait starts blocked with the right time.
+     */
+    otpWait: builder.mutation<{ retryAfterSeconds: number }, { phone?: string; email?: string; purpose: "LOGIN" | "PIN_RESET" | "EMAIL_LOGIN" }>({
+      query: (body) => ({ url: "/api/v1/auth/otp/wait", method: "POST", body }),
     }),
     requestOtp: builder.mutation<void, { phone: string; purpose: "LOGIN" | "PIN_RESET"; channel?: "SMS" | "SMS_AND_WHATSAPP" | "SMS_AND_EMAIL" }>({
       query: (body) => ({ url: "/api/v1/auth/otp/request", method: "POST", body }),
@@ -221,6 +229,7 @@ export const {
   useLazyGetProfileQuery,
   useListSessionsQuery,
   useLoginWithPinMutation,
+  useOtpWaitMutation,
   useRegisterOwnerMutation,
   useRegisterUserMutation,
   useRequestEmailLoginMutation,

@@ -64,10 +64,13 @@ function harness(options = {}) {
     "@/theme/use-theme": { useTheme: () => ({ colors: themes[options.mode ?? "light"], fonts: { sans: "Inter_400Regular", sansBold: "Inter_700Bold" }, type: {} }) },
     "@/components/pinned-footer": { PinnedFooter: "PinnedFooter", PINNED_FOOTER_CLEARANCE: 104 },
     "@/components/artwork-icon": { ExitTenancyIcon: "ExitTenancyIcon" },
-    "@/features/owner/owner-ui": { ActionButton: "ActionButton", NoticeBar: "NoticeBar" },
+    "@/features/owner/owner-ui": { ActionButton: "ActionButton", FormInput: "FormInput", NoticeBar: "NoticeBar" },
+    "@/components/how-it-works-sheet": { HowItWorksSheet: "HowItWorksSheet" },
+    "@/features/property/floor": { formatFloor: (floor) => `Floor ${floor}` },
+    "@/features/tenancy/request-form-cards": { CalendarPageTile: "CalendarPageTile", FactColumn: "FactColumn", FooterNote: "FooterNote", FormCard: "FormCard", HeaderHelp: "HeaderHelp", PropertyStayCard: "PropertyStayCard", SectionLabel: "SectionLabel", longDay: (iso) => iso },
   };
   for (const [module, name] of [["animated-pressable", "AnimatedPressable"], ["app-text-input", "AppTextInput"], ["card", "Card"], ["empty-state", "EmptyState"], ["screen-header", "ScreenHeader"], ["screen-scroll-view", "ScreenScrollView"], ["sheet-shell", "SheetShell"], ["status-pill", "StatusPill"], ["alert-modal", "AlertModal"], ["skeletons/tenancy/exit-request", "TenantExitRequestSkeleton"]]) dependencies[`@/components/${module}`] = { [name]: name };
-  const exported = load(`${read("app/tenancy-exit-request.tsx")}\nexports.helpers = { ExitRequestPage, ExitRequestGate, ServeNoticeForm, NoticeWindowForm, PrematureWarning, FormField, CheckoutDatePicker, parseISODate, toISODate };`, dependencies);
+  const exported = load(`${read("app/tenancy-exit-request.tsx")}\nexports.helpers = { ExitRequestPage, ExitRequestGate, ServeNoticeForm, NoticeWindowForm, PrematureWarning, CheckoutDatePicker, parseISODate, toISODate };`, dependencies);
   return { ...exported.helpers, screen: exported.default, submitted, navigated, serverErrors, state, render: (component, props) => { cursor = 0; return component(props); } };
 }
 
@@ -84,6 +87,8 @@ function findAll(tree, type) {
 }
 const find = (tree, type) => { const found = findAll(tree, type); assert.ok(found.length, `Missing ${String(type)}`); return found[0]; };
 const formProps = (overrides = {}) => ({ checkoutWindow, stay, onDone() {}, ...overrides });
+/** The checkout date's chip, beside its section label (2026-11-11). */
+const checkoutChip = (page) => find(findAll(page, "SectionLabel").find((node) => node.props.label === "Checkout date").props.trailing, "Text");
 
 test("fixed action sits outside scrolling content and clears its measured height", () => {
   const h = harness();
@@ -96,7 +101,8 @@ test("fixed action sits outside scrolling content and clears its measured height
   const header = find(page, "ScreenHeader");
   assert.equal(header.props.title, "Exit");
   assert.equal(header.props.italicTail, "request.");
-  assert.equal(header.props.trailing, undefined);
+  // The ? that opens How an exit works (2026-11-11).
+  assert.equal(header.props.trailing.type, "HeaderHelp");
 });
 
 test("all three initial loading stages show the matching skeleton without a live action", () => {
@@ -136,7 +142,7 @@ test("normal submission defaults to full notice and retains the original API pay
   let completed = 0;
   const page = h.render(h.NoticeWindowForm, formProps({ initialReason: "  Moving home  ", onDone: () => completed++ }));
   assert.equal(page.type, h.ExitRequestPage);
-  assert.equal(find(page, "StatusPill").props.tone, "success");
+  assert.equal(checkoutChip(page).props.children, "Full notice");
   assert.equal(findAll(page, h.PrematureWarning).length, 0);
   find(page.props.footer, "ActionButton").props.onPress();
   await new Promise(setImmediate);
@@ -148,15 +154,19 @@ test("early exit stays a warning, with a one-tap return to full notice", () => {
   const h = harness();
   const props = formProps({ initialRequestedCheckoutDate: "2026-10-17" });
   const page = h.render(h.NoticeWindowForm, props);
-  assert.equal(find(page, "StatusPill").props.tone, "warning");
+  assert.equal(checkoutChip(page).props.children, "Early exit");
   assert.equal(find(page.props.footer, "ActionButton").props.label, "Request early exit");
   const warning = find(page, h.PrematureWarning);
-  const notice = h.PrematureWarning(warning.props).props.children[0];
+  // The way back is a filled button inside the warning (2026-11-11).
+  const notice = h.PrematureWarning(warning.props);
+  assert.equal(notice.type, "NoticeBar");
   assert.equal(notice.props.tone, "warning");
   assert.ok(notice.props.message.includes("the early exit policy as per your agreement"));
+  assert.equal(notice.props.action.props.label, "Serve full notice");
+  assert.equal(notice.props.action.props.variant, undefined);
   warning.props.onServeFullNotice();
   const reset = h.render(h.NoticeWindowForm, props);
-  assert.equal(find(reset, "StatusPill").props.tone, "success");
+  assert.equal(checkoutChip(reset).props.children, "Full notice");
   assert.equal(findAll(reset, h.PrematureWarning).length, 0);
 });
 
@@ -164,18 +174,17 @@ test("both notice chips use the bold face, with agreement navigation only beside
   for (const early of [false, true]) {
     const h = harness();
     const page = h.render(h.NoticeWindowForm, formProps(early ? { initialRequestedCheckoutDate: "2026-10-17" } : {}));
-    const chip = find(page, "StatusPill");
-    assert.equal(chip.props.label, early ? "Early exit" : "Full notice");
-    assert.equal(chip.props.textStyle.fontFamily, "Inter_700Bold");
+    const chip = checkoutChip(page);
+    assert.equal(chip.props.children, early ? "Early exit" : "Full notice");
+    assert.equal(chip.props.style.fontFamily, "Inter_700Bold");
     const buttons = findAll(page, "ActionButton").filter((node) => node.props.label === "View agreement");
     assert.equal(buttons.length, early ? 1 : 0);
     if (early) {
       assert.equal(buttons[0].props.compact, true);
       assert.equal(buttons[0].props.disabled, false);
-      const row = findAll(page, "View").find((node) => node.props.children?.[0] === chip);
-      assert.equal(row.props.style.flexDirection, "row");
-      assert.equal(row.props.style.flexWrap, "wrap");
-      assert.ok(findAll(row, "ActionButton").includes(buttons[0]));
+      // Inside the checkout date's card, under its explanation.
+      const card = findAll(page, "FormCard").find((node) => findAll(node, "CalendarPageTile").length > 0);
+      assert.ok(findAll(card, "ActionButton").includes(buttons[0]));
       buttons[0].props.onPress();
       assert.deepEqual(h.navigated, ["/tenancy-agreement-view"]);
       assert.equal(h.submitted.length, 0);
@@ -192,6 +201,7 @@ test("agreement navigation is disabled while an early-exit submission is pending
 
 test("status pill applies an optional label style without changing other pills", () => {
   const { StatusPill } = load(read("src/components/status-pill.tsx"), {
+    "@/components/skeletons/boundary": { GhostPill: "GhostPill", useIsSkeleton: () => false },
     "react-native": { View: "View" },
     "@/components/marquee-text": { MarqueeText: "MarqueeText" },
     "@/theme/spacing": { spacing },
@@ -229,7 +239,7 @@ test("submission in progress disables action, date and reason, and does not send
   const action = find(page.props.footer, "ActionButton");
   assert.equal(action.props.disabled, true);
   assert.equal(find(page, "AnimatedPressable").props.disabled, true);
-  assert.equal(find(page, h.FormField).props.disabled, true);
+  assert.equal(find(page, "FormInput").props.disabled, true);
   action.props.onPress();
   assert.equal(h.submitted.length, 0);
 });
@@ -266,12 +276,11 @@ test("the calendar keeps the min/max bounds, and closing it does not change the 
 
 test("reason stays optional, labelled, multiline and capped at 500 characters", () => {
   const h = harness();
-  const field = h.FormField({ disabled: true, maxLength: 500, multiline: true, onChangeText() {}, value: "Reason", placeholder: "Reason" });
-  const input = find(field, "AppTextInput");
-  assert.equal(input.props.accessibilityLabel, "Reason for leaving, optional");
+  const input = find(h.render(h.NoticeWindowForm, formProps()), "FormInput");
+  assert.equal(input.props.label, "Reason for leaving");
+  assert.equal(input.props.required, undefined);
   assert.equal(input.props.maxLength, 500);
   assert.equal(input.props.multiline, true);
-  assert.equal(input.props.editable, false);
 });
 
 test("load failures offer retry instead of falsely showing no stay or an available form", () => {

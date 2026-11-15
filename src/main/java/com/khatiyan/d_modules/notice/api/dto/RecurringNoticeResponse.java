@@ -31,7 +31,13 @@ public record RecurringNoticeResponse(
     Instant createdAt,
     Instant updatedAt,
     /** Files copied onto every day this template generates. */
-    List<NoticeAttachmentResponse> attachments
+    List<NoticeAttachmentResponse> attachments,
+    /**
+     * The window of the copy tenants see today (live or still to come), or null when
+     * there is none. It can differ from start/end time: an edit reaches tomorrow's copy.
+     */
+    Instant todayVisibleFrom,
+    Instant todayVisibleUntil
 ) {
     /** For paths with no attachments to hand — lists that do not render them. */
     public static RecurringNoticeResponse from(RecurringNotice recurringNotice) {
@@ -40,6 +46,14 @@ public record RecurringNoticeResponse(
 
     public static RecurringNoticeResponse from(
             RecurringNotice recurringNotice, List<NoticeAttachmentResponse> attachments) {
+        return from(recurringNotice, attachments, null, null);
+    }
+
+    public static RecurringNoticeResponse from(
+            RecurringNotice recurringNotice,
+            List<NoticeAttachmentResponse> attachments,
+            Instant todayVisibleFrom,
+            Instant todayVisibleUntil) {
         return new RecurringNoticeResponse(
             recurringNotice.getId(),
             recurringNotice.getPropertyId(),
@@ -57,6 +71,8 @@ public record RecurringNoticeResponse(
             recurringNotice.getStatus(),
             recurringNotice.getCreatedAt(),
             recurringNotice.getUpdatedAt(),
-            attachments == null ? List.of() : attachments);
+            attachments == null ? List.of() : attachments,
+            todayVisibleFrom,
+            todayVisibleUntil);
     }
 }

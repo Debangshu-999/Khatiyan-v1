@@ -1,6 +1,11 @@
 import { Children, cloneElement, isValidElement, useCallback, useMemo, useEffect, useRef, type ReactNode } from "react";
 import { Animated, Dimensions, Easing, Modal, PanResponder, StyleSheet, View, type ModalProps, type StyleProp, type ViewStyle } from "react-native";
 
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { SHEET_CLOSE_GAP, SHEET_CLOSE_SIZE } from "@/components/help-modal-header";
+import { holdKeyboardForModal } from "@/components/keyboard-intent";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 type BottomSheetModalProps = Omit<ModalProps, "animationType" | "children" | "onRequestClose"> & {
@@ -24,6 +29,9 @@ export function BottomSheetModal({ children, dismissOnDrag = true, onDismissStar
   const travel = Dimensions.get("window").height;
   const offset = useMemo(() => new Animated.Value(travel), [dismissOnDrag, travel]);
   const closing = useRef(false);
+  // The page behind leaves the keyboard alone while a sheet is up (user, 2026-11-08, the
+  // wallet PIN sheet's way app wide): it made room and scrolled under the dim.
+  useEffect(() => (visible ? holdKeyboardForModal() : undefined), [visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -117,6 +125,10 @@ export function BottomSheetModal({ children, dismissOnDrag = true, onDismissStar
   }
 
   const content = typeof children === "function" ? children(dismiss) : children;
+  // Every sheet stops short of the status bar and camera cutout, with room for its cross
+  // above it (user, 2026-11-07). A height a sheet gives as a share now shares this smaller space.
+  const insets = useSafeAreaInsets();
+  const topClearance = insets.top + SHEET_CLOSE_SIZE + SHEET_CLOSE_GAP + spacing.lg;
 
   return (
     <Modal animationType="none" onRequestClose={() => dismiss()} transparent visible={visible} {...modalProps}>
@@ -132,7 +144,7 @@ export function BottomSheetModal({ children, dismissOnDrag = true, onDismissStar
           top: 0,
         }}
       />
-      <Animated.View style={{ flex: 1, transform: [{ translateY: offset }] }}>
+      <Animated.View style={{ flex: 1, paddingTop: topClearance, transform: [{ translateY: offset }] }}>
         {dismissOnDrag ? withGrabber(content) : content}
       </Animated.View>
     </Modal>

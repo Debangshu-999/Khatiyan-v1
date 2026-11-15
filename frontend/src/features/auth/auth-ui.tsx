@@ -154,7 +154,15 @@ export function StepProgress({ step, total, label }: { step: number; total: numb
 
 /** Countdown label for the resend button while it is on cooldown, e.g. "23s". */
 export function otpTimerLabel(seconds: number) {
-  return `${seconds}s`;
+  return `Resend in ${otpWaitText(seconds)}`;
+}
+
+/** A wait as people say it: "45s", "2m 10s", "3h 5m". */
+export function otpWaitText(seconds: number) {
+  const s = Math.max(0, Math.ceil(seconds));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
 /** "9876543210" -> "98765 43210" for display. */
@@ -186,6 +194,30 @@ export function PhoneSummaryRow({ phone, onEdit }: { phone: string; onEdit: () =
       >
         {/* The square-and-pencil "edit" mark most apps use, in black
             (user, 2026-10-02). */}
+        <SquarePen color={colors.ink} size={17} strokeWidth={2.2} />
+      </AnimatedPressable>
+    </View>
+  );
+}
+
+/** Where an email code went, with Edit: the email twin of {@link PhoneSummaryRow} (user, 2026-11-14). */
+export function EmailSummaryRow({ email, onEdit }: { email: string; onEdit: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs, marginTop: -spacing.xs }}>
+      <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 15 }}>
+        Sent to
+      </Text>
+      <Text numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 15, letterSpacing: 0.2 }}>
+        {email}
+      </Text>
+      <AnimatedPressable
+        accessibilityLabel="Edit email"
+        accessibilityRole="button"
+        hitSlop={10}
+        onPress={onEdit}
+        style={{ paddingHorizontal: spacing.xs, paddingVertical: spacing.xs }}
+      >
         <SquarePen color={colors.ink} size={17} strokeWidth={2.2} />
       </AnimatedPressable>
     </View>
@@ -368,10 +400,10 @@ export function AuthTextField({
       <View
         style={{
           alignItems: "center",
-          backgroundColor: locked ? colors.surfaceSunken : colors.surfaceRaised,
+          backgroundColor: locked ? colors.surfaceSunken : colors.surface,
           borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
           borderCurve: "continuous",
-          borderRadius: 8,
+          borderRadius: FIELD_RADIUS,
           borderWidth: FIELD_BORDER_WIDTH,
           flexDirection: "row",
           gap: spacing.sm,
@@ -379,7 +411,7 @@ export function AuthTextField({
           paddingHorizontal: spacing.lg,
         }}
       >
-        <FieldNotch error={error} fill={locked ? colors.surfaceSunken : colors.surfaceRaised} focused={focused} label={label} />
+        <FieldNotch error={error} fill={locked ? colors.surfaceSunken : colors.surface} focused={focused} label={label} />
         {Icon ? <Icon color={focused ? colors.primary : colors.kicker} size={19} strokeWidth={2.2} /> : null}
         <AppTextInput
           value={value}
@@ -397,8 +429,10 @@ export function AuthTextField({
             backgroundColor: "transparent",
             color: locked ? colors.muted : colors.ink,
             flex: 1,
-            fontFamily: fonts.sansMedium,
+            // The phone field's own weight and spacing, placeholder and all (user, 2026-11-15).
+            fontFamily: fonts.sansBold,
             fontSize: 16,
+            letterSpacing: 0.6,
             paddingVertical: spacing.md,
           }}
         />
@@ -445,17 +479,17 @@ export function PhoneField({
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.surfaceRaised,
+          backgroundColor: colors.surface,
           borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
           borderCurve: "continuous",
-          borderRadius: 8,
+          borderRadius: FIELD_RADIUS,
           borderWidth: FIELD_BORDER_WIDTH,
           flexDirection: "row",
           minHeight: 56,
           paddingHorizontal: spacing.md,
         }}
       >
-        <FieldNotch error={error} fill={colors.surfaceRaised} focused={focused} label={label} />
+        <FieldNotch error={error} fill={colors.surface} focused={focused} label={label} />
         <View style={{ alignItems: "center", flexDirection: "row", gap: 6 }}>
           <Text style={{ fontSize: 18 }}>{String.fromCodePoint(0x1f1ee, 0x1f1f3)}</Text>
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
@@ -504,6 +538,13 @@ export function PhoneField({
   );
 }
 
+/**
+ * The auth boxes (user, 2026-11-14): white on the sheet's blue wash, rounder
+ * corners. Focus and errors change the border colour only: a soft ring around
+ * the box read as a pale shadow under it, focused or in error.
+ */
+const FIELD_RADIUS = 14;
+
 /** How far the notch rises above the box's inner edge. */
 const NOTCH_RISE = 9;
 /** Every auth box's border width. */
@@ -516,9 +557,10 @@ const NOTCH_SPLIT = NOTCH_RISE - FIELD_BORDER_WIDTH / 2;
  * field has an error the message takes the label's place in red, so the notch
  * only ever holds one line.
  *
- * <p>Its ground is split at the border line: the screen colour above, the
- * field's own fill below, so the label reads as cut into the border rather
- * than pasted over it (user, 2026-10-02).
+ * <p>Its ground is split at the border line: nothing above, so the sheet's
+ * gradient shows through (user, 2026-11-14), and the field's own fill from the
+ * border line down, covering the line, so the label reads as cut into the
+ * border rather than pasted over it (user, 2026-10-02).
  */
 function FieldNotch({ error, fill, focused, label }: { error?: string; fill: string; focused: boolean; label: string }) {
   const { colors, fonts } = useTheme();
@@ -526,8 +568,7 @@ function FieldNotch({ error, fill, focused, label }: { error?: string; fill: str
   return (
     <View pointerEvents="none" style={{ flexDirection: "row", left: 12, position: "absolute", right: 12, top: -NOTCH_RISE }}>
       <View style={{ flexShrink: 1, overflow: "hidden" }}>
-        <View style={{ backgroundColor: colors.authSurface, height: NOTCH_SPLIT, left: 0, position: "absolute", right: 0, top: 0 }} />
-        <View style={{ backgroundColor: fill, bottom: 0, left: 0, position: "absolute", right: 0, top: NOTCH_SPLIT }} />
+        <View style={{ backgroundColor: fill, bottom: 0, left: 0, position: "absolute", right: 0, top: NOTCH_SPLIT - FIELD_BORDER_WIDTH / 2 }} />
         <FitText
           accessibilityRole={message ? "alert" : undefined}
           numberOfLines={1}
@@ -576,10 +617,10 @@ export function CodeField({
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.surfaceRaised,
+          backgroundColor: colors.surface,
           borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
           borderCurve: "continuous",
-          borderRadius: 8,
+          borderRadius: FIELD_RADIUS,
           borderWidth: FIELD_BORDER_WIDTH,
           flexDirection: "row",
           gap: spacing.sm,
@@ -587,26 +628,9 @@ export function CodeField({
           paddingHorizontal: spacing.lg,
         }}
       >
-        <FieldNotch error={error} fill={colors.surfaceRaised} focused={focused} label={label} />
+        <FieldNotch error={error} fill={colors.surface} focused={focused} label={label} />
         <Icon color={error ? colors.danger : focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
         <View style={{ flex: 1, justifyContent: "center", minHeight: 56 }}>
-          {/* Placeholder yields as soon as the field is focused, not on typing. */}
-          {!value && !focused ? (
-            <FitText
-              numberOfLines={1}
-              pointerEvents="none"
-              style={{
-                color: colors.muted,
-                fontFamily: fonts.sansBold,
-                fontSize: 15,
-                left: 4,
-                position: "absolute",
-                right: 0,
-              }}
-            >
-              {placeholderText}
-            </FitText>
-          ) : null}
           <AppTextInput
             value={value}
             onChangeText={(next) => onChangeText(digitsOnly(next).slice(0, 6))}
@@ -616,6 +640,10 @@ export function CodeField({
             maxLength={6}
             onBlur={() => setFocused(false)}
             onFocus={() => setFocused(true)}
+            // The input's own placeholder, drawn exactly as the phone field's (user, 2026-11-15):
+            // a drawn overlay rendered smaller on a phone. It still yields the moment the field is focused.
+            placeholder={placeholderText}
+            placeholderTextColor={colors.muted}
             secureTextEntry={hideValue}
             textContentType={secureTextEntry ? "password" : "oneTimeCode"}
             underlineColorAndroid="transparent"
@@ -747,8 +775,11 @@ export function PrimaryButton({
         <View
           style={{
             ...innerStyle,
-            backgroundColor: disabled ? colors.neutralSoft : "transparent",
-            borderColor: colors.border,
+            // White, not see-through or grey (user, 2026-11-14): on the sheet's blue
+            // wash a clear or grey fill ran into the background. Blue edge while it
+            // can be pressed, grey while it counts down.
+            backgroundColor: colors.surface,
+            borderColor: disabled ? colors.border : colors.primary,
             borderWidth: 1.5,
           }}
         >
@@ -784,21 +815,25 @@ export function AuthChipLink({
     <AnimatedPressable
       accessibilityRole="button"
       onPress={onPress}
+      // A see-through pill with a blue edge and a blue label (user, 2026-11-14):
+      // no shadow, the sheet's gradient shows through it.
       style={{
         alignItems: "center",
         alignSelf: align === "end" ? "flex-end" : align === "auto" ? "auto" : "center",
-        borderColor: colors.border,
+        backgroundColor: `${colors.surface}80`,
+        borderColor: `${colors.primary}66`,
         borderCurve: "continuous",
         borderRadius: 999,
         borderWidth: 1,
         flexDirection: "row",
-        gap: spacing.xs,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.xs,
+        gap: 6,
+        minHeight: 32,
+        paddingHorizontal: 13,
+        paddingVertical: 6,
       }}
     >
-      {Icon ? <Icon color={colors.kicker} size={14} strokeWidth={2.2} /> : null}
-      <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12.5 }}>{label}</Text>
+      {Icon ? <Icon color={colors.primary} size={14} strokeWidth={2.3} /> : null}
+      <Text style={{ color: colors.primary, fontFamily: fonts.sansSemiBold, fontSize: 12.5, letterSpacing: 0.1 }}>{label}</Text>
     </AnimatedPressable>
   );
 }

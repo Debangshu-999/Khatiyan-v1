@@ -205,6 +205,13 @@ export default function NotificationsScreen() {
         scrollEventThrottle={16}
       >
       <ScreenHeader
+        // A back button, which also centres the title (user, 2026-11-09). It is a
+        // hidden tab reached from the bell, so back returns to where that was.
+        onBack={() => {
+          if (router.canGoBack()) router.back();
+          else router.replace("/");
+          return true;
+        }}
         title="Notifications"
         // No line for anyone else: a pending tenant's notifications show here
         // too now, so "will appear once your tenancy is active" was untrue.

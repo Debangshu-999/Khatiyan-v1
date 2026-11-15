@@ -9,6 +9,7 @@ import { istToday } from "@/features/analytics/period";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { HighlightCard, highlightPalette } from "@/components/highlight-card";
 import { EmptyState } from "@/components/empty-state";
 import { MarqueeText } from "@/components/marquee-text";
 import { MetricTile } from "@/components/metric-tile";
@@ -62,7 +63,7 @@ import {
   type RecurringExpense,
 } from "@/store/services/expense-api";
 import { radii, spacing } from "@/theme/spacing";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
@@ -262,15 +263,15 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
   const ratio = hasBudget && effective != null && effective > 0 ? Math.min(1, budget.spentPaise / effective) : 0;
 
   return (
-    <Card>
+    <HighlightCard variant="budget" style={{ padding: spacing.lg }}>
       <View style={{ gap: spacing.md }}>
         <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
           <View style={{ gap: 2 }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]}>
+            <Text style={[type.eyebrow, { color: highlightPalette.budget.muted }]}>
               {hasBudget ? "Monthly budget" : "No budget set"}
             </Text>
             {hasBudget && effective != null ? (
-              <MoneyText animate paise={effective} size={30} />
+              <MoneyText animate color={highlightPalette.budget.ink} paise={effective} size={30} />
             ) : (
               <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 30, letterSpacing: -0.5 }}>
                 —
@@ -283,7 +284,8 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
             ) : null}
           </View>
           <View style={{ alignItems: "flex-end", gap: 4 }}>
-            <Text style={[type.eyebrow, { color: colors.kicker }]}>
+            {/* The card's own colour, as Monthly budget beside it (user, 2026-11-08). */}
+            <Text style={[type.eyebrow, { color: highlightPalette.budget.muted }]}>
               {over ? "Over by" : "Remaining"}
             </Text>
             {hasBudget ? (
@@ -315,7 +317,7 @@ function BudgetHero({ budget, onRaise, onSetBudget }: { budget: NonNullable<Retu
           )}
         </View>
       </View>
-    </Card>
+    </HighlightCard>
   );
 }
 
@@ -466,7 +468,7 @@ function StatusValueTile({ color, hint, label, value }: { color: string; hint?: 
   const softShadow = useSoftShadow();
   const { colors, fonts, type } = useTheme();
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, elevation: 2, flex: 1, gap: spacing.xs, padding: spacing.md, ...softShadow(colors.shadow, 2, 6) }}>
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flex: 1, gap: spacing.xs, padding: spacing.md, ...cardShadow(colors.shadow) }}>
       <FitText style={[type.eyebrow, { color: colors.kicker }]} numberOfLines={1}>
         {label}
       </FitText>

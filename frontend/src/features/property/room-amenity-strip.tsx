@@ -33,12 +33,17 @@ export const ROOM_AMENITY_LABELS: Record<RoomAmenity, string> = {
 export function RoomAmenityStrip({
   amenities,
   custom,
+  small = false,
   tiles = false,
 }: {
   amenities: RoomAmenity[];
   custom: string[];
+  /** Smaller tiles, for the property profile's room cards. */
+  small?: boolean;
   tiles?: boolean;
 }) {
+  const tileSize = small ? 32 : 38;
+  const glyphSize = !tiles ? 17 : small ? 19 : 23;
   const { colors, fonts, type } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const allotted = [...ROOM_AMENITIES, "COMMON_TOILET" as const].filter((amenity) => amenities.includes(amenity));
@@ -49,15 +54,15 @@ export function RoomAmenityStrip({
       {allotted.map((amenity) => {
         const Icon = ROOM_AMENITY_ICONS[amenity];
         return (
-          <Glyph key={amenity} label={ROOM_AMENITY_LABELS[amenity]} tiles={tiles}>
-            <Icon color={colors.inkSoft} size={tiles ? 23 : 17} />
+          <Glyph key={amenity} label={ROOM_AMENITY_LABELS[amenity]} tileSize={tileSize} tiles={tiles}>
+            <Icon color={colors.inkSoft} size={glyphSize} />
           </Glyph>
         );
       })}
 
       {expanded ? custom.map((name, index) => (
-        <Glyph key={`${name}-${index}`} label={name} tiles={tiles}>
-          <ItemIcon color={colors.inkSoft} name={name} size={tiles ? 23 : 17} />
+        <Glyph key={`${name}-${index}`} label={name} tileSize={tileSize} tiles={tiles}>
+          <ItemIcon color={colors.inkSoft} name={name} size={glyphSize} />
         </Glyph>
       )) : null}
       {custom.length > 0 ? (
@@ -67,7 +72,7 @@ export function RoomAmenityStrip({
           accessibilityState={{ expanded }}
           hitSlop={8}
           onPress={() => setExpanded((current) => !current)}
-          style={{ alignItems: "center", justifyContent: "center", minHeight: tiles ? 38 : 20, paddingHorizontal: spacing.sm }}
+          style={{ alignItems: "center", justifyContent: "center", minHeight: tiles ? tileSize : 20, paddingHorizontal: spacing.sm }}
         >
           <Text style={[type.caption, { color: colors.muted, fontFamily: fonts.sansBold }]}>
             {expanded ? "Show less" : `+${custom.length}`}
@@ -78,7 +83,7 @@ export function RoomAmenityStrip({
   );
 }
 
-function Glyph({ children, label, tiles }: { children: React.ReactNode; label: string; tiles: boolean }) {
+function Glyph({ children, label, tileSize, tiles }: { children: React.ReactNode; label: string; tileSize: number; tiles: boolean }) {
   const { colors, fonts } = useTheme();
   const { width, height } = useWindowDimensions();
   const trigger = useRef<View>(null);
@@ -102,7 +107,7 @@ function Glyph({ children, label, tiles }: { children: React.ReactNode; label: s
           accessibilityState={{ expanded: !!anchor }}
           hitSlop={6}
           onPress={open}
-          style={{ alignItems: "center", height: tiles ? 38 : 20, justifyContent: "center", width: tiles ? 38 : 20, backgroundColor: tiles ? colors.neutralSoft : undefined, borderRadius: tiles ? 10 : 0 }}
+          style={{ alignItems: "center", height: tiles ? tileSize : 20, justifyContent: "center", width: tiles ? tileSize : 20, backgroundColor: tiles ? colors.neutralSoft : undefined, borderRadius: tiles ? 10 : 0 }}
         >
           {children}
         </AnimatedPressable>

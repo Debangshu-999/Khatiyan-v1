@@ -33,7 +33,10 @@ public record UpdatePropertyExitPolicyRequest(
         Set<DeductionCategory> permittedDeductions,
 
         /** What D1, D2 and D3 mean. Null keeps the current wording (2026-10-29). */
-        @Valid DamageLevelDescriptions damageLevels) {
+        @Valid DamageLevelDescriptions damageLevels,
+
+        /** Grade damage by level (user, 2026-11-07). Null keeps the current setting. */
+        Boolean damageLevelsEnabled) {
 
     /**
      * An item and its price at each damage level. A client that still sends
@@ -52,9 +55,13 @@ public record UpdatePropertyExitPolicyRequest(
             this(name, chargePaise, null, null, null, null);
         }
 
-        /** No level sent but one flat amount: the old flat charge, at every level. */
+        /**
+         * No level sent but one flat amount: the old flat charge, at every level. A zero is
+         * no price at all (2026-11-07): an unpriced item, a common washroom's thing above all,
+         * comes back from the app as 0 with no levels, and read as flat it was "priced" at 0.
+         */
         private boolean flat() {
-            return chargePaise != null && d1Paise == null && d2Paise == null && d3Paise == null;
+            return chargePaise != null && chargePaise > 0 && d1Paise == null && d2Paise == null && d3Paise == null;
         }
 
         /** Null when the item is not priced yet. */

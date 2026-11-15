@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,10 +24,12 @@ import com.khatiyan.d_modules.food.api.dto.CookingForecastResponse.ItemForecast;
 import com.khatiyan.d_modules.food.api.dto.CookingForecastResponse.ProfileForecast;
 import com.khatiyan.d_modules.food.api.dto.CookingForecastResponse.ProfileQuantity;
 import com.khatiyan.d_modules.food.api.dto.CookingForecastResponse.SkippedItem;
+import com.khatiyan.d_modules.food.event.MealDishAvailabilityChangedEvent;
 import com.khatiyan.d_modules.food.model.FoodDailySkip;
 import com.khatiyan.d_modules.food.model.FoodItem;
 import com.khatiyan.d_modules.food.model.FoodMenuEntry;
 import com.khatiyan.d_modules.food.model.FoodProfile;
+import com.khatiyan.d_modules.food.model.FoodSubscription;
 import com.khatiyan.d_modules.food.repository.FoodDailySkipRepository;
 import com.khatiyan.d_modules.food.repository.FoodItemRepository;
 import com.khatiyan.d_modules.food.repository.FoodMenuEntryRepository;
@@ -49,6 +52,7 @@ public class FoodForecastService {
     private final FoodSubscriptionRepository subscriptionRepository;
     private final FoodDailySkipRepository dailySkipRepository;
     private final MealScheduleService mealScheduleService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public FoodForecastService(
             TenancyModule tenancyModule,
@@ -59,7 +63,8 @@ public class FoodForecastService {
             FoodMenuEntryRepository menuEntryRepository,
             FoodSubscriptionRepository subscriptionRepository,
             FoodDailySkipRepository dailySkipRepository,
-            MealScheduleService mealScheduleService) {
+            MealScheduleService mealScheduleService,
+            ApplicationEventPublisher eventPublisher) {
         this.tenancyModule = tenancyModule;
         this.moduleSettingService = moduleSettingService;
         this.accessPolicy = accessPolicy;
@@ -69,6 +74,7 @@ public class FoodForecastService {
         this.subscriptionRepository = subscriptionRepository;
         this.dailySkipRepository = dailySkipRepository;
         this.mealScheduleService = mealScheduleService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -86,15 +92,15 @@ public class FoodForecastService {
             MealType mealType,
             UUID itemId) {
         accessPolicy.ensureCanManage(actorUserId, propertyId);
-        moduleSettingService.requireUsable(propertyId);
+        PropertyResponse property = moduleSettingService.requireUsable(propertyId);
         // Today only, and not once the meal has started (2026-09-29). The
         // forecast screen blocks both, but a screen left open would not.
         mealScheduleService.requireToday(date);
         mealScheduleService.requireNotStarted(propertyId, date, mealType);
         // And like a delay, only until 10 minutes before it starts.
         mealScheduleService.requireDishWindowOpen(propertyId, date, mealType);
-        itemRepository.findByIdAndActiveTrue(itemId)
-                .filter(item -> item.getPropertyId().equals(propertyId))
+        FoodItem item = itemRepository.findByIdAndActiveTrue(itemId)
+                .filter(found -> found.getPropertyId().equals(propertyId))
                 .orElseThrow(() -> new NotFoundException("FoodItem", itemId));
         if (dailySkipRepository
                 .findByPropertyIdAndSkipDateAndMealTypeAndItemId(propertyId, date, mealType, itemId)
@@ -103,6 +109,10 @@ public class FoodForecastService {
         }
         dailySkipRepository.save(
                 FoodDailySkip.create(propertyId, itemId, date, mealType, actorUserId));
+        // The tenants who would have eaten it are told (P1.5.h.1, 2026-11-08).
+        eventPublisher.publishEvent(new MealDishAvailabilityChangedEvent(
+                propertyId, property.name(), date, mealType, item.getName(), false,
+                tenantsServed(propertyId, date, mealType, itemId)));
     }
 
     /** Puts it back on that date. Undoing something that is not skipped is fine. */
@@ -114,11 +124,44 @@ public class FoodForecastService {
             MealType mealType,
             UUID itemId) {
         accessPolicy.ensureCanManage(actorUserId, propertyId);
-        moduleSettingService.requireUsable(propertyId);
+        PropertyResponse property = moduleSettingService.requireUsable(propertyId);
         mealScheduleService.requireNotStarted(propertyId, date, mealType);
-        dailySkipRepository
-                .findByPropertyIdAndSkipDateAndMealTypeAndItemId(propertyId, date, mealType, itemId)
-                .ifPresent(dailySkipRepository::delete);
+        var skip = dailySkipRepository
+                .findByPropertyIdAndSkipDateAndMealTypeAndItemId(propertyId, date, mealType, itemId);
+        if (skip.isEmpty()) {
+            return;
+        }
+        dailySkipRepository.delete(skip.get());
+        // Only a dish that was off comes back, and taking it off told these
+        // same tenants, so they hear it is on after all (P1.5.h.2, 2026-11-08).
+        // By id, not active: a dish retired since still has a name to say.
+        String itemName = itemRepository.findById(itemId).map(FoodItem::getName).orElse("A dish");
+        eventPublisher.publishEvent(new MealDishAvailabilityChangedEvent(
+                propertyId, property.name(), date, mealType, itemName, true,
+                tenantsServed(propertyId, date, mealType, itemId)));
+    }
+
+    /**
+     * The tenants whose plan on {@code date} uses a profile whose menu serves
+     * {@code itemId} at that meal on that weekday. A hybrid week counts by the
+     * day's own profile.
+     */
+    private List<UUID> tenantsServed(UUID propertyId, LocalDate date, MealType mealType, UUID itemId) {
+        Set<UUID> servingProfiles = menuEntryRepository
+                .findByPropertyIdAndDayOfWeekAndMealTypeAndActiveTrueOrderByDisplayOrderAsc(
+                        propertyId, date.getDayOfWeek(), mealType)
+                .stream()
+                .filter(entry -> entry.getItemId().equals(itemId))
+                .map(FoodMenuEntry::getProfileId)
+                .collect(Collectors.toSet());
+        if (servingProfiles.isEmpty()) {
+            return List.of();
+        }
+        return subscriptionRepository.findCovering(propertyId, date).stream()
+                .filter(plan -> servingProfiles.contains(plan.profileOn(date)))
+                .map(FoodSubscription::getTenantUserId)
+                .distinct()
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -144,10 +187,13 @@ public class FoodForecastService {
         // The plans that apply on this date, each by that weekday's profile
         // (2026-09-29): a hybrid week counts where it eats that day, and a
         // change set for tomorrow already shows in tomorrow's numbers.
+        // A declared stay out takes its tenant off the meal (user, 2026-11-08).
+        Set<UUID> away = tenancyModule.awayTenancyIds(propertyId, date, mealType);
         Map<UUID, Integer> subscribersByProfile = subscriptionRepository
                 .findCovering(propertyId, date)
                 .stream()
                 .filter(plan -> activeTenancyIds.contains(plan.getTenancyId()))
+                .filter(plan -> !away.contains(plan.getTenancyId()))
                 .map(plan -> plan.profileOn(date))
                 .filter(profiles::containsKey)
                 .collect(Collectors.groupingBy(

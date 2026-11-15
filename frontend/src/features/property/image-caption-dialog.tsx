@@ -2,6 +2,7 @@ import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useRef, useState } from "react";
 import {
+  Animated,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -9,11 +10,12 @@ import {
   Platform,
   Text,
   TextInput,
-  View,
   useWindowDimensions,
+  View,
 } from "react-native";
 
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { announceInputBlur, announceInputFocus } from "@/components/keyboard-intent";
+import { useKeyboardRoom } from "@/components/use-keyboard-inset";
 import { ActionButton } from "@/features/owner/owner-ui";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -58,7 +60,7 @@ export function ImageCaptionDialog({
   uris: string[];
 }) {
   const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom();
   const { width } = useWindowDimensions();
   const listRef = useRef<FlatList<string>>(null);
   const [index, setIndex] = useState(0);
@@ -83,7 +85,7 @@ export function ImageCaptionDialog({
     // comes back down.
     <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onCancel} statusBarTranslucent transparent visible>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View
+        <Animated.View
           style={{
             alignItems: "center",
             backgroundColor: colors.overlay,
@@ -92,7 +94,7 @@ export function ImageCaptionDialog({
             padding: spacing.lg,
             // Shrinks the centring box so the dialog rises with the
             // keyboard rather than sitting behind it.
-            paddingBottom: spacing.lg + keyboardInset,
+            paddingBottom: Animated.add(keyboardRoom, spacing.lg),
           }}
         >
           <View
@@ -195,8 +197,9 @@ export function ImageCaptionDialog({
               {/* Label and count share the line: the count belongs to this field
                   and reads as a footnote to it, not as a status of the dialog. */}
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>
-                  Caption
+                {/* The label every other input carries (user, 2026-11-07). */}
+                <Text style={[type.label, { color: colors.muted }]}>
+                  Add a caption
                 </Text>
                 <Text
                   style={[
@@ -209,7 +212,10 @@ export function ImageCaptionDialog({
               </View>
               <TextInput
                 maxLength={MAX_CAPTION_LENGTH}
+                // The dialog rises with the keyboard, not after it (user, 2026-11-08).
+                onBlur={announceInputBlur}
                 onChangeText={setCaption}
+                onFocus={announceInputFocus}
                 placeholder="Double room, dining, exterior…"
                 placeholderTextColor={colors.kicker}
                 style={{
@@ -227,14 +233,13 @@ export function ImageCaptionDialog({
               />
             </View>
 
-            {/* Captions are optional and this says so, rather than a Skip button
-                beside Add: with a carousel there is nothing to skip PAST — not
-                typing is already skipping. */}
-            <Text style={[type.modalDescription, { color: colors.muted }]}>
-              {many
-                ? "Slide to caption each photo. Captions are optional."
-                : "Optional — it helps prospects tell your photos apart."}
-            </Text>
+            {/* With several photos, how to move between them. The line saying a caption is
+                optional is gone (user, 2026-11-07): not typing one is already skipping it. */}
+            {many ? (
+              <Text style={[type.modalDescription, { color: colors.muted }]}>
+                Slide to caption each photo.
+              </Text>
+            ) : null}
 
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               <ActionButton label="Cancel" onPress={onCancel} variant="secondary" />
@@ -244,7 +249,7 @@ export function ImageCaptionDialog({
               />
             </View>
           </View>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </CenterModal>
   );

@@ -1,11 +1,11 @@
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Image, Text, View, type ImageSourcePropType } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Clock, History, MoreHorizontal, Undo2, UserRound, type LucideProps } from "lucide-react-native";
+import { ArrowRight, Building2, CircleCheck, CircleX, Clock, History, MoreHorizontal, TimerOff, Undo2, UserRound, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
@@ -46,7 +46,10 @@ import {
   type TenancyExitRequest,
   type TenancyRoomChangeRequest,
 } from "@/store/services/tenancy-api";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
+import { BedColorIcon } from "@/components/bed-color-icon";
+import { DigestMoveOutsColorIcon } from "@/components/digest-color-icons";
+import { FactColumn } from "@/features/tenancy/request-form-cards";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 
@@ -157,14 +160,13 @@ export default function TenancyRequestHistoryScreen() {
   );
 }
 
-function RequestHistoryRouteCard({ count, onPress }: { count: number; onPress: () => void }) {
+export function RequestHistoryRouteCard({ count, onPress }: { count: number; onPress: () => void }) {
   const { colors, type } = useTheme();
 
   return (
     <Card>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>Request history</Text>
           <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>View past requests</Text>
           <Text style={[type.description, { color: colors.muted }]}>Expired exit and room-change requests.</Text>
         </View>
@@ -198,41 +200,30 @@ export function ExitCard({ chain, request }: { chain?: ExitRequestChain; request
     <Card>
       <View style={{ gap: spacing.sm }}>
         <RequestCardHeader
+          kind="EXIT"
           referenceCode={request.referenceCode}
           status={request.status}
           title="Exit request"
         />
         <RequestExpiryNotice label={exitExpiryLabel(request)} />
 
-        <DetailLine label="Requested checkout" value={formatDate(request.requestedCheckoutDate)} />
-        {request.approvedCheckoutDate ? (
-          <DetailLine label="Approved checkout" value={formatDate(request.approvedCheckoutDate)} />
-        ) : null}
-        {request.decidedByName && request.decidedAt ? (
-          <>
-            {/* Who and when on their own rows — one dotted line read as a
-                single fact and hid the timestamp inside the name. */}
-            <DetailLine
-              icon={UserRound}
-              label={request.status === "REJECTED" ? "Rejected by" : "Approved by"}
-              value={request.decidedByName}
-            />
-            <DetailLine
-              icon={Clock}
-              label={request.status === "REJECTED" ? "Rejected at" : "Approved at"}
-              value={formatDateTime(request.decidedAt)}
-            />
-          </>
-        ) : null}
+        {/* The dates on one ruled row, as the owner's cards show figures (2026-11-11). */}
+        <RequestFacts>
+          <FactColumn label="Checkout asked" value={formatDate(request.requestedCheckoutDate)} />
+          <FactColumn divided label={request.approvedCheckoutDate ? "Approved" : "Raised"} tone={request.approvedCheckoutDate ? colors.jade : undefined}
+            value={formatDate(request.approvedCheckoutDate ?? request.createdAt)} />
+        </RequestFacts>
+        {request.propertyName ? <PlaceLine name={request.propertyName} room={request.roomNumber ? `Room ${request.roomNumber}` : null} /> : null}
+        <DecisionLine at={request.decidedAt} by={request.decidedByName} rejected={request.status === "REJECTED"} />
 
         {/* Reasons sit behind an info control rather than printing in full — a
             long rejection used to push the rest of the card off screen. */}
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           {request.tenantReason ? (
             <RequestReasonInfo label="Your reason" value={request.tenantReason} />
           ) : null}
           {request.adminNotes ? (
-            <RequestReasonInfo label="Management's reason" value={request.adminNotes} />
+            <RequestReasonInfo label={propertyNoteLabel(request.status)} value={request.adminNotes} />
           ) : null}
         </View>
 
@@ -317,40 +308,37 @@ export function RoomChangeCard({
     <Card>
       <View style={{ gap: spacing.sm }}>
         <RequestCardHeader
+          kind="ROOM_CHANGE"
           referenceCode={request.referenceCode}
           status={request.status}
           title="Room change request"
         />
         <RequestExpiryNotice label={roomChangeExpiryLabel(request)} />
 
-        <DetailLine label="Transfer date" value={formatDate(request.effectiveTransferDate)} />
-        <DetailLine label="Requested rent" value={formatMoney(request.requestedRoomRentAmountPaise)} />
-        {typeof request.executedRentAmountPaise === "number" ? (
-          <DetailLine label="Executed rent" value={formatMoney(request.executedRentAmountPaise)} />
+        <RequestFacts>
+          <FactColumn label="Move date" value={formatDate(request.effectiveTransferDate)} />
+          <FactColumn divided label="Rent asked" value={formatMoney(request.requestedRoomRentAmountPaise)} />
+          {typeof request.executedRentAmountPaise === "number" ? (
+            <FactColumn divided label="New rent" tone={colors.jade} value={formatMoney(request.executedRentAmountPaise)} />
+          ) : null}
+        </RequestFacts>
+        {/* The move beside the property, small and black (user, 2026-11-11). */}
+        {request.propertyName ? (
+          <PlaceLine
+            name={request.propertyName}
+            room={request.currentRoomNumber || request.targetRoomNumber
+              ? `Room ${request.currentRoomNumber ?? "?"} → Room ${request.targetRoomNumber ?? "?"}`
+              : null}
+          />
         ) : null}
-        {request.decidedByName && request.decidedAt ? (
-          <>
-            {/* Who and when on their own rows — one dotted line read as a
-                single fact and hid the timestamp inside the name. */}
-            <DetailLine
-              icon={UserRound}
-              label={request.status === "REJECTED" ? "Rejected by" : "Approved by"}
-              value={request.decidedByName}
-            />
-            <DetailLine
-              icon={Clock}
-              label={request.status === "REJECTED" ? "Rejected at" : "Approved at"}
-              value={formatDateTime(request.decidedAt)}
-            />
-          </>
-        ) : null}
+        <DecisionLine at={request.decidedAt} by={request.decidedByName} rejected={request.status === "REJECTED"} />
 
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           {request.tenantReason ? (
             <RequestReasonInfo label="Your reason" value={request.tenantReason} />
           ) : null}
           {request.adminNotes ? (
-            <RequestReasonInfo label="Management's reason" value={request.adminNotes} />
+            <RequestReasonInfo label={propertyNoteLabel(request.status)} value={request.adminNotes} />
           ) : null}
         </View>
 
@@ -449,10 +437,12 @@ function RequestExpiryNotice({ label }: { label: string | null }) {
 
 /** Tenant name large, room/code small beside it — who, then which. */
 function RequestCardHeader({
+  kind,
   referenceCode,
   status,
   title,
 }: {
+  kind: "EXIT" | "ROOM_CHANGE";
   referenceCode: string;
   status: string;
   title: string;
@@ -460,26 +450,89 @@ function RequestCardHeader({
   const { colors, fonts, type } = useTheme();
 
   return (
-    <View style={{ gap: spacing.xs }}>
-      <CardNameRow rowStyle={{
-          alignItems: "center",
-          flexDirection: "row",
-          gap: spacing.sm,
-          justifyContent: "space-between",
-        }}>
-        <FitText
-          numberOfLines={1}
-          style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: cardText(20) }}
-        >
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      {kind === "EXIT" ? <DigestMoveOutsColorIcon size={36} /> : <BedColorIcon size={36} />}
+      <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
+        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: cardText(18) }}>
           {title}
         </FitText>
-        <CardStatus><StatusPill label={humanizeToken(status)} tone={statusTone(status)} /></CardStatus>
-      </CardNameRow>
-      <Text style={[smallerCardText(type.caption), { color: colors.kicker, fontWeight: "800" }]}>
-        {referenceCode}
+        <Text style={[smallerCardText(type.caption), { color: colors.kicker, fontWeight: "800" }]}>{referenceCode}</Text>
+      </View>
+      <RequestStatusChip status={status} />
+    </View>
+  );
+}
+
+/**
+ * A request's state (user, 2026-11-11): thicker, bold, sentence case, with a
+ * mark of its own, like the stay out chips.
+ */
+function RequestStatusChip({ status }: { status: string }) {
+  const { colors, fonts } = useTheme();
+  const done = status === "APPROVED" || status === "EXECUTED";
+  const refused = status === "REJECTED";
+  const closed = status === "CANCELLED" || status === "EXPIRED" || status === "WITHDRAWN";
+  const tone = done
+    ? { fill: colors.jadeSoft, ink: colors.jade, Icon: CircleCheck }
+    : refused
+      ? { fill: colors.dangerSoft, ink: colors.danger, Icon: CircleX }
+      : closed
+        ? { fill: colors.surfaceSunken, ink: colors.inkSoft, Icon: TimerOff }
+        : { fill: colors.warningSoft, ink: colors.warningText, Icon: Clock };
+  return (
+    <View style={{ alignItems: "center", backgroundColor: tone.fill, borderRadius: 999, flexDirection: "row", gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
+      <tone.Icon color={tone.ink} size={12} strokeWidth={2.5} />
+      <Text style={{ color: tone.ink, fontFamily: fonts.sansBold, fontSize: 11 }}>{sentenceCase(status)}</Text>
+    </View>
+  );
+}
+
+/** A request's figures in a ruled, bordered row. */
+function RequestFacts({ children }: { children: ReactNode }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, flexDirection: "row", paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+      {children}
+    </View>
+  );
+}
+
+/** Who decided and when, one line. */
+function DecisionLine({ at, by, rejected }: { at: string | null; by: string | null; rejected: boolean }) {
+  const { colors, type } = useTheme();
+  if (!by || !at) return null;
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+      <UserRound color={colors.muted} size={13} strokeWidth={2.2} />
+      <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flex: 1 }]}>
+        {rejected ? "Rejected" : "Approved"}: <Text style={{ color: colors.ink, fontWeight: "800" }}>{by}</Text>, {formatDateTime(at)}
       </Text>
     </View>
   );
+}
+
+/** "Property's response" once a request has been carried out, "Property's reason" before. */
+function propertyNoteLabel(status: string) {
+  return status === "EXECUTED" ? "Property's response" : "Property's reason";
+}
+
+/** Which property the request was raised at, under its dates. */
+function PlaceLine({ name, room }: { name: string; room: string | null }) {
+  const { colors, type } = useTheme();
+  return (
+    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+      <Building2 color={colors.ink} size={13} strokeWidth={2.2} />
+      <Text numberOfLines={1} style={[type.caption, { color: colors.ink, flex: 1 }]}>
+        <Text style={{ fontWeight: "800" }}>{name}</Text>
+        {room ? ` · ${room}` : ""}
+      </Text>
+    </View>
+  );
+}
+
+function sentenceCase(value: string) {
+  const words = value.replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function WithdrawExitSheet({

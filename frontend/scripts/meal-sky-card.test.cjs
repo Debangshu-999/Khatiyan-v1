@@ -22,7 +22,7 @@ function loadFunctions(file, names, bindings = {}) {
     View: "View", Text: "Text", FitText: "FitText", LinearGradient: "Gradient", MealGlyph: "MealGlyph",
     Svg: "Svg", Circle: "Circle", Path: "Path", AnimatedPressable: "Button", QrCode: "QrCode", ChevronRight: "Chevron",
     StyleSheet: { absoluteFill: { position: "absolute", inset: 0 } },
-    useTheme: () => theme, softShadow: () => ({}), radii: { card: 10, md: 10 },
+    useTheme: () => theme, softShadow: () => ({}), cardShadow: () => ({}), radii: { card: 10, md: 10 },
     spacing: { xs: 6, sm: 10, md: 14, lg: 18 }, MEAL_LABEL: labels,
     formatMealWindow: (start, end) => `${start} - ${end}`,
     require: (name) => { assert.equal(name, "react/jsx-runtime"); return { jsx, jsxs: jsx, Fragment: "Fragment" }; },
@@ -38,9 +38,12 @@ function text(tree) {
   if (Array.isArray(tree)) return tree.map(text).join("");
   return tree && typeof tree === "object" ? text(tree.props?.children) : typeof tree === "string" ? tree : "";
 }
-const sky = loadFunctions("src/features/food/serving-meal-card.tsx", ["ServingMealCard", "MealSkyBackdrop", "MealSkyBackground", "MealGlassPanel"]);
+// Each meal its own sky (user, 2026-11-07): the table read from the file itself.
+const skyTable = read("src/features/food/serving-meal-card.tsx").match(/const MEAL_SKY[^=]*= (\{[\s\S]*?\n\});/)[1];
+const MEAL_SKY = vm.runInNewContext(`(${skyTable.replace(/\/\/[^\n]*\n/g, "\n")})`);
+const sky = loadFunctions("src/features/food/serving-meal-card.tsx", ["ServingMealCard", "MealSkyBackdrop", "DaySkyBackdrop", "MealSkyBackground", "MealGlassPanel"], { MEAL_SKY });
 for (const [mealType, label] of Object.entries(labels)) {
-  test(`${label} uses the shared sky, its own icon and inline serving title`, () => {
+  test(`${label} uses its own sky, its own icon and inline serving title`, () => {
     const card = sky.ServingMealCard({ meal: { ...meal, mealType }, children: "Action" });
     assert.equal(nodes(card, "Text").length, 1); // No separate Serving now chip.
     assert.equal(text(nodes(card, "Text")[0]), `${label}, serving now`);
@@ -48,7 +51,8 @@ for (const [mealType, label] of Object.entries(labels)) {
     assert.equal(nodes(card, "MealGlyph")[0].props.meal, mealType);
     assert.equal(text(nodes(card, "FitText")[0]), "20:30 - 22:30");
     const gradient = nodes(card, "Gradient")[0];
-    assert.deepEqual(Array.from(gradient.props.colors), ["#101B3E", "#24366A", "#4A4278"]);
+    assert.deepEqual(Array.from(gradient.props.colors), Array.from(MEAL_SKY[mealType].colors));
+    if (mealType === "DINNER") assert.deepEqual(Array.from(gradient.props.colors), ["#101B3E", "#24366A", "#4A4278"]);
     assert.equal(gradient.props.children.at(-1), "Action");
     assert.equal(gradient.props.style.overflow, "hidden");
   });
@@ -66,6 +70,12 @@ test("sky text and scan button have readable contrast", () => {
   for (const background of ["#101B3E", "#24366A", "#4A4278"]) {
     for (const foreground of ["#FFFFFF", "#D9E2FF", "#FFE4AA", "#FFBEC8"]) assert.ok(contrast(foreground, background) >= 4.5);
   }
+  // Every meal's sky, where its words sit: the first two colours.
+  for (const { colors, muted } of Object.values(MEAL_SKY)) {
+    for (const background of colors.slice(0, 2)) {
+      for (const foreground of ["#FFFFFF", muted]) assert.ok(contrast(foreground, background) >= 4.5, `${foreground} on ${background}`);
+    }
+  }
 });
 test("vector stars stay decorative and never intercept a scan button", () => {
   const backdrop = sky.MealSkyBackdrop();
@@ -80,7 +90,7 @@ let openMeal = meal;
 const navigated = [];
 const queries = [];
 const home = loadFunctions("src/features/food/meal-attendance-ui.tsx", ["MealScanHomeCard"], {
-  ServingMealCard: "ServingMealCard",
+  ServingMealCard: "ServingMealCard", mealSkyInk: () => "#24366A",
   useRouter: () => ({ push: (route) => navigated.push(route) }),
   useGetMealAttendanceLiveQuery: (...args) => { queries.push(args); return { data: { openMeal } }; },
 });
@@ -115,9 +125,12 @@ function scannerHarness(options = {}) {
   let resolveScan;
   let rejectScan;
   const screen = loadFunctions("app/owner-meal-scan.tsx", ["OwnerMealScanScreen", "ScanGuide"], {
-    ServingMealCard: "ServingMealCard", ScreenHeader: "ScreenHeader", ScreenScrollView: "ScrollView",
+    // The page's top bar takes the serving meal's own colour, night for dinner (user, 2026-11-07).
+    ServingMealCard: "ServingMealCard", mealSkyInk: (mealType) => (mealType === "LUNCH" ? "#8A5200" : "#101B3E"), ScreenHeader: "ScreenHeader", ScreenScrollView: "ScrollView",
     SkeletonCard: "Skeleton", EmptyState: "Empty", FormInput: "Input", CameraView: "CameraView", Camera: "CameraIcon", X: "CloseIcon",
-    MealGlassPanel: "GlassPanel", MealSkyBackground: "SkyBackground", StatusBar: "StatusBar", ActivityIndicator: "Spinner", ClipboardCheck: "AttendanceIcon",
+    // The tenant meal pass's night colours, plain, whatever the meal (user, 2026-11-13).
+    highlightPalette: { night: { gradient: ["#101B3E", "#24366A", "#4A4278"] } }, LinearGradient: "Gradient",
+    MealGlassPanel: "GlassPanel", StatusBar: "StatusBar", ActivityIndicator: "Spinner", ClipboardCheck: "AttendanceIcon",
     LastScan: "LastScan", AlertModal: "Alert", CODE_LENGTH: 6, SAME_PASS_MS: 4000,
     useRef: (value) => { const index = refIndex++; return refs[index] ??= { current: value }; },
     useState: (initial) => { const index = stateIndex++; if (!(index in states)) states[index] = initial; return [states[index], (value) => { states[index] = value; }]; },
@@ -146,7 +159,9 @@ test("scanner has a full-screen sky, distinct glass cards and no submit footer",
   assert.equal(card.props.children, undefined);
   assert.equal(nodes(tree, "GlassPanel").length, 3); // Open camera, code entry, attendance link.
   assert.equal(nodes(tree, "ScrollView")[0].props.surface, "#101B3E");
-  assert.equal(nodes(tree, "ScrollView")[0].props.background.type, "SkyBackground");
+  assert.equal(nodes(tree, "ScrollView")[0].props.background.type, "Gradient");
+  assert.deepEqual(Array.from(nodes(tree, "ScrollView")[0].props.background.props.colors), ["#101B3E", "#24366A", "#4A4278"]);
+  assert.doesNotMatch(read("app/owner-meal-scan.tsx"), /MealSkyBackground|MealSkyBackdrop/); // No stars.
   assert.equal(nodes(tree, "ScreenHeader")[0].props.onDark, true);
   assert.equal(nodes(tree, "StatusBar")[0].props.style, "light");
   assert.equal(nodes(tree, "CameraView").length, 0); // Permission alone never starts a camera.

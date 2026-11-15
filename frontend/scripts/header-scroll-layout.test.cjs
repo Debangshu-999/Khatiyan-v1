@@ -55,7 +55,7 @@ function discoveryHeaderProps() {
     compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS },
   });
   vm.runInNewContext(outputText, {
-    exports, ScreenHeader: "ScreenHeader", spacing: { xs: 6 },
+    exports, ScreenHeader: "ScreenHeader", spacing: { xs: 6 }, viewSaved: "ViewSaved",
     require: () => ({ jsx: (type, props) => ({ type, props }) }),
   });
   return exports.header.props;

@@ -22,6 +22,8 @@ import com.khatiyan.a_auth.api.dto.EmailOtpRequest;
 import com.khatiyan.a_auth.api.dto.EmailRecoveryStatusResponse;
 import com.khatiyan.a_auth.api.dto.EmailResetPinRequest;
 import com.khatiyan.a_auth.api.dto.OtpVerifyResponse;
+import com.khatiyan.a_auth.api.dto.OtpWaitRequest;
+import com.khatiyan.a_auth.api.dto.OtpWaitResponse;
 import com.khatiyan.a_auth.api.dto.ChangePinRequest;
 import com.khatiyan.a_auth.api.dto.PinLoginRequest;
 import com.khatiyan.a_auth.api.dto.RegisterOwnerRequest;
@@ -30,6 +32,7 @@ import com.khatiyan.a_auth.api.dto.RequestOtpRequest;
 import com.khatiyan.a_auth.api.dto.ResetPinRequest;
 import com.khatiyan.a_auth.api.dto.SetPinRequest;
 import com.khatiyan.a_auth.api.dto.RefreshTokenRequest;
+import com.khatiyan.c_shared.exception.ErrorResponse;
 import com.khatiyan.a_auth.api.dto.TokenResponse;
 import com.khatiyan.a_auth.api.dto.UpdateRecoveryEmailRequest;
 import com.khatiyan.a_auth.api.dto.UpdateUserProfileRequest;
@@ -116,6 +119,17 @@ public class AuthController {
         return ResponseEntity.accepted().build();
     }
 
+    /**
+     * How long before another code may be sent to this number or address (user,
+     * 2026-11-14), read from the database, so a screen opened again mid-wait
+     * starts blocked with the right time. The same answer for a number with an
+     * account and one without.
+     */
+    @PostMapping("/otp/wait")
+    public OtpWaitResponse otpWait(@Valid @RequestBody OtpWaitRequest request) {
+        return new OtpWaitResponse(authService.otpWaitSeconds(request.phone(), request.email(), request.purpose()));
+    }
+
     @PostMapping("/otp/verify")
     public OtpVerifyResponse verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
         return authService.verifyOTP(request.phone(), request.otp(), request.purpose());
@@ -134,12 +148,17 @@ public class AuthController {
         return ResponseEntity.accepted().build();
     }
 
-    /** 401 when the refresh token cannot be honoured, which the app takes as signed out. */
+    /**
+     * 401 with code {@code REFRESH_REFUSED} when the refresh token cannot be honoured, and
+     * only then does the app sign out (2026-11-07). A bare 401 can also come from Spring's
+     * error page, a failure that says nothing about the session.
+     */
     @PostMapping("/token/refresh")
-    public ResponseEntity<TokenResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+    public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
         return authService.refresh(request.refreshToken())
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(ErrorResponse.of("REFRESH_REFUSED", "Sign in again to carry on.")));
     }
 
     @PostMapping("/email/login/confirm")
@@ -154,7 +173,8 @@ public class AuthController {
                 request.phone(),
                 request.pin(),
                 clientIp(servletRequest),
-                request.signOutSessionId());
+                request.signOutSessionId(),
+                Boolean.TRUE.equals(request.signOutAll()));
     }
 
     @PostMapping("/pin/reset/request")

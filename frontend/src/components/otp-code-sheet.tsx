@@ -1,11 +1,12 @@
 import { ModalTitleRule } from "@/components/modal-title-rule";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useState, type ReactNode } from "react";
-import { Keyboard, KeyboardAvoidingView, Platform, Text, View } from "react-native";
+import { Animated, Keyboard, KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom } from "@/components/use-keyboard-inset";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { CodeField, OtpBoxes } from "@/features/auth/auth-ui";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -152,7 +153,7 @@ export function OtpCodeSheet({
   title: string;
 }) {
   const { colors, fonts } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom();
 
   return (
     <BottomSheetModal dismissOnDrag={false} navigationBarTranslucent onRequestClose={onClose} onDismissStart={() => Keyboard.dismiss()} statusBarTranslucent visible>
@@ -164,18 +165,16 @@ export function OtpCodeSheet({
           padding never returns to zero on dismissal, which left the sheet
           shoved up the screen after the keyboard closed. */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ flex: 1, justifyContent: "flex-end", marginBottom: keyboardInset }}>
-          <AnimatedPressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => dismiss()}
-            style={{ alignSelf: "center", marginBottom: 14, backgroundColor: colors.surface, borderRadius: 24, width: 46, height: 46, alignItems: "center", justifyContent: "center" }}>
-            <X color={colors.ink} size={23} />
-          </AnimatedPressable>
-          <View
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          <SheetCloseButton accessibilityLabel="Close" onClose={() => dismiss()} />
+          <Animated.View
             style={{
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
+              paddingBottom: keyboardRoom,
               gap: spacing.md,
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
@@ -201,7 +200,7 @@ export function OtpCodeSheet({
             />
 
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.sm }} />
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
       </>}

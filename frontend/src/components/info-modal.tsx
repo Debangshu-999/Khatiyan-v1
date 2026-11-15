@@ -36,7 +36,7 @@ export function InfoModal({
     <BottomSheetModal navigationBarTranslucent statusBarTranslucent onRequestClose={onClose}>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <HowItWorksClose onClose={() => dismiss()} />
-        <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: spacing.lg, gap: spacing.sm, maxHeight: "76%" }}>
+        <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: spacing.lg, gap: spacing.sm, maxHeight: "100%" }}>
           <HelpModalHeader title={title} />
           <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}>{children}</ScrollView>
         </View>

@@ -45,6 +45,8 @@ class FoodMenuServiceTest {
     @Mock private FoodItemRepository itemRepository;
     @Mock private FoodMenuEntryRepository menuEntryRepository;
     @Mock private PropertyModule propertyModule;
+    @Mock private com.khatiyan.d_modules.food.repository.FoodSubscriptionRepository subscriptionRepository;
+    @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
     private FoodMenuService service;
 
     @BeforeEach
@@ -55,7 +57,10 @@ class FoodMenuServiceTest {
                 propertyModule,
                 profileRepository,
                 itemRepository,
-                menuEntryRepository);
+                menuEntryRepository,
+                subscriptionRepository,
+                eventPublisher,
+                java.time.Clock.fixed(java.time.Instant.parse("2026-09-21T04:30:00Z"), java.time.ZoneOffset.UTC));
     }
 
     @Test
@@ -142,5 +147,78 @@ class FoodMenuServiceTest {
                 BigDecimal.ZERO,
                 null,
                 0);
+    }
+
+    // ----- A plan's weekly menu changed tells its subscribers (P1.5.h.3, 2026-11-08) -----
+
+    private static final java.time.LocalDate TODAY = java.time.LocalDate.of(2026, 9, 21);
+
+    @Test
+    void addingADishToAPlanTellsItsSubscribers() {
+        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
+        FoodItem roti = FoodItem.create(
+                PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
+        UUID vegTenant = UUID.randomUUID();
+        when(moduleSettingService.requireUsable(PROPERTY))
+                .thenReturn(FoodTestFixtures.property(PROPERTY, true, Set.of(MealType.LUNCH)));
+        when(profileRepository.findByIdAndActiveTrue(veg.getId())).thenReturn(Optional.of(veg));
+        when(itemRepository.findByIdAndActiveTrue(roti.getId())).thenReturn(Optional.of(roti));
+        when(menuEntryRepository.save(any(FoodMenuEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(subscriptionRepository.findCurrentOrUpcoming(PROPERTY, TODAY)).thenReturn(List.of(
+                com.khatiyan.d_modules.food.model.FoodSubscription.start(PROPERTY, UUID.randomUUID(), vegTenant,
+                        com.khatiyan.d_modules.food.model.FoodSubscription.everyDay(veg.getId()), TODAY),
+                com.khatiyan.d_modules.food.model.FoodSubscription.start(PROPERTY, UUID.randomUUID(), UUID.randomUUID(),
+                        com.khatiyan.d_modules.food.model.FoodSubscription.everyDay(UUID.randomUUID()), TODAY)));
+
+        service.create(ACTOR, PROPERTY, veg.getId(), menuRequest(roti, MealType.LUNCH, "1"));
+
+        var event = org.mockito.ArgumentCaptor.forClass(com.khatiyan.d_modules.food.event.FoodMenuChangedEvent.class);
+        org.mockito.Mockito.verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().profileId()).isEqualTo(veg.getId());
+        assertThat(event.getValue().profileName()).isEqualTo("Veg");
+        assertThat(event.getValue().tenantUserIds()).containsExactly(vegTenant);
+    }
+
+    /** Quantities are the kitchen's numbers: the tenant's plate is the same dish on the same day. */
+    @Test
+    void aQuantityOnlyEditTellsNobody() {
+        FoodItem roti = FoodItem.create(
+                PROPERTY, ACTOR, "Roti", null, null, null, FoodQuantityUnit.PIECE, EnumSet.allOf(MealType.class));
+        FoodMenuEntry entry = FoodMenuEntry.create(PROPERTY, UUID.randomUUID(), roti.getId(), ACTOR, DayOfWeek.MONDAY,
+                MealType.LUNCH, BigDecimal.ONE, BigDecimal.ZERO, 0, BigDecimal.ZERO, null, 0);
+        when(menuEntryRepository.findByIdAndActiveTrue(entry.getId())).thenReturn(Optional.of(entry));
+        when(moduleSettingService.requireUsable(PROPERTY))
+                .thenReturn(FoodTestFixtures.property(PROPERTY, true, Set.of(MealType.LUNCH)));
+        when(itemRepository.findByIdAndActiveTrue(roti.getId())).thenReturn(Optional.of(roti));
+
+        service.update(ACTOR, entry.getId(), menuRequest(roti, MealType.LUNCH, "2"));
+
+        org.mockito.Mockito.verify(eventPublisher, org.mockito.Mockito.never()).publishEvent(any());
+    }
+
+    @Test
+    void removingADishTellsThePlansSubscribers() {
+        FoodProfile veg = FoodProfile.create(PROPERTY, ACTOR, "Veg", null, 0, FoodProfileCategory.VEG);
+        FoodMenuEntry entry = FoodMenuEntry.create(PROPERTY, veg.getId(), UUID.randomUUID(), ACTOR, DayOfWeek.MONDAY,
+                MealType.LUNCH, BigDecimal.ONE, BigDecimal.ZERO, 0, BigDecimal.ZERO, null, 0);
+        UUID vegTenant = UUID.randomUUID();
+        when(menuEntryRepository.findByIdAndActiveTrue(entry.getId())).thenReturn(Optional.of(entry));
+        when(moduleSettingService.requireUsable(PROPERTY))
+                .thenReturn(FoodTestFixtures.property(PROPERTY, true, Set.of(MealType.LUNCH)));
+        when(profileRepository.findById(veg.getId())).thenReturn(Optional.of(veg));
+        when(subscriptionRepository.findCurrentOrUpcoming(PROPERTY, TODAY)).thenReturn(List.of(
+                com.khatiyan.d_modules.food.model.FoodSubscription.start(PROPERTY, UUID.randomUUID(), vegTenant,
+                        com.khatiyan.d_modules.food.model.FoodSubscription.everyDay(veg.getId()), TODAY)));
+
+        service.deactivate(ACTOR, entry.getId());
+
+        var event = org.mockito.ArgumentCaptor.forClass(com.khatiyan.d_modules.food.event.FoodMenuChangedEvent.class);
+        org.mockito.Mockito.verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().tenantUserIds()).containsExactly(vegTenant);
+    }
+
+    private static SaveFoodMenuEntryRequest menuRequest(FoodItem item, MealType meal, String base) {
+        return new SaveFoodMenuEntryRequest(
+                item.getId(), DayOfWeek.MONDAY, meal, new BigDecimal(base), BigDecimal.ZERO, 0, BigDecimal.ZERO, null, 0);
     }
 }

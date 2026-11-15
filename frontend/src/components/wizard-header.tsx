@@ -25,6 +25,7 @@ export function WizardHeader({
   onClose,
   step,
   title,
+  tone = "soft",
   totalSteps,
 }: {
   /** Rendered in blue after the title. Blue as TEXT is fine; as a fill it is not. */
@@ -35,9 +36,12 @@ export function WizardHeader({
   /** Zero-based. Null hides the bar — for a result screen, which is not a step. */
   step: number | null;
   title: string;
+  /** "deep": white type on PinnedWizardHeader's deep blue panel (user, 2026-11-08). */
+  tone?: "deep" | "soft";
   totalSteps: number;
 }) {
   const { colors, fonts, type } = useTheme();
+  const deep = tone === "deep";
 
   return (
     <View style={{ gap: spacing.sm }}>
@@ -45,32 +49,34 @@ export function WizardHeader({
         {/* Both slots keep their width even when empty, so the title stays
             centred on the first and last steps instead of drifting left. */}
         <View style={{ width: 40 }}>
-          {onBack ? <DiscButton icon={ArrowLeft} label="Back" onPress={onBack} /> : null}
+          {onBack ? <DiscButton deep={deep} icon={ArrowLeft} label="Back" onPress={onBack} /> : null}
         </View>
 
         <Text
           numberOfLines={1}
-          style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
+          style={{ color: deep ? "#FFFFFF" : colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
         >
           {title}
-          {accentWord ? <Text style={{ color: colors.primary }}> {accentWord}</Text> : null}
+          {accentWord ? <Text style={{ color: deep ? "#BFD3FF" : colors.primary }}> {accentWord}</Text> : null}
         </Text>
 
         <View style={{ alignItems: "flex-end", width: 40 }}>
-          <DiscButton icon={X} label="Close" onPress={onClose} />
+          <DiscButton deep={deep} icon={X} label="Close" onPress={onClose} />
         </View>
       </View>
 
-      {step === null ? null : <StepProgress step={step} totalSteps={totalSteps} />}
+      {step === null ? null : <StepProgress step={step} tone={tone} totalSteps={totalSteps} />}
     </View>
   );
 }
 
 function DiscButton({
+  deep,
   icon: Icon,
   label,
   onPress,
 }: {
+  deep?: boolean;
   icon: typeof ArrowLeft;
   label: string;
   onPress: () => void;
@@ -85,14 +91,14 @@ function DiscButton({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: colors.surfaceSunken,
+        backgroundColor: deep ? "rgba(255,255,255,0.18)" : colors.surfaceSunken,
         borderRadius: 999,
         height: 28,
         justifyContent: "center",
         width: 28,
       }}
     >
-      <Icon color={colors.inkSoft} size={15} strokeWidth={2.4} />
+      <Icon color={deep ? "#FFFFFF" : colors.inkSoft} size={15} strokeWidth={2.4} />
     </AnimatedPressable>
   );
 }

@@ -98,6 +98,8 @@ class QueriesDoNotGrowWithRowsTest {
     @Autowired private com.khatiyan.d_modules.discovery.metro.MetroService metroService;
     @Autowired private com.khatiyan.d_modules.food.service.MealAttendanceService mealAttendance;
     @Autowired private com.khatiyan.d_modules.food.service.MealRatingService mealRatings;
+    @Autowired private com.khatiyan.d_modules.tenancy.service.StayOutService stayOuts;
+    @Autowired private com.khatiyan.d_modules.tenancy.service.RollCallService rollCall;
 
     private final LocalDate today = LocalDate.now(IST);
     private Seeded small;
@@ -126,6 +128,49 @@ class QueriesDoNotGrowWithRowsTest {
         seedConcernsRaisedToday(large);
         seedDamageRecords(small);
         seedDamageRecords(large);
+        seedStayOuts(small);
+        seedStayOuts(large);
+        seedRollCall(small);
+        seedRollCall(large);
+        seedBillsPaidToday(small);
+        seedBillsPaidToday(large);
+    }
+
+    /**
+     * A stay out on every live stay (2026-11-08): every other one away tonight,
+     * the rest leaving in three days. So the board names people and rooms that
+     * grow with the property.
+     */
+    private void seedStayOuts(Seeded seeded) {
+        jdbc.update("""
+                INSERT INTO tenancy.stay_outs (id, tenancy_id, property_id, tenant_user_id, leave_date, return_date,
+                    created_at, updated_at)
+                SELECT gen_random_uuid(), t.id, t.property_id, t.user_id,
+                    CASE WHEN (row_number() OVER ()) % 2 = 0 THEN ?::date - 1 ELSE ?::date + 3 END,
+                    CASE WHEN (row_number() OVER ()) % 2 = 0 THEN ?::date + 2 ELSE ?::date + 5 END,
+                    now(), now()
+                FROM tenancy.tenancies t
+                WHERE t.property_id = ? AND t.is_active
+                """, today, today, today, today, seeded.propertyId());
+        // One already over for each stay, for the board's Past list (2026-11-14).
+        jdbc.update("""
+                INSERT INTO tenancy.stay_outs (id, tenancy_id, property_id, tenant_user_id, leave_date, return_date,
+                    created_at, updated_at)
+                SELECT gen_random_uuid(), t.id, t.property_id, t.user_id, ?::date - 9, ?::date - 7, now(), now()
+                FROM tenancy.tenancies t
+                WHERE t.property_id = ? AND t.is_active
+                """, today, today, seeded.propertyId());
+    }
+
+    /** Tonight's roll call (2026-11-15): every other live stay marked present, the rest left Not marked. */
+    private void seedRollCall(Seeded seeded) {
+        jdbc.update("""
+                INSERT INTO tenancy.roll_call_marks (id, property_id, tenancy_id, night, status, method, marked_at,
+                    marked_by_user_id, created_at, updated_at)
+                SELECT gen_random_uuid(), t.property_id, t.id, ?::date, 'PRESENT', 'SELF', now(), t.user_id, now(), now()
+                FROM (SELECT t.*, row_number() OVER () AS n FROM tenancy.tenancies t WHERE t.property_id = ? AND t.is_active) t
+                WHERE t.n % 2 = 0
+                """, today, seeded.propertyId());
     }
 
     /**
@@ -171,6 +216,24 @@ class QueriesDoNotGrowWithRowsTest {
                 """, property.propertyId(), Math.max(1, property.beds() / 4));
     }
 
+    /**
+     * Bills paid today, a quarter of the beds' worth (2026-11-14). The seeder pays
+     * bills on random days, and on a day the small property had none paid today its
+     * read returned empty after two queries while the large one ran the whole list,
+     * which read as a query per row. Like the concerns above, both must have some.
+     */
+    private void seedBillsPaidToday(Seeded property) {
+        jdbc.update("""
+                UPDATE billing.billing_cycles SET status = 'PAID', paid_at = ?
+                WHERE id IN (
+                    SELECT c.id FROM billing.billing_cycles c
+                    WHERE c.property_id = ? AND c.status <> 'CANCELLED'
+                    ORDER BY c.id
+                    LIMIT ?)
+                """, java.sql.Timestamp.from(today.atTime(12, 0).atZone(IST).toInstant()), property.propertyId(),
+                Math.max(1, property.beds() / 4));
+    }
+
     @AfterEach
     void remove() {
         for (Seeded seeded : new Seeded[] { small, large }) {
@@ -188,6 +251,7 @@ class QueriesDoNotGrowWithRowsTest {
                 jdbc.update("DELETE FROM booking.settings WHERE property_id = ?", seeded.propertyId());
                 jdbc.update("DELETE FROM property.room_molds WHERE property_id = ?", seeded.propertyId());
                 jdbc.update("DELETE FROM billing.damage_records WHERE property_id = ?", seeded.propertyId());
+                jdbc.update("DELETE FROM tenancy.stay_outs WHERE property_id = ?", seeded.propertyId());
             }
         }
         LargePropertySeeder.remove(jdbc, small);
@@ -467,6 +531,7 @@ class QueriesDoNotGrowWithRowsTest {
         reads.put("Meal attendance meal", p -> mealAttendance.meal(
                 p.ownerId(), p.propertyId(), today, com.khatiyan.d_modules.property.model.MealType.LUNCH));
         reads.put("Meal attendance history", p -> mealAttendance.history(p.ownerId(), p.propertyId(), 0, 14));
+        reads.put("Stay outs board", p -> stayOuts.board(p.ownerId(), p.propertyId()));
         reads.put("Meal attendance analytics", p -> mealAttendance.analytics(p.ownerId(), p.propertyId()));
         reads.put("Meal ratings summary", p -> mealRatings.summary(p.ownerId(), p.propertyId()));
         reads.put("Meal ratings analysis status", p -> mealRatings.analysisStatus(p.ownerId(), p.propertyId()));
@@ -562,6 +627,8 @@ class QueriesDoNotGrowWithRowsTest {
         // Search along metro (2026-10-31): the tab's lines, and the one read a ticked search adds.
         reads.put("Metro systems", p -> metroService.systems());
         reads.put("Properties near ticked stations", p -> metroService.nearestTicked(List.of("kol-esplanade")));
+        // The nightly roll call (2026-11-15): every live stay with its mark, stay out, name and room.
+        reads.put("Roll call, a night", p -> rollCall.night(p.ownerId(), p.propertyId(), null));
         reads.put("Another bed options",
                 p -> bookingRequests.anotherBedOptions(p.ownerId(), p.propertyId(), anOpenBooking.get(p.propertyId())));
         return reads;

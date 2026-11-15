@@ -1,4 +1,5 @@
 import { LoadFailed } from "@/components/load-failed";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ActivityIndicator, Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, LayoutAnimation, Platform, Text, TextInput, View } from "react-native";
@@ -9,6 +10,7 @@ import { saveWalletAccess, subscribeWalletAccess, walletAccessToken } from "@/au
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { holdKeyboardForModal } from "@/components/keyboard-intent";
+import { expectedKeyboardHeight, rememberKeyboardHeight } from "@/components/use-keyboard-inset";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { api } from "@/store/api";
@@ -21,15 +23,11 @@ export function useWalletUnlocked() {
   return Boolean(useSyncExternalStore(subscribeWalletAccess, () => walletAccessToken(session), () => null));
 }
 
-/** Measured the last time the keyboard opened. A share of the screen until then: the number pad's usual height. */
-let lastKeyboardRoom: number | null = null;
 /** The space kept under the PIN boxes with the keyboard closed (user, 2026-11-02). */
 const CLOSED_KEYBOARD_ROOM = 20;
 
-function expectedKeyboardRoom() {
-  if (Platform.OS !== "android") return 0;
-  return lastKeyboardRoom ?? Math.round(Dimensions.get("screen").height * 0.36);
-}
+// The keyboard's last measured height is shared with every other sheet (2026-11-08).
+const expectedKeyboardRoom = expectedKeyboardHeight;
 
 export function WalletPinModal({ onCancel, onUnlocked, disableLock = false }: { onCancel: () => void; onUnlocked: () => void; disableLock?: boolean }) {
   const { colors, fonts } = useTheme();
@@ -55,8 +53,9 @@ export function WalletPinModal({ onCancel, onUnlocked, disableLock = false }: { 
     if (Platform.OS !== "android") return;
     // The first open is an estimate, so it settles on the real height, and later ones start there.
     const measured = Keyboard.addListener("keyboardDidShow", (event) => {
-      lastKeyboardRoom = Math.max(0, Dimensions.get("screen").height - event.endCoordinates.screenY);
-      moveRoom(lastKeyboardRoom, 120);
+      const height = Math.max(0, Dimensions.get("screen").height - event.endCoordinates.screenY);
+      rememberKeyboardHeight(height);
+      moveRoom(height, 120);
     });
     // Smaller once the keyboard has gone (user, 2026-11-02).
     const gone = Keyboard.addListener("keyboardDidHide", () => moveRoom(CLOSED_KEYBOARD_ROOM, 200));
@@ -163,7 +162,7 @@ export function WalletPinModal({ onCancel, onUnlocked, disableLock = false }: { 
     {/* Under the status bar, so the dim fills the screen, and such a window does not resize for
         the keyboard on Android (user, 2026-11-02). */}
     <KeyboardAvoidingView enabled={Platform.OS === "ios"} behavior="padding" style={{ flex: 1, justifyContent: "flex-end" }}>
-      <AnimatedPressable accessibilityRole="button" accessibilityLabel="Cancel PIN entry" onPress={() => dismiss()} style={{ alignSelf: "center", marginBottom: 14, backgroundColor: colors.surface, borderRadius: 24, width: 46, height: 46, alignItems: "center", justifyContent: "center" }}><X color={colors.ink} size={23} /></AnimatedPressable>
+      <SheetCloseButton accessibilityLabel="Cancel PIN entry" onClose={() => dismiss()} />
       <Animated.View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 24, paddingTop: 28, paddingBottom: Animated.add(keyboardRoom, Math.max(insets.bottom, 16) + 6), gap: 22, width: "100%", maxWidth: 520, alignSelf: "center" }}>
         {/* Centred, with no line under it (user, 2026-11-01). ModalTitle is 80% wide, so the text alone centring is not enough. */}
         <ModalTitle style={{ alignSelf: "center", color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: "center" }}>Enter Account PIN</ModalTitle>

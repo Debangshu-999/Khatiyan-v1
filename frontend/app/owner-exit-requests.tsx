@@ -1,10 +1,11 @@
 import { smallerCardText } from "@/components/card-name-row";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { type ComponentType, useMemo, useState } from "react";
-import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { FieldError } from "@/components/field-error";
@@ -52,12 +53,12 @@ import {
   type TenancyExitRequest,
   type TenancySummary,
 } from "@/store/services/tenancy-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { metricFontSize } from "@/theme/metric-size";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { SearchField } from "@/components/search-field";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom, useRevealInputScroll } from "@/components/use-keyboard-inset";
 
 
 const EXIT_REQUEST_ARTWORK = require("../assets/images/workspace/exit-request.png");
@@ -116,7 +117,6 @@ export default function OwnerExitRequestsScreen() {
 
   const [selected, setSelected] = useState<TenancyExitRequest | null>(null);
   const [mode, setMode] = useState<ReviewMode | null>(null);
-  const [pastOpen, setPastOpen] = useState(false);
   const [withdrawalDecision, setWithdrawalDecision] = useState<WithdrawalDecision | null>(null);
 
   const allRequests = [...(requestsQuery.data ?? [])].sort(byPendingFirst);
@@ -234,7 +234,7 @@ export default function OwnerExitRequestsScreen() {
               <ActionButton
                 icon={FileClock}
                 label={`${expiredRequests.length} past request${expiredRequests.length === 1 ? "" : "s"}`}
-                onPress={() => setPastOpen(true)}
+                onPress={() => router.push("/owner-exit-request-history")}
                 variant="outline"
               />
             </View>
@@ -324,7 +324,6 @@ export default function OwnerExitRequestsScreen() {
       {selected && mode ? (
         <ExitReviewModal mode={mode} onClose={closeReview} request={selected} tenancy={tenancyById[selected.tenancyId]} />
       ) : null}
-      {pastOpen ? <PastExitRequestsModal chainByHeadId={activeChainByHeadId} onClose={() => setPastOpen(false)} requests={expiredRequests} roomLabels={roomLabels} /> : null}
       {decisionErrors.serverError ? <AlertModal message={decisionErrors.serverError} onClose={decisionErrors.dismissServerError} /> : null}
       {withdrawalDecision ? (
         <ConfirmDialog
@@ -366,84 +365,69 @@ function paginateArray<T>(items: T[], page: number, size: number) {
   };
 }
 
-// Reviewed (non-pending) exit requests, paginated in a modal like concern history.
-function PastExitRequestsModal({
-  chainByHeadId,
-  onClose,
-  requests,
-  roomLabels,
-}: {
-  /**
-   * Passed in rather than rebuilt here. This modal only receives chain HEADS,
-   * so rebuilding from them would produce single-link chains and every timeline
-   * would silently lose the attempts it supersedes.
-   */
-  chainByHeadId: Map<string, ExitRequestChain>;
-  onClose: () => void;
-  requests: TenancyExitRequest[];
-  roomLabels: Record<string, string>;
-}) {
-  const { colors, fonts, type } = useTheme();
-  // Infinite scroll (user, 2026-10-28): the list is loaded whole, so it shows
-  // a page more each time the reader nears the end, and says when it is over.
+/**
+ * Requests that have expired, on a screen of their own (user, 2026-11-07). It was a
+ * sheet, and a request's timeline opened a second sheet on top of it.
+ */
+export function ExitRequestHistoryScreen() {
+  const { colors } = useTheme();
+  const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const propertiesQuery = useListMyPropertiesQuery();
+  const selectedProperty = resolveSelectedProperty(propertiesQuery.data ?? [], selectedPropertyId);
+  const requestsQuery = useListPropertyExitRequestsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  const roomLabels = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const room of roomsQuery.data ?? []) {
+      map[room.id] = `Room ${room.roomNumber}`;
+    }
+    return map;
+  }, [roomsQuery.data]);
+  // Infinite scroll (user, 2026-10-28): the list is loaded whole, so it shows a page
+  // more each time the reader nears the end, and says when it is over.
   const [shown, setShown] = useState(PAST_PAGE_SIZE);
-  const visible = requests.slice(0, shown);
-  const more = shown < requests.length;
+
+  // Chains over EVERY request, as on the queue: a head's timeline needs the attempts it replaced.
+  const allRequests = [...(requestsQuery.data ?? [])].sort(byPendingFirst);
+  const chainByHeadId = new Map(buildExitRequestChains(allRequests).map((chain) => [chain.head.id, chain]));
+  const { history } = splitByActivity(allRequests.filter((request) => chainByHeadId.has(request.id)));
+  const visible = history.slice(0, shown);
+  const more = shown < history.length;
+
+  const loadFailed = loadFailure(propertiesQuery, requestsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
-    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
-      {(dismiss) => (
-      <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        {/* Full width. These cards now carry a timeline button and an alternating
-            rail behind it, and an inset sheet left the rail squeezed into about
-            half the screen with the labels wrapping. */}
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderTopLeftRadius: 22,
-            borderTopRightRadius: 22,
-            gap: spacing.md,
-            maxHeight: "92%",
-            padding: spacing.lg,
-          }}
-        >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
-              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Exit request history</ModalTitle>
-            </View>
-          </View>
-          <ModalTitleRule />
-          {requests.length === 0 ? (
-            <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Requests appear here once they expire and can no longer be acted on." />
-          ) : (
-            <>
-              <ScrollView
-                contentContainerStyle={{ gap: spacing.sm }}
-                onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-                  if (more && contentOffset.y + layoutMeasurement.height >= contentSize.height - 240) {
-                    setShown((current) => current + PAST_PAGE_SIZE);
-                  }
-                }}
-                scrollEventThrottle={64}
-                showsVerticalScrollIndicator={false}
-              >
-                {visible.map((request) => (
-                  <ExitRequestCard
-                    chain={chainByHeadId.get(request.id)}
-                    key={request.id}
-                    request={request}
-                    roomLabel={roomLabels[request.roomId]}
-                  />
-                ))}
-                {more ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />}
-              </ScrollView>
-            </>
-          )}
-        </View>
-      </View>
+    <ScreenScrollView
+      onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+        if (more && contentOffset.y + layoutMeasurement.height >= contentSize.height - 240) {
+          setShown((current) => current + PAST_PAGE_SIZE);
+        }
+      }}
+      safeAreaEdges={["top", "bottom"]}
+      scrollEventThrottle={64}
+    >
+      <ScreenHeader italicTail="history." title="Exit request" />
+      {requestsQuery.isLoading ? (
+        <ActivityIndicator color={colors.muted} style={{ padding: spacing.lg }} />
+      ) : history.length === 0 ? (
+        <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Requests appear here once they expire and can no longer be acted on." />
+      ) : (
+        <>
+          {visible.map((request) => (
+            <ExitRequestCard
+              chain={chainByHeadId.get(request.id)}
+              key={request.id}
+              request={request}
+              roomLabel={roomLabels[request.roomId]}
+            />
+          ))}
+          {more ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />}
+        </>
       )}
-    </BottomSheetModal>
+    </ScreenScrollView>
   );
 }
 
@@ -624,7 +608,9 @@ function ExitReviewModal({
   tenancy?: TenancySummary;
 }) {
   const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom();
+  // The list scrolls to the focused input with the keyboard up (user, 2026-11-08).
+  const revealInput = useRevealInputScroll();
   const insets = useSafeAreaInsets();
   const [notes, setNotes] = useState("");
   const form = useFormErrors<"notes">();
@@ -705,15 +691,16 @@ function ExitReviewModal({
       {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          <View
+          <SheetCloseButton onClose={() => dismiss()} />
+          <Animated.View
             style={{
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
-              marginBottom: keyboardInset,
-              maxHeight: "90%",
+              paddingBottom: keyboardRoom,
+              maxHeight: "100%",
               paddingTop: spacing.lg,
             }}
           >
@@ -731,7 +718,7 @@ function ExitReviewModal({
             </View>
             <ModalTitleRule inset={0} />
 
-            <ScrollView
+            <ScrollView {...revealInput}
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.lg, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
@@ -827,7 +814,7 @@ function ExitReviewModal({
                 on iOS, so without this the action button is half-covered. Same
                 recipe as the deposit manager's sheets. */}
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
       )}
@@ -890,13 +877,12 @@ function SummaryTile({
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
-        elevation: 2,
         flex: 1,
         gap: spacing.xs,
         // Centred, because tiles in a row stretch to the tallest of them.
         justifyContent: "center",
         padding: spacing.md,
-        ...softShadow(colors.shadow, 2, 6),
+        ...cardShadow(colors.shadow),
       }}
     >
       {/* The app's one metric card: a 38pt ink glyph in a 44-wide rail with the
@@ -1107,15 +1093,14 @@ function formatDateTime(value: string) {
  */
 function StatusBadge({ status }: { status: string }) {
   const { colors, type } = useTheme();
-  const tone =
-    status === "APPROVED" || status === "EXECUTED"
-      ? colors.successText
-      : status === "REJECTED" || status === "CANCELLED" || status === "EXPIRED"
-        ? colors.danger
-        : colors.primary;
+  const good = status === "APPROVED" || status === "EXECUTED";
+  const ended = status === "REJECTED" || status === "CANCELLED" || status === "EXPIRED";
+  const tone = good ? colors.successText : ended ? colors.danger : colors.primary;
+  // On a pale fill of its own colour, as a chip (user, 2026-11-07).
+  const fill = good ? colors.successSoft : ended ? colors.dangerSoft : colors.primarySoft;
 
   return (
-    <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xxs }}>
+    <View style={{ alignItems: "center", backgroundColor: fill, borderRadius: 999, flexDirection: "row", gap: spacing.xxs, paddingHorizontal: spacing.xs, paddingVertical: 2 }}>
       <Text style={[smallerCardText(type.caption), { color: tone, fontWeight: "900" }]}>
         {status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
       </Text>

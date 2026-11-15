@@ -1,8 +1,9 @@
 import { useMemo } from "react";
+import { EmptyAllCaughtUp } from "@/components/empty-art";
 import { Text, View } from "react-native";
 
 import { LoadFailed } from "@/components/load-failed";
-import { DigestMoveInsEmptyIcon } from "@/components/tenancy-line-icons";
+import { DigestMoveInsBlueIcon } from "@/components/digest-color-icons";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
@@ -73,7 +74,7 @@ export default function OwnerMoveInsTodayScreen() {
 
       {!tenanciesQuery.isLoading && !tenanciesQuery.isError && startingToday.length === 0 ? (
         <EmptyState
-          artworkNode={<DigestMoveInsEmptyIcon size={64} />}
+          artworkNode={<EmptyAllCaughtUp size={120} />}
           title="Nobody moved in today"
         />
       ) : null}

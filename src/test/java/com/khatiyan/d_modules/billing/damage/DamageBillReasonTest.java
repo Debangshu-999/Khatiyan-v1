@@ -26,5 +26,11 @@ class DamageBillReasonTest {
         when(record.getSplitNumber()).thenReturn(2);
         String split = ReflectionTestUtils.invokeMethod(DamageRecordService.class, "billReason", record);
         assertThat(split).isEqualTo("Damage DMG-2026-000279: Cupboard (D3), split 2");
+
+        // Recorded with the property's levels off: no level in the line (2026-11-07).
+        when(record.getDamageLevel()).thenReturn(null);
+        when(record.getSplitNumber()).thenReturn(null);
+        String unlevelled = ReflectionTestUtils.invokeMethod(DamageRecordService.class, "billReason", record);
+        assertThat(unlevelled).isEqualTo("Damage DMG-2026-000279: Cupboard");
     }
 }

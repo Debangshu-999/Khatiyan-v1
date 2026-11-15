@@ -1,26 +1,22 @@
-import { ModalTitle } from "@/components/modal-title";
-import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
-import { ArrowLeft, X } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { useLeavableSurface } from "@/components/leave-on-stale";
-import { AnimatedPressable } from "@/components/animated-pressable";
+import { SheetShell } from "@/components/sheet-shell";
 import { AppTextInput } from "@/components/app-text-input";
 import { FieldError } from "@/components/field-error";
 import { useToast } from "@/components/toast";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, formatMoneyPaise } from "@/features/owner/owner-ui";
+import { ActionButton, formatMoneyPaise, RequiredMark } from "@/features/owner/owner-ui";
 import { MultiImageField } from "@/features/uploads/multi-image-field";
 import {
   useCancelMyPaymentIntentMutation,
   useConfirmMyPaymentIntentMutation,
   type PaymentIntent,
 } from "@/store/services/payment-intent-api";
-import { DIALOG_MAX_WIDTH, radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /**
@@ -65,7 +61,6 @@ export function PaymentDecisionModal({
 }) {
   const { colors, fonts, type } = useTheme();
   const toast = useToast();
-  const keyboardInset = useKeyboardInset();
   // A form in a dialog: a "data has changed" refusal closes it (2026-10-04).
   useLeavableSurface(onClose);
   const [cancelIntent, cancelState] = useCancelMyPaymentIntentMutation();
@@ -78,26 +73,8 @@ export function PaymentDecisionModal({
   const [error, setError] = useState<string | null>(null);
 
   const busy = cancelState.isLoading || confirmState.isLoading;
-  // A screenshot counts. "Skip" has to mean the whole step was skipped, so a
-  // tenant who attached proof but had no reference number to hand is not told
-  // they are skipping something they just did.
-  const hasEvidence = reference.length > 0 || proofUrls.length > 0;
 
-  /**
-   * Back out of the evidence step, or close.
-   *
-   * <p>The device back button runs this too. Without that it would close the
-   * whole modal from step two, throwing away a "yes" the tenant had already
-   * given — and leaving the attempt open, so they would be asked the same
-   * question again with no idea why.
-   */
-  function goBack() {
-    if (step === "evidence") {
-      setStep("ask");
-      return;
-    }
-    onClose();
-  }
+  // The sheet's back arrow and the device back button return to step one (SheetShell onBack).
 
   async function markFailed() {
     try {
@@ -117,7 +94,12 @@ export function PaymentDecisionModal({
    * prevented rather than reported.
    */
   function trySubmit() {
-    if (reference.length > 0 && reference.length !== UPI_REFERENCE_LENGTH) {
+    // Required now (user, 2026-11-11): the number is what the owner matches on their statement.
+    if (reference.length === 0) {
+      form.validate({ reference: "Enter the 12-digit UPI reference number." });
+      return;
+    }
+    if (reference.length !== UPI_REFERENCE_LENGTH) {
       form.validate({
         reference: `A UPI reference number is ${UPI_REFERENCE_LENGTH} digits. You have entered ${reference.length}.`,
       });
@@ -143,94 +125,27 @@ export function PaymentDecisionModal({
   }
 
   return (
-    <CenterModal
-      animationType="fade"
-      navigationBarTranslucent
-      onRequestClose={goBack}
-      statusBarTranslucent
-      transparent
-      visible
+    // The shared bottom sheet, not a centred dialog (user, 2026-11-11).
+    <SheetShell
+      onBack={step === "evidence" ? () => setStep("ask") : undefined}
+      onClose={onClose}
+      size="content"
+      title={step === "ask" ? "Did the payment go through?" : "Anything to add?"}
     >
-      {/* iOS keeps the platform avoider, where it works. Android drives itself
-          from the measured inset below — `behavior="padding"` there is broken
-          under edge-to-edge and never returns to zero on dismissal. */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1 }}
-      >
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.overlay,
-            flex: 1,
-            justifyContent: "center",
-            padding: spacing.lg,
-            // Shrinks the centring box so the dialog rises with the keyboard
-            // rather than sitting behind it.
-            paddingBottom: spacing.lg + keyboardInset,
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderCurve: "continuous",
-              borderRadius: radii.card,
-              borderWidth: 1,
-              gap: spacing.md,
-              maxHeight: "88%",
-              maxWidth: DIALOG_MAX_WIDTH,
-              padding: spacing.lg,
-              width: "100%",
-            }}
-          >
-            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              {/* Only on step two. On step one there is nothing behind it, and a
-                  back arrow that closes the dialog is a different control
-                  wearing the same glyph. */}
-              {step === "evidence" ? (
-                <AnimatedPressable
-                  accessibilityLabel="Back"
-                  accessibilityRole="button"
-                  hitSlop={10}
-                  onPress={() => setStep("ask")}
-                >
-                  <ArrowLeft color={colors.ink} size={19} strokeWidth={2.4} />
-                </AnimatedPressable>
-              ) : null}
-              <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 20 }}>
-                {step === "ask" ? "Did the payment go through?" : "Anything to add?"}
-              </ModalTitle>
-              <AnimatedPressable
-                accessibilityLabel="Close"
-                accessibilityRole="button"
-                hitSlop={10}
-                onPress={onClose}
-                style={{
-                  alignItems: "center",
-                  backgroundColor: colors.surfaceSunken,
-                  borderRadius: 999,
-                  height: 28,
-                  justifyContent: "center",
-                  width: 28,
-                }}
-              >
-                <X color={colors.inkSoft} size={15} strokeWidth={2.4} />
-              </AnimatedPressable>
-            </View>
-
-            <ScrollView
-              contentContainerStyle={{ gap: spacing.md }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              style={{ flexGrow: 0, flexShrink: 1 }}
-            >
         {step === "ask" ? (
-          <>
-            <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
-              {formatMoneyPaise(intent.amountPaise)}, noted as{" "}
-              <Text style={{ fontFamily: fonts.mono }}>{intent.referenceCode}</Text>.
-            </Text>
+          <View style={{ gap: spacing.md }}>
+            <View style={{ gap: spacing.xs }}>
+              <Text style={[type.caption, { color: colors.muted, lineHeight: 18 }]}>
+                {formatMoneyPaise(intent.amountPaise)}, noted as{" "}
+                <Text style={{ fontFamily: fonts.mono }}>{intent.referenceCode}</Text>.
+              </Text>
+              {/* Right under the amount, above the buttons (user, 2026-11-11). The
+                  attempt persisting is the whole design, and a tenant who closes
+                  this should know the bill will still be waiting on them. */}
+              <Text style={[type.caption, { color: colors.kicker, lineHeight: 17 }]}>
+                Closing this leaves the payment open, we will ask again next time.
+              </Text>
+            </View>
 
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               <ActionButton
@@ -241,19 +156,12 @@ export function PaymentDecisionModal({
               />
               <ActionButton disabled={busy} label="Yes, I paid" onPress={() => setStep("evidence")} />
             </View>
-
-            {/* Said out loud rather than left to be discovered. The attempt
-                persisting is the whole design, and a tenant who closes this
-                should know the bill will still be waiting on them. */}
-            <Text style={[type.caption, { color: colors.kicker, lineHeight: 17 }]}>
-              Closing this leaves the payment open, we will ask again next time.
-            </Text>
-          </>
+          </View>
         ) : (
-          <>
+          <View style={{ gap: spacing.md }}>
             <View style={{ gap: spacing.xs }}>
               <Text style={[type.modalDescription, { color: colors.muted }]}>
-                UPI reference number / transaction ID
+                UPI reference number / transaction ID<RequiredMark required />
               </Text>
               <AppTextInput
                 keyboardType="number-pad"
@@ -261,8 +169,7 @@ export function PaymentDecisionModal({
                 onChangeText={(value) => {
                   // Stripped rather than refused. Tenants paste this out of a
                   // banking app, where it often arrives with spaces or a "UPI
-                  // Ref:" prefix attached, and rejecting the paste teaches them
-                  // to retype a 12-digit number by hand.
+                  // Ref:" prefix attached.
                   setReference(value.replace(/\D/g, "").slice(0, UPI_REFERENCE_LENGTH));
                   form.clearField("reference");
                 }}
@@ -292,38 +199,18 @@ export function PaymentDecisionModal({
               urls={proofUrls}
             />
 
-            {/* Down here, next to the button it excuses. At the top of the step
-                it was read before either field existed, so "optional" was an
-                abstract promise; sitting above the button, it is the answer to
-                the question actually being asked — can I press this with
-                nothing filled in. The extra top margin is what stops it and the
-                button crowding the picker above them. */}
-            <View style={{ gap: spacing.md, marginTop: spacing.md }}>
-              <Text style={[type.modalDescription, { color: colors.muted }]}>
-                Optional, but it helps them find your payment faster.
-              </Text>
-
-              {/* One button that renames itself, not a button plus a quieter
-                  "skip" link beneath it. A claim with nothing attached is a
-                  first-class answer — a tenant whose app hides the reference
-                  number must not be stuck — and saying so on the button itself
-                  makes that obvious, where a grey link under a blue button
-                  reads as the lesser of the two. */}
+            <View style={{ marginTop: spacing.sm }}>
               <ActionButton
                 disabled={busy || form.blocked}
-                label={busy ? "Sending…" : hasEvidence ? "Submit" : "Skip and submit"}
+                label={busy ? "Sending…" : "Submit"}
                 onPress={trySubmit}
               />
             </View>
-          </>
-        )}
-            </ScrollView>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        )}
 
       {error ? <AlertModal message={error} onClose={() => setError(null)} /> : null}
-    </CenterModal>
+    </SheetShell>
   );
 }
 

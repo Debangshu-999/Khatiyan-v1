@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.tenancy.api;
 
+import com.khatiyan.d_modules.tenancy.api.dto.RoommateResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomItemConditionResponse;
 import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
@@ -111,6 +113,18 @@ public class TenancyController {
     @GetMapping("/me/active")
     public TenantActiveTenancyResponse getMyActiveTenancy(@AuthenticationPrincipal UserPrincipal user) {
         return tenancyService.getTenantActiveTenancyProfile(user.userId());
+    }
+
+    /** Who shares the tenant's room now (2026-11-11). */
+    @GetMapping("/me/roommates")
+    public List<RoommateResponse> listMyRoommates(@AuthenticationPrincipal UserPrincipal user) {
+        return tenancyService.listMyRoommates(user.userId());
+    }
+
+    /** The tenant's own room's items and their damage levels (2026-11-11). */
+    @GetMapping("/me/room-items")
+    public List<RoomItemConditionResponse> listMyRoomItems(@AuthenticationPrincipal UserPrincipal user) {
+        return tenancyService.listMyRoomItems(user.userId());
     }
 
     @GetMapping("/me/property-rooms")

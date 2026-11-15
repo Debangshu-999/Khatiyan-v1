@@ -1,35 +1,37 @@
 import type { ReactNode } from "react";
 import type { LucideProps } from "lucide-react-native";
 import Svg, { Circle, Ellipse, G, Path, Rect } from "react-native-svg";
+import { DamageRecordIcon } from "@/components/damage-record-icon";
 import { useTheme } from "@/theme/use-theme";
 
 /**
  * Filled vector property-control marks, exposed with the same props as a Lucide
  * icon so they can be dropped into ActionCard without a second card API.
  */
-function Mark({ children, size = 24 }: LucideProps & { children: ReactNode }) {
+function Mark({ children, size = 24, tint }: LucideProps & { children: ReactNode; tint?: string }) {
   const { colors } = useTheme();
-  return <Svg width={size} height={size} viewBox="0 0 64 64" fill={colors.primary} color={colors.primary} accessible={false}>{children}</Svg>;
+  const fill = tint ?? colors.primary;
+  return <Svg width={size} height={size} viewBox="0 0 64 64" fill={fill} color={fill} accessible={false}>{children}</Svg>;
 }
 
-// Blue-filled vector redraws based on the original PNG subjects.
+// The same shapes, each in its own colours (user, 2026-11-14): no longer all one blue.
 export function ManageListingIcon(props: LucideProps) {
-  return <Mark {...props}>
+  return <Mark {...props} tint="#3B82F6">
     <Circle cx={28} cy={28} r={25} />
     <G fill="none" stroke="#FFFFFF" strokeWidth={2.5}>
       <Ellipse cx={28} cy={28} rx={13} ry={23} />
       <Path d="M28 5v46M5 28h46M9 14c10 7 28 7 38 0M9 42c10-7 28-7 38 0" />
     </G>
-    <Path d="m44 42 17 17a3 3 0 0 1-4 4L40 46Z" />
+    <Path d="m44 42 17 17a3 3 0 0 1-4 4L40 46Z" fill="#8A5A3C" />
     <Circle cx={43} cy={43} r={14} fill="#FFFFFF" />
-    <Circle cx={43} cy={43} r={11} />
-    <Circle cx={43} cy={43} r={7.5} fill="#FFFFFF" />
+    <Circle cx={43} cy={43} r={11} fill="#F5A524" />
+    <Circle cx={43} cy={43} r={7.5} fill="#DDF1FF" />
   </Mark>;
 }
 
 export function EnquiriesIcon(props: LucideProps) {
-  return <Mark {...props}>
-    <Path d="M35 25h15a10 10 0 0 1 10 10v14a8 8 0 0 1-6 8v6l-10-7H33a10 10 0 0 1-10-10V35a10 10 0 0 1 12-10Z" />
+  return <Mark {...props} tint="#3B82F6">
+    <Path d="M35 25h15a10 10 0 0 1 10 10v14a8 8 0 0 1-6 8v6l-10-7H33a10 10 0 0 1-10-10V35a10 10 0 0 1 12-10Z" fill="#F0663A" />
     <Path d="M12 9h30a10 10 0 0 1 10 10v20a10 10 0 0 1-10 10H23L10 59V49a10 10 0 0 1-8-10V19A10 10 0 0 1 12 9Z" stroke="#FFFFFF" strokeWidth={3} />
     <Path d="M21 24c0-10 16-10 16 0 0 7-9 6-9 12" fill="none" stroke="#FFFFFF" strokeWidth={5} strokeLinecap="round" />
     <Circle cx={28} cy={42} r={2.5} fill="#FFFFFF" />
@@ -37,14 +39,14 @@ export function EnquiriesIcon(props: LucideProps) {
 }
 
 export function RoomsAndBedsIcon(props: LucideProps) {
-  return <Mark {...props}>
-    <Rect x={9} y={8} width={46} height={30} rx={8} />
+  return <Mark {...props} tint="#2F9E9B">
+    <Rect x={9} y={8} width={46} height={30} rx={8} fill="#B9825A" />
     <Rect x={13} y={17} width={17} height={12} rx={3} fill="#FFFFFF" />
     <Rect x={34} y={17} width={17} height={12} rx={3} fill="#FFFFFF" />
     <Path d="M9 30h46l7 16v8H2v-8Z" />
     <Path d="M8 34h48M4 44h56" stroke="#FFFFFF" strokeWidth={2.5} />
-    <Rect x={6} y={53} width={6} height={7} rx={2} />
-    <Rect x={52} y={53} width={6} height={7} rx={2} />
+    <Rect x={6} y={53} width={6} height={7} rx={2} fill="#8A5A3C" />
+    <Rect x={52} y={53} width={6} height={7} rx={2} fill="#8A5A3C" />
   </Mark>;
 }
 
@@ -68,32 +70,32 @@ export function FacilitiesIcon({ size = 24, color = "#000000" }: LucideProps) {
 }
 
 export function PropertyBoardIcon(props: LucideProps) {
-  return <Mark {...props}>
+  return <Mark {...props} tint="#8A5A3C">
     <Path d="m12 16 20-12 20 12" fill="none" stroke="currentColor" strokeWidth={3} />
     <Circle cx={32} cy={4} r={3} />
     <Rect x={2} y={15} width={60} height={46} rx={4} />
-    <Rect x={6} y={19} width={52} height={38} rx={2} fill="none" stroke="#FFFFFF" strokeWidth={2} />
+    <Rect x={6} y={19} width={52} height={38} rx={2} fill="#E0A96D" />
     <Rect x={10} y={25} width={23} height={28} rx={2} fill="#FFFFFF" transform="rotate(-6 21 39)" />
     <Rect x={38} y={33} width={15} height={21} rx={2} fill="#FFFFFF" transform="rotate(8 46 43)" />
-    <Circle cx={21} cy={25} r={2} />
-    <Circle cx={46} cy={33} r={2} />
+    <Circle cx={21} cy={25} r={2.4} fill="#E5484D" />
+    <Circle cx={46} cy={33} r={2.4} fill="#3B82F6" />
   </Mark>;
 }
 
 export function NearbyLocationsIcon(props: LucideProps) {
-  return <Mark {...props}>
+  return <Mark {...props} tint="#22A06B">
     <Path d="m4 31 15-5 14 6 13-5 14 5 3 28-17-6-13 6-15-6-17 6Z" />
     <Path d="m19 33-1 21m15-15v21m12-22 1 16" stroke="#FFFFFF" strokeWidth={2.5} />
-    <Path d="M19 3A12 12 0 0 0 7 15c0 10 12 23 12 23s12-13 12-23A12 12 0 0 0 19 3Z" stroke="#FFFFFF" strokeWidth={2} />
+    <Path d="M19 3A12 12 0 0 0 7 15c0 10 12 23 12 23s12-13 12-23A12 12 0 0 0 19 3Z" fill="#F0663A" stroke="#FFFFFF" strokeWidth={2} />
     <Circle cx={19} cy={15} r={4} fill="#FFFFFF" />
-    <Path d="M38 21h18l6 10H32Z" stroke="#FFFFFF" strokeWidth={2} />
-    <Rect x={36} y={32} width={22} height={17} rx={2} stroke="#FFFFFF" strokeWidth={2} />
+    <Path d="M38 21h18l6 10H32Z" fill="#F5A524" stroke="#FFFFFF" strokeWidth={2} />
+    <Rect x={36} y={32} width={22} height={17} rx={2} fill="#3B82F6" stroke="#FFFFFF" strokeWidth={2} />
     <Rect x={44} y={37} width={7} height={12} rx={1} fill="#FFFFFF" />
   </Mark>;
 }
 
 export function PropertyVisitsIcon(props: LucideProps) {
-  return <Mark {...props}>
+  return <Mark {...props} tint="#7C5CC4">
     <Rect x={5} y={9} width={45} height={46} rx={6} />
     <Path d="M9 22h37M17 5v10M37 5v10" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
     <G fill="#FFFFFF">
@@ -102,14 +104,14 @@ export function PropertyVisitsIcon(props: LucideProps) {
       <Rect x={13} y={40} width={6} height={6} rx={1} />
       <Rect x={24} y={40} width={6} height={6} rx={1} />
     </G>
-    <Circle cx={46} cy={46} r={15} stroke="#FFFFFF" strokeWidth={3} />
+    <Circle cx={46} cy={46} r={15} fill="#F5A524" stroke="#FFFFFF" strokeWidth={3} />
     <Path d="M46 37v9l7 4" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
   </Mark>;
 }
 
 /** A reserved room: calendar, bed and key, in the Enquiries/Visits vector family. */
 export function BookingsIcon(props: LucideProps) {
-  return <Mark {...props}>
+  return <Mark {...props} tint="#2F9E9B">
     <Rect x={4} y={9} width={43} height={43} rx={6} />
     <Path d="M8 22H43" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
     <Path d="M15 6V14M34 6V14" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
@@ -117,7 +119,7 @@ export function BookingsIcon(props: LucideProps) {
     <Path d="M11 29a2 2 0 0 1 4 0v8h10v-6h7a6 6 0 0 1 6 6v7h-4v-3H15v3h-4Z" fill="#FFFFFF" />
     <Circle cx={20} cy={33} r={3} fill="#FFFFFF" />
     {/* A white separation keeps the foreground key readable at 24pt too. */}
-    <Path d="M51 34a10 10 0 1 1-4 19L39 61h-8v-7l10-10a10 10 0 0 1 10-10Z" stroke="#FFFFFF" strokeWidth={3} strokeLinejoin="round" />
+    <Path d="M51 34a10 10 0 1 1-4 19L39 61h-8v-7l10-10a10 10 0 0 1 10-10Z" fill="#F5A524" stroke="#FFFFFF" strokeWidth={3} strokeLinejoin="round" />
     <Circle cx={51} cy={44} r={3.5} fill="#FFFFFF" />
   </Mark>;
 }
@@ -141,25 +143,23 @@ export function PropertyLeadsIcon(props: LucideProps) {
 
 // A checklist on a clipboard with a price tag: what a room has and what damage to it costs.
 export function ItemCatalogueIcon(props: LucideProps) {
-  return <Mark {...props}>
+  return <Mark {...props} tint="#E9A23B">
     <Rect x={4} y={8} width={42} height={54} rx={6} />
-    <Rect x={14} y={2} width={22} height={11} rx={3} stroke="#FFFFFF" strokeWidth={2} />
+    <Rect x={14} y={2} width={22} height={11} rx={3} fill="#8A5A3C" stroke="#FFFFFF" strokeWidth={2} />
     <Rect x={20} y={5} width={10} height={4} rx={1.5} fill="#FFFFFF" />
     <Rect x={11} y={20} width={8} height={8} rx={2} fill="#FFFFFF" />
     <Rect x={11} y={33} width={8} height={8} rx={2} fill="#FFFFFF" />
     <Rect x={11} y={46} width={8} height={8} rx={2} fill="#FFFFFF" />
     <Path d="M24 24h15M24 37h9M24 50h7" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
-    <Path d="M36 38h15l11 11-11 11H36Z" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" />
+    <Path d="M36 38h15l11 11-11 11H36Z" fill="#F0663A" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" />
     <Circle cx={51} cy={49} r={3} fill="#FFFFFF" />
   </Mark>;
 }
 
-// A cracked tile under a wrench: damage found, and fixed.
-export function DamagesIcon(props: LucideProps) {
-  return <Mark {...props}>
-    <Rect x={2} y={10} width={44} height={44} rx={7} />
-    <Path d="M14 10l6 13-8 9 9 10-4 12" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
-    <Path d="M34 24l-6 8 8 6" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-    <Path d="M58 6a10 10 0 0 0-13 12L30 33a5 5 0 0 0 7 7l15-15a10 10 0 0 0 12-13l-6 6-6-1-1-6Z" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" />
-  </Mark>;
+/**
+ * Damages & Repairs (user, 2026-11-14): the tenant's damage-record mark (the cracked
+ * window in its wooden frame) with a spanner in its badge, for the repair.
+ */
+export function DamagesIcon({ size = 24 }: LucideProps) {
+  return <DamageRecordIcon repair size={typeof size === "number" ? size : Number(size) || 24} />;
 }

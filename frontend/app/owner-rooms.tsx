@@ -1,4 +1,5 @@
 import { dateOfIso, isoOfDate } from "@/components/calendar-month";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { CalendarPicker } from "@/components/calendar-picker";
 import { istToday } from "@/features/analytics/period";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
@@ -6,7 +7,7 @@ import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { compareFloors, formatFloor } from "@/features/property/floor";
@@ -52,6 +53,7 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SectionWithDropdown } from "@/components/filtered-queue";
 import { SheetShell } from "@/components/sheet-shell";
 import { PickerOptionRow } from "@/components/picker-option-row";
+import { FloorSelector } from "@/features/property/floor-selector";
 import { useToast } from "@/components/toast";
 import { OwnerRoomInventorySkeleton, OwnerRoomMetricsSkeleton } from "@/components/skeletons/owner";
 import { ListEnd } from "@/components/list-end";
@@ -83,7 +85,7 @@ import { useListPropertyTenanciesQuery, type TenancySummary } from "@/store/serv
 import { softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom } from "@/components/use-keyboard-inset";
 import { FitText } from "@/components/fit-text";
 
 const NO_BEDS_ILLUSTRATION = require("../assets/empty-states/No-Beds_512x512.png");
@@ -467,103 +469,6 @@ function formatDateTime(iso: string | null | undefined) {
 }
 
 
-function floorLabel(floor: string | null) {
-  if (floor == null) {
-    return "Select floor";
-  }
-  return formatFloor(floor);
-}
-
-function FloorSelector({ active, floors, onSelect }: { active: string | null; floors: string[]; onSelect: (floor: string) => void }) {
-  const { colors, fonts, type } = useTheme();
-  const [open, setOpen] = useState(false);
-
-  return (
-    <View style={{ gap: spacing.xs }}>
-      {/* The floor you are looking at, stated rather than labelled. "Floor"
-          above a field saying "Ground" was two lines to say one thing; the name
-          takes the weight instead, and what it does — switch — is the button
-          on the right rather than a chevron hanging off the end of a form
-          field. The glyph is the building, not a staircase: this picks WHICH
-          floor of the property, and stairs are the way between them. */}
-      <Pressable
-        accessibilityLabel={`Floor ${floorLabel(active)}. Change floor`}
-        accessibilityRole="button"
-        onPress={() => setOpen(true)}
-        style={{
-          // On a card of its own. Bare on the page it read as a heading for the
-          // rooms below rather than a control, and there was nothing to say
-          // where the tappable area began or ended.
-          alignItems: "center",
-          backgroundColor: colors.surface,
-          borderColor: colors.borderStrong,
-          borderCurve: "continuous",
-          borderRadius: radii.card,
-          borderWidth: 1,
-          elevation: 2,
-          flexDirection: "row",
-          gap: spacing.sm,
-          padding: spacing.md,
-          ...softShadow(colors.shadow, 2, 6),
-        }}
-      >
-        {/* Unboxed and full size, as on the Home property picker. A ringed
-            glyph drew a circle around a mark that is already two shapes. */}
-        <PropertyArtwork size={34} />
-
-        <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
-          <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19 }}>
-            {floorLabel(active)}
-          </FitText>
-          <Text style={[type.caption, { color: colors.muted }]}>
-            {floors.length} floor{floors.length === 1 ? "" : "s"} in this property
-          </Text>
-        </View>
-
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 999,
-            flexDirection: "row",
-            gap: 4,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 6,
-          }}
-        >
-          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 12 }}>Switch</Text>
-          <ChevronDown color={colors.inkSoft} size={14} strokeWidth={2.4} />
-        </View>
-      </Pressable>
-
-      {open ? (
-        <SheetShell
-          closeButtonVariant="circle"
-          fullBleed
-          onClose={() => setOpen(false)}
-          showClose
-          size="content"
-          title="Choose floor"
-        >
-          <View>
-            {floors.map((floor) => (
-              <PickerOptionRow
-                fullBleed
-                key={floor || "unassigned"}
-                label={floor ? `Floor ${floor}` : "Unassigned"}
-                onPress={() => {
-                  onSelect(floor);
-                  setOpen(false);
-                }}
-                selected={floor === active}
-              />
-            ))}
-          </View>
-        </SheetShell>
-      ) : null}
-    </View>
-  );
-}
 
 function shortDate(iso: string) {
   const date = new Date(iso);
@@ -903,23 +808,23 @@ function InfoLine({ label, value }: { label: string; value: string }) {
 
 function ModalShell({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
   const { colors, fonts } = useTheme();
-  const keyboardInset = useKeyboardInset();
   const insets = useSafeAreaInsets();
+  const { room: keyboardRoom } = useKeyboardRoom(insets.bottom);
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          <View
+          <SheetCloseButton onClose={() => dismiss()} />
+          <Animated.View
             style={{
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
-              marginBottom: keyboardInset,
-              maxHeight: "92%",
-              paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.md,
+              maxHeight: "100%",
+              paddingBottom: Animated.add(keyboardRoom, spacing.md),
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}
@@ -931,7 +836,7 @@ function ModalShell({ children, onClose, title }: { children: ReactNode; onClose
             </View>
             <ModalTitleRule />
             {children}
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
       )}

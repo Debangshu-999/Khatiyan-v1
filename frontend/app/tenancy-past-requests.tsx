@@ -1,4 +1,5 @@
 import { HelpModalClose } from "@/components/help-modal-header";
+import { FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
 import { FilterMark } from "@/features/owner/status-filter-marks";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
@@ -16,11 +17,13 @@ import {
 } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
-import { IconButton } from "@/features/owner/owner-ui";
+import { ActionButton } from "@/features/owner/owner-ui";
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { SheetShell } from "@/components/sheet-shell";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SearchField } from "@/components/search-field";
+import { SearchField, SearchFilterButton } from "@/components/search-field";
 import { SkeletonList } from "@/components/skeleton";
 import {
   buildExitRequestChains,
@@ -98,8 +101,8 @@ export default function TenancyPastRequestsScreen() {
   const [requestType, setRequestType] = useState<RequestTypeFilter>("ALL");
   const [year, setYear] = useState("ALL");
   const [month, setMonth] = useState("ALL");
-  const [picker, setPicker] = useState<PickerName | null>(null);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const { colors, fonts } = useTheme();
 
   const chains = useMemo(() => buildExitRequestChains(exitQuery.data ?? []), [exitQuery.data]);
   const roomChains = useMemo(
@@ -147,7 +150,6 @@ export default function TenancyPastRequestsScreen() {
     });
   }, [activeTenancyId, history, month, requestType, search, status, tenancy, year]);
 
-  const pickerConfig = getPickerConfig(picker, status, tenancy, requestType);
   const loading =
     (exitQuery.isFetching && !exitQuery.data)
     || (roomChangeQuery.isFetching && !roomChangeQuery.data);
@@ -158,16 +160,7 @@ export default function TenancyPastRequestsScreen() {
     || year !== "ALL"
     || month !== "ALL";
 
-  function choosePickerValue(value: string) {
-    if (picker === "STATUS") {
-      setStatus(value as StatusFilter);
-    } else if (picker === "TENANCY") {
-      setTenancy(value as TenancyFilter);
-    } else if (picker === "TYPE") {
-      setRequestType(value as RequestTypeFilter);
-    }
-    setPicker(null);
-  }
+  const activeFilters = [status !== "ALL", requestType !== "ALL", tenancy !== "ALL", month !== "ALL", year !== "ALL"].filter(Boolean).length;
 
   const loadFailed = loadFailure(exitQuery, roomChangeQuery);
   if (loadFailed) {
@@ -175,42 +168,23 @@ export default function TenancyPastRequestsScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    // The search row sticks under the header while the list scrolls (user, 2026-11-11).
+    <ScreenScrollView safeAreaEdges={["top", "bottom"]} stickyHeaderIndices={[1]} surface={colors.background}>
       <ScreenHeader
         title="Past"
         italicTail="requests."
         subtitle="Expired exit and room-change requests from your tenancies."
       />
 
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        <FilterBubble
-          icon={SlidersHorizontal}
-          label={status === "ALL" ? "Status" : titleCase(status)}
-          onPress={() => setPicker("STATUS")}
-        />
-        <FilterBubble
-          icon={CalendarDays}
-          label={dateFilterLabel(month, year)}
-          onPress={() => setDatePickerOpen(true)}
-        />
-        <FilterBubble
-          icon={ListFilter}
-          label={requestType === "ALL" ? "Type" : requestType === "EXIT" ? "Exit" : "Room change"}
-          onPress={() => setPicker("TYPE")}
-        />
-        <FilterBubble
-          icon={KeyRound}
-          label={tenancy === "ALL" ? "Tenancy" : tenancy === "CURRENT" ? "Current" : "Past"}
-          onPress={() => setPicker("TENANCY")}
-        />
+      <View style={{ backgroundColor: colors.background, marginHorizontal: -spacing.lg, paddingBottom: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}>
+        {/* On a phone a sticky child's style moves to a wrapper: the row needs its own View. */}
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <SearchField autoCapitalize="characters" onChangeText={setSearch} placeholder="Search by request reference" value={search} />
+          </View>
+          <SearchFilterButton accessibilityLabel="Filters" active={activeFilters > 0} count={activeFilters} onPress={() => setFiltersOpen(true)} />
+        </View>
       </View>
-
-      <SearchField
-        autoCapitalize="characters"
-        onChangeText={setSearch}
-        placeholder="Search by request reference"
-        value={search}
-      />
 
       {loading ? (
         <SkeletonList rows={3} />
@@ -236,25 +210,18 @@ export default function TenancyPastRequestsScreen() {
         </View>
       )}
 
-      {picker && pickerConfig ? (
-        <FilterPickerDialog
-          onClose={() => setPicker(null)}
-          onSelect={choosePickerValue}
-          options={pickerConfig.options}
-          title={pickerConfig.title}
-          value={pickerConfig.value}
-        />
-      ) : null}
 
-      {datePickerOpen ? (
-        <DateFilterDialog
-          month={month}
-          onChange={(nextMonth, nextYear) => {
-            setMonth(nextMonth);
-            setYear(nextYear);
+      {filtersOpen ? (
+        <RequestFiltersSheet
+          initial={{ month, requestType, status, tenancy, year }}
+          onApply={(next) => {
+            setStatus(next.status);
+            setRequestType(next.requestType);
+            setTenancy(next.tenancy);
+            setMonth(next.month);
+            setYear(next.year);
           }}
-          onClose={() => setDatePickerOpen(false)}
-          year={year}
+          onClose={() => setFiltersOpen(false)}
           years={years}
         />
       ) : null}
@@ -262,303 +229,10 @@ export default function TenancyPastRequestsScreen() {
   );
 }
 
-function FilterBubble({
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  icon: typeof CalendarDays;
-  label: string;
-  onPress: () => void;
-}) {
-  const { colors, fonts } = useTheme();
 
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        alignItems: "center",
-        backgroundColor: pressed ? colors.neutralSoft : colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: 999,
-        borderWidth: 1,
-        flexBasis: "47%",
-        flexDirection: "row",
-        flexGrow: 1,
-        gap: spacing.xs,
-        justifyContent: "center",
-        minHeight: 44,
-        paddingHorizontal: spacing.md,
-      })}
-    >
-      <Icon color={colors.ink} size={16} strokeWidth={2.1} />
-      <FitText numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 14 }}>
-        {label}
-      </FitText>
-      <ChevronDown color={colors.muted} size={15} strokeWidth={2.1} />
-    </Pressable>
-  );
-}
 
-function FilterPickerDialog({
-  onClose,
-  onSelect,
-  options,
-  title,
-  value,
-}: {
-  onClose: () => void;
-  onSelect: (value: string) => void;
-  options: PickerOption[];
-  title: string;
-  value: string;
-}) {
-  const { colors, fonts } = useTheme();
 
-  return (
-    <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
-      {/* Closes by its own close button, a choice or the device back button, not a tap
-          on the scrim (user, 2026-09-29). */}
-      <View style={{
-          alignItems: "center",
-          backgroundColor: colors.overlay,
-          flex: 1,
-          justifyContent: "center",
-          paddingHorizontal: spacing.xl,
-        }}>
-        <View style={{
-            backgroundColor: colors.surface,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            maxHeight: "75%",
-            overflow: "hidden",
-            width: "100%",
-          }}>
-          <HelpModalClose corner onClose={onClose} />
-          <View
-            style={{
-              alignItems: "center",
-              flexDirection: "row",
-              gap: spacing.sm,
-              paddingLeft: spacing.lg,
-              paddingRight: spacing.md,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            <ModalTitle style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19 }}>
-              {title}
-            </ModalTitle>
-          </View>
-          <ScrollView
-            contentContainerStyle={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}
-            showsVerticalScrollIndicator={false}
-            style={{ maxHeight: 440 }}
-          >
-            {options.map((option) => (
-              <PickerOptionRow
-                icon={<FilterMark value={option.value} />}
-                key={option.value}
-                label={option.label}
-                onPress={() => onSelect(option.value)}
-                selected={option.value === value}
-              />
-            ))}
-          </ScrollView>
-        </View>
-      </View>
-    </CenterModal>
-  );
-}
 
-function DateFilterDialog({
-  month,
-  onChange,
-  onClose,
-  year,
-  years,
-}: {
-  month: string;
-  onChange: (month: string, year: string) => void;
-  onClose: () => void;
-  year: string;
-  years: PickerOption[];
-}) {
-  const { colors, fonts } = useTheme();
-  const [step, setStep] = useState<"MONTH" | "YEAR">("MONTH");
-  const options = step === "MONTH"
-    ? [
-        { label: "Any month", value: "ALL" },
-        ...MONTH_NAMES.map((label, index) => ({
-          label,
-          value: String(index + 1).padStart(2, "0"),
-        })),
-      ]
-    : [
-        { label: "Any year", value: "ALL" },
-        { label: String(new Date().getFullYear()), value: String(new Date().getFullYear()) },
-        ...years.filter((option) => option.value !== String(new Date().getFullYear())),
-      ];
-  const selectedValue = step === "MONTH" ? month : year;
-
-  return (
-    <CenterModal
-      animationType="fade"
-      navigationBarTranslucent
-      onRequestClose={onClose}
-      statusBarTranslucent
-      transparent
-      visible
-    >
-      {/* Closes by its own close button or the device back button, not a tap
-          on the scrim (user, 2026-09-29). */}
-      <View style={{
-          alignItems: "center",
-          backgroundColor: colors.overlay,
-          flex: 1,
-          justifyContent: "center",
-          paddingHorizontal: spacing.xl,
-        }}>
-        <View style={{
-            backgroundColor: colors.surface,
-            borderCurve: "continuous",
-            borderRadius: radii.card,
-            maxHeight: "82%",
-            overflow: "hidden",
-            width: "100%",
-          }}>
-          <View style={{ gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}>
-            <View
-              style={{
-                alignItems: "center",
-                flexDirection: "row",
-                gap: spacing.xs,
-                minHeight: 36,
-              }}
-            >
-              {(["MONTH", "YEAR"] as const).map((tab) => (
-                <Pressable
-                  key={tab}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: step === tab }}
-                  onPress={() => setStep(tab)}
-                  style={{
-                    flex: 1,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    minHeight: 42,
-                    borderRadius: 12,
-                    backgroundColor: step === tab ? colors.primarySoft : "transparent",
-                  }}
-                >
-                  <Text style={{ color: step === tab ? colors.primary : colors.ink, fontFamily: fonts.sansBold, fontSize: 18 }}>
-                    {tab === "MONTH" ? "Month" : "Year"}
-                  </Text>
-                </Pressable>
-              ))}
-              {/* The only way out besides the device back button (user, 2026-09-29). */}
-              <IconButton accessibilityLabel="Close date filter" filled icon={X} onPress={onClose} />
-            </View>
-
-            {month !== "ALL" || year !== "ALL" ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-                {month !== "ALL" ? (
-                  <DateSelectionChip
-                    onClear={() => onChange("ALL", year)}
-                    value={MONTH_NAMES[Number(month) - 1]}
-                  />
-                ) : null}
-                {year !== "ALL" ? (
-                  <DateSelectionChip
-                    onClear={() => onChange(month, "ALL")}
-                    value={year}
-                  />
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-
-          <ScrollView
-            contentContainerStyle={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}
-            showsVerticalScrollIndicator={false}
-            style={{ marginTop: spacing.sm, maxHeight: 340 }}
-          >
-            {options.map((option) => (
-              <PickerOptionRow
-                key={option.value}
-                label={option.label}
-                onPress={() => {
-                  if (step === "MONTH") {
-                    onChange(option.value, year);
-                  } else {
-                    onChange(month, option.value);
-                  }
-                }}
-                selected={option.value === selectedValue}
-              />
-            ))}
-          </ScrollView>
-        </View>
-      </View>
-    </CenterModal>
-  );
-}
-
-function DateSelectionChip({
-  onClear,
-  value,
-}: {
-  onClear: () => void;
-  value: string;
-}) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View
-      style={{
-        alignItems: "center",
-        alignSelf: "flex-start",
-        backgroundColor: colors.primarySoft,
-        borderRadius: 999,
-        flexDirection: "row",
-        gap: 4,
-        minHeight: 30,
-        paddingHorizontal: spacing.sm,
-      }}
-    >
-      <FitText numberOfLines={1} style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12 }}>
-        {value}
-      </FitText>
-      <Pressable
-        accessibilityLabel={`Clear ${value}`}
-        accessibilityRole="button"
-        hitSlop={8}
-        onPress={onClear}
-        style={{ alignItems: "center", height: 20, justifyContent: "center", width: 20 }}
-      >
-        <X color={colors.primary} size={12} strokeWidth={2.5} />
-      </Pressable>
-    </View>
-  );
-}
-
-function getPickerConfig(
-  picker: PickerName | null,
-  status: StatusFilter,
-  tenancy: TenancyFilter,
-  requestType: RequestTypeFilter,
-) {
-  if (picker === "STATUS") {
-    return { options: STATUS_OPTIONS, title: "Request status", value: status };
-  }
-  if (picker === "TENANCY") {
-    return { options: TENANCY_OPTIONS, title: "Tenancy", value: tenancy };
-  }
-  if (picker === "TYPE") {
-    return { options: TYPE_OPTIONS, title: "Request type", value: requestType };
-  }
-  return null;
-}
 
 function historyParts(request: TenancyExitRequest | TenancyRoomChangeRequest) {
   const date = new Date(request.expiresAt ?? request.updatedAt ?? request.createdAt);
@@ -601,4 +275,90 @@ function dateFilterLabel(month: string, year: string) {
   }
   const monthName = MONTH_NAMES[Number(month) - 1] ?? "Month";
   return year === "ALL" ? monthName : `${monthName.slice(0, 3)} ${year}`;
+}
+
+type RequestFilters = { month: string; requestType: RequestTypeFilter; status: StatusFilter; tenancy: TenancyFilter; year: string };
+
+/**
+ * Every filter in one bottom sheet (user, 2026-11-11): status, type, tenancy,
+ * month and year as bubbles, applied together with Show requests.
+ */
+function RequestFiltersSheet({
+  initial,
+  onApply,
+  onClose,
+  years,
+}: {
+  initial: RequestFilters;
+  onApply: (filters: RequestFilters) => void;
+  onClose: () => void;
+  years: PickerOption[];
+}) {
+  const { colors, type } = useTheme();
+  const [draft, setDraft] = useState<RequestFilters>(initial);
+  const set = (patch: Partial<RequestFilters>) => setDraft((current) => ({ ...current, ...patch }));
+  const group = (label: string, options: PickerOption[], value: string, pick: (value: string) => void) => (
+    <View style={{ gap: spacing.sm }}>
+      <Text style={[type.label, { color: colors.muted }]}>{label}</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+        {options.map((option) => (
+          <SelectPill active={option.value === value} key={option.value} label={option.label} onPress={() => pick(option.value)} />
+        ))}
+      </View>
+    </View>
+  );
+  return (
+    <SheetShell
+      footer={
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <ActionButton
+            label="Clear all"
+            onPress={() => setDraft({ month: "ALL", requestType: "ALL", status: "ALL", tenancy: "ALL", year: "ALL" })}
+            variant="secondary"
+          />
+          <ActionButton
+            label="Show requests"
+            onPress={() => {
+              onApply(draft);
+              onClose();
+            }}
+          />
+        </View>
+      }
+      onClose={onClose}
+      size="content"
+      title="Filter requests"
+    >
+      <View style={{ gap: spacing.lg }}>
+        {group("Status", STATUS_OPTIONS.map((option) => (option.value === "ALL" ? { ...option, label: "Any" } : option)), draft.status, (value) => set({ status: value as StatusFilter }))}
+        {group("Type", [{ label: "All", value: "ALL" }, { label: "Exit", value: "EXIT" }, { label: "Room change", value: "ROOM_CHANGE" }], draft.requestType, (value) => set({ requestType: value as RequestTypeFilter }))}
+        {group("Tenancy", [{ label: "Any", value: "ALL" }, { label: "Current", value: "CURRENT" }, { label: "Past", value: "PAST" }], draft.tenancy, (value) => set({ tenancy: value as TenancyFilter }))}
+        {group("Year", [{ label: "Any", value: "ALL" }, ...years], draft.year, (value) => set({ year: value }))}
+        {group("Month", [{ label: "Any", value: "ALL" }, ...MONTH_NAMES.map((name, index) => ({ label: name.slice(0, 3), value: String(index + 1).padStart(2, "0") }))], draft.month, (value) => set({ month: value }))}
+      </View>
+    </SheetShell>
+  );
+}
+
+/** A white pill, a blue edge and label when chosen (user, 2026-11-11: no blue fills here). */
+function SelectPill({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: active ? colors.primary : colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: FILTER_CHIP_RADIUS,
+        borderWidth: active ? 1.5 : 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: 8,
+      }}
+    >
+      <Text style={{ color: active ? colors.primary : colors.ink, fontFamily: active ? fonts.sansBold : fonts.sansMedium, fontSize: 13 }}>{label}</Text>
+    </AnimatedPressable>
+  );
 }

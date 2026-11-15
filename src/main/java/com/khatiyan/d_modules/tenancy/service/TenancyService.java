@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.tenancy.service;
 
+import com.khatiyan.d_modules.tenancy.api.dto.RoommateResponse;
+import com.khatiyan.d_modules.property.api.dto.RoomItemConditionResponse;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -1214,6 +1216,49 @@ public class TenancyService {
                 .orElseThrow(() -> new NotFoundException("ActiveTenancy", userId));
 
         return propertyModule.listActiveRoomsForProperty(tenancy.getPropertyId());
+    }
+
+    /**
+     * The others staying in the tenant's room now (2026-11-11), already moved
+     * in, longest stay first. A first name and an initial only.
+     */
+    @Transactional(readOnly = true)
+    public List<RoommateResponse> listMyRoommates(UUID userId) {
+        Tenancy mine = findActiveByUserId(userId)
+                .orElseThrow(() -> new NotFoundException("ActiveTenancy", userId));
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        List<Tenancy> others = tenancyRepository.findByRoomIdAndActiveTrue(mine.getRoomId()).stream()
+                .filter(tenancy -> !tenancy.getId().equals(mine.getId()) && !tenancy.getUserId().equals(userId))
+                .filter(tenancy -> !tenancy.getStartDate().isAfter(today))
+                .sorted(java.util.Comparator.comparing(Tenancy::getStartDate))
+                .toList();
+        var users = authModule.findByIds(others.stream().map(Tenancy::getUserId).collect(java.util.stream.Collectors.toSet()));
+        return others.stream()
+                .map(tenancy -> new RoommateResponse(
+                        tenancy.getId(),
+                        shortName(users.containsKey(tenancy.getUserId()) ? users.get(tenancy.getUserId()).fullName() : null),
+                        tenancy.getStartDate()))
+                .toList();
+    }
+
+    /** "Rahul Sharma" to "Rahul S.". */
+    private static String shortName(String fullName) {
+        if (fullName == null || fullName.isBlank()) {
+            return "Roommate";
+        }
+        String[] parts = fullName.trim().split("\\s+");
+        return parts.length == 1 ? parts[0] : parts[0] + " " + parts[parts.length - 1].charAt(0) + ".";
+    }
+
+    /**
+     * The items in the tenant's own room and the damage level each is at
+     * (2026-11-11), for a stay with no move-in checklist on record.
+     */
+    @Transactional(readOnly = true)
+    public List<RoomItemConditionResponse> listMyRoomItems(UUID userId) {
+        Tenancy tenancy = findActiveByUserId(userId)
+                .orElseThrow(() -> new NotFoundException("ActiveTenancy", userId));
+        return propertyModule.roomConditions(tenancy.getRoomId());
     }
 
     @Transactional(readOnly = true)

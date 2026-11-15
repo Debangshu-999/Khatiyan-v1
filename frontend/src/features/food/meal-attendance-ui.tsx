@@ -4,10 +4,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Platform, Switch, Text, View } from "react-native";
 import { ChevronRight, CircleHelp, QrCode, Star } from "lucide-react-native";
 
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { HowItWorksSheet, type HowItWorksStep } from "@/components/how-it-works-sheet";
-import { ServingMealCard } from "@/features/food/serving-meal-card";
+import { ServingMealCard, mealSkyInk } from "@/features/food/serving-meal-card";
 import { ratingColor } from "@/features/food/meal-rating-tone";
 import { useGetMealAttendanceLiveQuery, useGetMealRatingsSummaryQuery } from "@/store/services/food-api";
 import { radii, spacing } from "@/theme/spacing";
@@ -49,7 +49,7 @@ export function MealAttendanceCard({
         gap: spacing.xs,
         padding: spacing.md,
         paddingTop: spacing.sm,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
@@ -125,7 +125,7 @@ export function MealRatingsLink({ propertyId }: { propertyId: string }) {
         flexDirection: "row",
         gap: spacing.sm,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <Star color={color} fill={color} size={20} />
@@ -176,9 +176,9 @@ export function MealScanHomeCard({ propertyId }: { propertyId: string }) {
             paddingVertical: spacing.sm,
           }}
         >
-          <QrCode color="#24366A" size={18} strokeWidth={2.2} />
-          <Text style={{ color: "#24366A", fontFamily: fonts.sansBold, fontSize: 14 }}>Scan meal passes</Text>
-          <ChevronRight color="#24366A" size={17} strokeWidth={2.2} />
+          <QrCode color={mealSkyInk(meal.mealType)} size={18} strokeWidth={2.2} />
+          <Text style={{ color: mealSkyInk(meal.mealType), fontFamily: fonts.sansBold, fontSize: 14 }}>Scan meal passes</Text>
+          <ChevronRight color={mealSkyInk(meal.mealType)} size={17} strokeWidth={2.2} />
         </AnimatedPressable>
     </ServingMealCard>
   );

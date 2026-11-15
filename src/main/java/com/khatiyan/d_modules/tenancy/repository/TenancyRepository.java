@@ -178,6 +178,9 @@ public interface TenancyRepository extends JpaRepository<Tenancy, UUID> {
 
     long countByRoomIdAndActiveTrue(UUID roomId);
 
+    /** Everyone staying in a room now, for a tenant's roommates (2026-11-11). */
+    List<Tenancy> findByRoomIdAndActiveTrue(UUID roomId);
+
     boolean existsByFutureVacancySourceIdAndActiveTrue(UUID futureVacancySourceId);
 
     @Query("SELECT tenancy.futureVacancySourceId FROM Tenancy tenancy WHERE tenancy.active = true AND tenancy.futureVacancySourceId IN :sourceIds")

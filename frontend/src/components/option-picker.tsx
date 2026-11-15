@@ -205,7 +205,9 @@ export function SingleOptionPicker<T extends string>({
                   </ModalTitle>
                 </View>
 
-                <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}>
+                {/* A gap under the title so the first row clears the corner cross
+                    (user, 2026-11-08). */}
+                <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}>
                   {options.map((option) => (
                     <PickerOptionRow
                       icon={optionIcon?.(option.value)}

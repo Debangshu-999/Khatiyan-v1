@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { ScrollView, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
 import { useAppSelector } from "@/store/hooks";
 import {
   NOTIFICATION_REFETCH_OPTIONS,
@@ -241,11 +242,11 @@ function TopicBubble({
       onPress={onPress}
       style={{
         alignItems: "center",
-        // Pale blue with a blue border (user, 2026-10-31). The selected one is
-        // solid, since every bubble now shares that border and tint.
+        // Pale blue, solid when chosen. No blue border while not chosen, as in
+        // FilterBubble (user, 2026-11-08).
         backgroundColor: active ? colors.primary : colors.primarySoft,
-        borderColor: colors.primary,
-        borderRadius: 999,
+        borderColor: active ? colors.primary : "transparent",
+        borderRadius: FILTER_CHIP_RADIUS,
         borderWidth: 1,
         flexDirection: "row",
         gap: 6,
@@ -262,7 +263,7 @@ function TopicBubble({
         style={{
           alignItems: "center",
           backgroundColor: colors.surface,
-          borderRadius: 999,
+          borderRadius: 6,
           height: 20,
           justifyContent: "center",
           minWidth: 20,

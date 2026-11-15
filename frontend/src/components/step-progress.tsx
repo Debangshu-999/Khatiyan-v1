@@ -17,7 +17,7 @@ import { useTheme } from "@/theme/use-theme";
  * finished two and is working on a third, and a bar that fills only what is
  * finished reads as no progress at all on the first step.
  */
-export function StepProgress({ step, totalSteps }: { step: number; totalSteps: number }) {
+export function StepProgress({ step, tone = "soft", totalSteps }: { step: number; tone?: "deep" | "soft"; totalSteps: number }) {
   const { colors } = useTheme();
 
   return (
@@ -28,7 +28,10 @@ export function StepProgress({ step, totalSteps }: { step: number; totalSteps: n
           style={{
             // White for the steps still to come, not a grey track. On the
             // header's tinted panel a grey read as muddy rather than as empty.
-            backgroundColor: index <= step ? colors.jade : colors.surface,
+            // On the deep blue panel a light green and see-through white (2026-11-08).
+            backgroundColor: tone === "deep"
+              ? index <= step ? "#6EE7B7" : "rgba(255,255,255,0.32)"
+              : index <= step ? colors.jade : colors.surface,
             borderRadius: 999,
             flex: 1,
             height: 5,

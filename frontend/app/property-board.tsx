@@ -18,6 +18,7 @@ import {
   type PropertyBoardItem,
   useListMyPropertyBoardItemsQuery,
 } from "@/store/services/notice-api";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export default function PropertyBoardScreen() {
@@ -51,7 +52,8 @@ export default function PropertyBoardScreen() {
   return (
     <>
       <ScreenScrollView
-        contentContainerStyle={{ paddingBottom: 0 }}
+        // Room under the last category card, clear of the device's nav bar (user, 2026-11-15).
+        contentContainerStyle={{ paddingBottom: spacing.xl }}
         onRefresh={async () => {
           await boardQuery.refetch();
         }}
@@ -80,7 +82,8 @@ export default function PropertyBoardScreen() {
         )}
       </ScreenScrollView>
 
-      <PropertyBoardItemModal item={selectedItem} onClose={() => setSelectedItem(null)} />
+      {/* Just the item: no icon, no category over its title (user, 2026-11-13). */}
+      <PropertyBoardItemModal item={selectedItem} onClose={() => setSelectedItem(null)} plain />
     </>
   );
 }

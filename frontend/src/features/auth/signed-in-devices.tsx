@@ -4,9 +4,11 @@ import { useFocusEffect } from "expo-router";
 import { Globe, Laptop, Monitor, Smartphone, Tablet, type LucideProps } from "lucide-react-native";
 
 import { LoadFailedCard, loadFailure } from "@/components/load-failed";
+import { WrapTitle } from "@/components/wrap-title";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { Divider } from "@/components/divider";
 import { AccountSessionListSkeleton } from "@/components/skeletons/account";
 import { useToast } from "@/components/toast";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
@@ -16,7 +18,6 @@ import { useAppSelector } from "@/store/hooks";
 import { useListSessionsQuery, useRevokeSessionMutation, type UserSession } from "@/store/services/auth-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { FitText } from "@/components/fit-text";
 
 /**
  * Where this account is signed in, and a way to end any of it.
@@ -91,14 +92,24 @@ export function SignedInDevices() {
         </Card>
       ) : null}
 
-      {sessions.map((session) => (
-        <DeviceRow
-          busy={revokeState.isLoading}
-          key={session.id}
-          onSignOut={() => setPending(session)}
-          session={session}
-        />
-      ))}
+      {/* One card holding every active session, a line between each (user, 2026-11-08). */}
+      {sessions.length > 0 ? (
+        <Card>
+          <Text style={[type.caption, { color: colors.muted }]}>
+            {sessions.length === 1 ? "1 active session" : `${sessions.length} active sessions`}
+          </Text>
+          {sessions.map((session, index) => (
+            <View key={session.id} style={{ gap: spacing.md }}>
+              {index > 0 ? <Divider /> : null}
+              <DeviceRow
+                busy={revokeState.isLoading}
+                onSignOut={() => setPending(session)}
+                session={session}
+              />
+            </View>
+          ))}
+        </Card>
+      ) : null}
 
       {pending ? (
         <ConfirmDialog
@@ -131,14 +142,14 @@ function DeviceRow({
   const DeviceIcon = iconFor(session.platform);
 
   return (
-    <Card>
+    <View>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
         <DeviceIcon color={colors.ink} size={20} strokeWidth={2.2} />
 
         <View style={{ flex: 1, gap: 2 }}>
-          <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink }]}>
+          <WrapTitle style={[type.bodyStrong, { color: colors.ink }]}>
             {session.deviceLabel ?? "Unknown device"}
-          </FitText>
+          </WrapTitle>
           <Text style={[type.description, { color: colors.muted }]}>
             {session.current ? "Active now" : `Signed in ${formatRelative(session.createdAt)}`}
           </Text>
@@ -172,7 +183,7 @@ function DeviceRow({
           </AnimatedPressable>
         )}
       </View>
-    </Card>
+    </View>
   );
 }
 

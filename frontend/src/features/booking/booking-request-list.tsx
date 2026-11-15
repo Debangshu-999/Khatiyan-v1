@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { EmptyBookings } from "@/components/empty-art";
 import { ActivityIndicator, Text, View } from "react-native";
-import { BedDouble, CalendarDays, CalendarX, Clock3, IndianRupee, MessageCircle, RotateCcw, UserRound } from "lucide-react-native";
+import { CalendarX, Clock3, MessageCircle, RotateCcw, UserRound } from "lucide-react-native";
 
 import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
 import { LoadFailedCard } from "@/components/load-failed";
@@ -118,7 +119,7 @@ export function BookingRequestList({ propertyId, filter, owner, onOpen, loadMore
         it (user, 2026-10-11). */}
     {empty ? <EmptyState
       compact={!past && !confirmedOnly}
-      artworkNode={<BookingsIcon size={64} />}
+      artworkNode={<EmptyBookings size={120} />}
       title={narrowed ? "No matching bookings" : attention ? "No bookings need this action" : past ? "No past bookings yet" : mine ? "Nothing is assigned to you" : confirmedOnly ? "No confirmed bookings yet" : "No requests waiting"}
       description={narrowed
         ? "Try another search or filter."
@@ -170,13 +171,9 @@ function rentNote(item: BookingRequestListItem) {
 }
 
 /**
- * One booking in the property's list, made as the tenant's own My bookings
- * card is (user, 2026-10-11): who and which booking, then soft bands for the
- * room and move-in, the rent and the clock, then one button.
- *
- * <p>The room's number is set a size down, and the lines in the bands (move-in,
- * whose it is, the rent note, the clock) a weight up from the plain
- * description, so they read at a glance (user, 2026-10-11).
+ * One booking in the property's list: identity and status, then Room, rent,
+ * and Move-in in a single fact row, like token records (user, 2026-11-02).
+ * Handler, warnings, and the request's clock retain their own bands below.
  *
  * <p>The status sits at the far end of the name's row, in its short form
  * ("Awaiting", not "Awaiting handler"), which is what leaves the name and the
@@ -198,21 +195,16 @@ export function BookingCard({ item, showHandler = true, canOpen = true, onChat, 
       </View>
       <CardStatus><OwnerBookingStatus short status={item.status} /></CardStatus>
     </CardNameRow>
-    <View style={{ flexDirection: "row", gap: 8 }}>
-      <View style={{ flex: 1, minWidth: 0 }}><BookingInfoBand icon={BedDouble} iconGap={6}>
-        <FitText numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.body), { color: colors.ink, fontFamily: fonts.sansMedium, fontSize: cardText(13) }]}>Room {item.roomNumber}</FitText>
-      </BookingInfoBand></View>
-      <View style={{ flex: 1.5, minWidth: 0 }}><BookingInfoBand icon={CalendarDays} iconGap={6}>
-        <FitText numberOfLines={1} minimumFontScale={0.8} style={[smallerCardText(type.body), { color: colors.ink, fontFamily: fonts.sansMedium }]}>Move-in: {bookingDateLabel(item.moveInDate)}</FitText>
-      </BookingInfoBand></View>
+    <View style={{ alignItems: "stretch", flexDirection: "row" }}>
+      <BookingFact flex={0.8} label="Room" value={item.roomNumber} />
+      <BookingFactDivider />
+      <BookingFact flex={1.1} label={note ?? "Rent"} value={`${formatMoneyPaise(item.currentRentPaise)} / month`} />
+      <BookingFactDivider />
+      <BookingFact flex={1.2} label="Move-in" value={bookingDateLabel(item.moveInDate)} />
     </View>
     {/* Whose it is, where somebody has it: "you" to its own handler, the name to anyone else (user, 2026-10-11).
         With nobody, the status already says it is waiting. */}
     {showHandler && item.handlerName ? <BookingInfoBand icon={UserRound}><FitText numberOfLines={1} style={[smallerCardText(type.description), { color: colors.muted, fontFamily: fonts.sansMedium }]}>Handled by {item.handledByReader ? "you" : item.handlerName}</FitText></BookingInfoBand> : null}
-    <BookingInfoBand icon={IndianRupee}>
-      {note ? <Text style={[smallerCardText(type.description), { color: colors.muted, fontFamily: fonts.sansMedium }]}>{note}</Text> : null}
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(17) }}>{formatMoneyPaise(item.currentRentPaise)} / month</Text>
-    </BookingInfoBand>
     {/* Confirmed, and its move-in day has gone by with nobody moved in (user, 2026-10-27). */}
     {pastDue ? <BookingInfoBand icon={CalendarX} tone="danger"><Text style={[smallerCardText(type.body), { color: colors.danger, fontFamily: fonts.sansSemiBold }]}>Booking past due</Text></BookingInfoBand> : null}
     {/* The request's own clock, while it is still being answered. */}
@@ -224,4 +216,20 @@ export function BookingCard({ item, showHandler = true, canOpen = true, onChat, 
       {canOpen ? <ActionButton label={item.status === "AWAITING_HANDLER" ? "Review request" : "View booking"} onPress={onOpen} variant={item.status === "AWAITING_HANDLER" ? "primary" : "secondary"} /> : null}
     </View> : null}
   </Card>;
+}
+
+/** Matches token-record facts: a small label above a bold, wrapping value. */
+function BookingFact({ flex, label, value }: { flex: number; label: string; value: string }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <View style={{ flex, gap: 3, minWidth: 0, paddingHorizontal: spacing.xs }}>
+      <FitText numberOfLines={1} style={[smallerCardText(type.caption), { color: colors.muted, fontSize: cardText(10) }]}>{label}</FitText>
+      <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(12), lineHeight: 16 }}>{value}</FitText>
+    </View>
+  );
+}
+
+function BookingFactDivider() {
+  const { colors } = useTheme();
+  return <View style={{ backgroundColor: colors.border, marginHorizontal: spacing.xxs, width: 1 }} />;
 }

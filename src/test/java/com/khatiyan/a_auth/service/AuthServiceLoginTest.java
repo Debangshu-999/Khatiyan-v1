@@ -223,6 +223,32 @@ class AuthServiceLoginTest {
     }
 
     @Test
+    void signOutAllEndsEverySessionOnceThePinIsRight() {
+        User user = userWithPin();
+        when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
+        when(pinService.matches("123456", "pin-hash")).thenReturn(true);
+        when(jwtService.issue(user))
+                .thenReturn(new JwtService.IssuedToken("jwt-token", UUID.randomUUID(), Instant.now().plusSeconds(3600)));
+
+        authService.loginWithPIN(RAW_PHONE, "123456", IP_ADDRESS, null, true);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userSessionService);
+        order.verify(userSessionService).revokeAll(org.mockito.ArgumentMatchers.eq(user.getId()), org.mockito.ArgumentMatchers.any());
+        order.verify(userSessionService).ensureCapacity(org.mockito.ArgumentMatchers.eq(user.getId()), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void aWrongPinSignsNothingOutEvenWhenAskedTo() {
+        User user = userWithPin();
+        when(userRepository.findByPhoneAndActiveTrue(NORMALIZED_PHONE)).thenReturn(Optional.of(user));
+        when(pinService.matches("111111", "pin-hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.loginWithPIN(RAW_PHONE, "111111", IP_ADDRESS, null, true));
+
+        verify(userSessionService, org.mockito.Mockito.never()).revokeAll(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void expiredLockWarnsBeforeNextLockoutBlock() {
         User user = userWithPin();
         user.recordFailedLoginAttempt(1, Duration.ZERO, Instant.parse("2026-06-01T10:00:00Z"));

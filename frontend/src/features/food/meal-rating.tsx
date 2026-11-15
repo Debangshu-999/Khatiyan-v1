@@ -28,42 +28,59 @@ function mealMoment(prompt: MealRatingPrompt) {
 }
 
 /**
- * Home's card under the meal pass (user, 2026-11-01). It offers the tenant's last
- * meal only, until they rate it or the next meal starts. The server decides, so the
- * card just asks, and asks again each time Home comes back into view.
+ * The rating offer as a button on the meals card's sky (user, 2026-11-10), not
+ * a card of its own: frosted glass with white text so the white Meals and plan
+ * button stays the main one. Everyone's average so far, or Not rated, on the
+ * right. Nothing shows when there is no meal to rate.
  */
-export function MealRatingHomeCard({ skip = false }: { skip?: boolean }) {
-  const { colors, fonts, type } = useTheme();
+export function MealRatingButton({ skip = false }: { skip?: boolean }) {
+  const { fonts } = useTheme();
   const [open, setOpen] = useState(false);
   const query = useGetMyMealRatingQuery(undefined, { pollingInterval: 5 * 60_000, refetchOnFocus: true, skip });
   const prompt = query.data;
   if (!prompt) {
     return null;
   }
+  const average = prompt.averageRating;
+  const meal = MEAL_LABEL[prompt.mealType].toLowerCase();
+  // Rated, the button stays to change it until the next meal starts (user, 2026-11-14).
+  const rated = (prompt.mine ?? []).length > 0;
   return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        gap: spacing.md,
-        padding: spacing.md,
-      }}
-    >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>Rate your last meal</Text>
-          <Text style={[type.description, { color: colors.muted }]}>{mealMoment(prompt)}</Text>
-        </View>
-        <Star color={colors.warning} fill={colors.warning} size={22} />
-      </View>
-      <View style={{ flexDirection: "row" }}>
-        <ActionButton label={`Rate ${MEAL_LABEL[prompt.mealType].toLowerCase()}`} onPress={() => setOpen(true)} />
-      </View>
+    <>
+      <AnimatedPressable
+        accessibilityHint={rated ? "Change your rating of your last meal" : "Rate the dishes of your last meal"}
+        accessibilityLabel={`Rate ${meal}, ${average == null ? "not rated yet" : `average ${average.toFixed(1)}`}`}
+        accessibilityRole="button"
+        onPress={() => setOpen(true)}
+        style={{
+          alignItems: "center",
+          backgroundColor: "rgba(255, 255, 255, 0.16)",
+          borderColor: "rgba(255, 255, 255, 0.55)",
+          borderCurve: "continuous",
+          borderRadius: radii.card - 2,
+          borderWidth: 1,
+          flexDirection: "row",
+          gap: spacing.sm,
+          minHeight: 44,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm,
+        }}
+      >
+        <Star color="#FFC83D" fill="#FFC83D" size={18} />
+        <Text numberOfLines={1} style={{ color: "#FFFFFF", flex: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>
+          {rated ? `Edit rating, ${mealMoment(prompt).toLowerCase()}` : `Rate ${mealMoment(prompt).toLowerCase()}`}
+        </Text>
+        {average == null ? (
+          <Text style={{ color: "rgba(255, 255, 255, 0.82)", fontFamily: fonts.sansSemiBold, fontSize: 12.5 }}>Not rated</Text>
+        ) : (
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
+            <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 14 }}>{average.toFixed(1)}</Text>
+            <Star color="#FFC83D" fill="#FFC83D" size={13} />
+          </View>
+        )}
+      </AnimatedPressable>
       {open ? <MealRatingSheet onClose={() => setOpen(false)} prompt={prompt} /> : null}
-    </View>
+    </>
   );
 }
 
@@ -73,9 +90,13 @@ function MealRatingSheet({ onClose, prompt }: { onClose: () => void; prompt: Mea
   const { colors, type } = useTheme();
   const toast = useToast();
   const form = useFormErrors<"ratings">();
-  const [draft, setDraft] = useState<Draft>({});
+  // Opens on what they gave before, to change it (user, 2026-11-14).
+  const [draft, setDraft] = useState<Draft>(() =>
+    Object.fromEntries((prompt.mine ?? []).map((given) => [given.itemId, { rating: given.rating, review: given.review ?? "" }])),
+  );
   const [submit, state] = useSubmitMealRatingMutation();
   const meal = MEAL_LABEL[prompt.mealType].toLowerCase();
+  const rated = (prompt.mine ?? []).length > 0;
 
   async function save() {
     const ratings = prompt.dishes
@@ -91,14 +112,14 @@ function MealRatingSheet({ onClose, prompt }: { onClose: () => void; prompt: Mea
     try {
       await submit({ date: prompt.date, mealType: prompt.mealType, ratings }).unwrap();
       onClose();
-      toast.success(`Thanks for rating ${meal}.`);
+      toast.success(rated ? `Your rating of ${meal} is updated.` : `Thanks for rating ${meal}.`);
     } catch (caught) {
       form.failFromServer(errorMessage(caught) || "Could not save your rating. Try again.");
     }
   }
 
   return (
-    <SheetShell onClose={onClose} size="medium" title={`Rate ${meal}`}>
+    <SheetShell onClose={onClose} size="medium" title={rated ? `Edit your rating of ${meal}` : `Rate ${meal}`}>
       <Text style={[type.description, { color: colors.muted }]}>Your name is not shown to the owner.</Text>
       {prompt.dishes.map((dish, index) => {
         const entry = draft[dish.itemId];
@@ -143,7 +164,7 @@ function MealRatingSheet({ onClose, prompt }: { onClose: () => void; prompt: Mea
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
       <ActionButton
         disabled={state.isLoading || form.blocked}
-        label={state.isLoading ? "Saving" : "Submit"}
+        label={state.isLoading ? "Saving" : rated ? "Update" : "Submit"}
         onPress={() => void save()}
       />
     </SheetShell>

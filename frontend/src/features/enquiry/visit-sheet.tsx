@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { EmptyVisits } from "@/components/empty-art";
 import { ScrollView, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { CalendarDays } from "lucide-react-native";
@@ -374,7 +375,7 @@ export function VisitSheet({
 
           {picking && !loading && days.length === 0 && !(visit ? moveOptions : availability).isError ? (
             <EmptyState
-              artworkNode={<PropertyVisitsIcon size={64} />}
+              artworkNode={<EmptyVisits size={120} />}
               compact
               description={
                 visit

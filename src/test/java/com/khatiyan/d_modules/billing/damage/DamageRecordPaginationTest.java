@@ -26,6 +26,7 @@ import org.springframework.data.domain.Pageable;
 
 import com.khatiyan.a_auth.AuthModule;
 import com.khatiyan.d_modules.property.PropertyModule;
+import com.khatiyan.d_modules.property.model.DamageLevel;
 import com.khatiyan.d_modules.property.model.ManagerResource;
 
 class DamageRecordPaginationTest {
@@ -42,7 +43,7 @@ class DamageRecordPaginationTest {
         var first = record();
         var second = record();
         var ids = List.of(first.getId(), second.getId());
-        when(records.findPageIds(eq(property), eq(EnumSet.of(DamageRecordStatus.OPEN)), any()))
+        when(records.findPageIds(eq(property), eq(EnumSet.of(DamageRecordStatus.OPEN)), any(), any(), any()))
                 .thenReturn(new PageImpl<>(ids, PageRequest.of(1, 2), 7));
         // Fetch joins need not return the same order as the scalar page.
         when(records.findPageRecords(ids)).thenReturn(List.of(second, first));
@@ -66,7 +67,7 @@ class DamageRecordPaginationTest {
     @Test
     void historyUsesOnlyRepairedAndReplacedAndEmptyPagesDoNotFetchAllRecords() {
         var statuses = EnumSet.of(DamageRecordStatus.REPAIRED, DamageRecordStatus.REPLACED);
-        when(records.findPageIds(eq(property), eq(statuses), any()))
+        when(records.findPageIds(eq(property), eq(statuses), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(3, 10), 21));
         counters(0, 21, 0);
 
@@ -81,16 +82,37 @@ class DamageRecordPaginationTest {
 
     @Test
     void clampsNegativePagesAndOversizedRequests() {
-        when(records.findPageIds(eq(property), anyCollection(), any()))
+        when(records.findPageIds(eq(property), anyCollection(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 50), 0));
         counters(0, 0, 0);
 
         service.page(actor, property, false, -4, 10000);
 
         var page = ArgumentCaptor.forClass(Pageable.class);
-        verify(records).findPageIds(eq(property), anyCollection(), page.capture());
+        verify(records).findPageIds(eq(property), anyCollection(), any(), any(), page.capture());
         assertThat(page.getValue().getPageNumber()).isZero();
         assertThat(page.getValue().getPageSize()).isEqualTo(50);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aSearchAndADamageLevelNarrowTheDatabasePage() {
+        // The owner's sticky search and level dropdown (user, 2026-11-14), done in the
+        // query so a match on a later page is found too.
+        when(records.findPageIds(eq(property), anyCollection(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
+        counters(0, 0, 0);
+
+        service.page(actor, property, false, "  FaN ", DamageLevel.D1, 0, 10);
+        service.page(actor, property, false, null, null, 0, 10);
+
+        var levels = ArgumentCaptor.forClass(java.util.Collection.class);
+        var pattern = ArgumentCaptor.forClass(String.class);
+        verify(records, org.mockito.Mockito.times(2))
+                .findPageIds(eq(property), anyCollection(), levels.capture(), pattern.capture(), any());
+        assertThat(pattern.getAllValues()).containsExactly("%fan%", "%");
+        assertThat(levels.getAllValues().get(0)).containsExactly(DamageLevel.D1);
+        assertThat(levels.getAllValues().get(1)).containsExactlyInAnyOrder((Object[]) DamageLevel.values());
     }
 
     @Test

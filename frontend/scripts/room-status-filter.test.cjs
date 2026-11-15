@@ -7,6 +7,7 @@ const ts = require("typescript");
 const read = (file) => fs.readFileSync(path.join(__dirname, "..", file), "utf8");
 const source = read("app/owner-rooms.tsx");
 const parsed = ts.createSourceFile("rooms.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const floorParsed = ts.createSourceFile("floor-selector.tsx", read("src/features/property/floor-selector.tsx"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const declaration = (file, name) => file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === name).getText(file);
 const exported = {};
 vm.runInNewContext(ts.transpileModule(`${declaration(parsed, "matchesRoomFilter")}\n${declaration(parsed, "roomUseNotice")}\nexports.matches = matchesRoomFilter; exports.notice = roomUseNotice;`, {
@@ -115,12 +116,12 @@ for (const count of [1, 3, 40]) {
     const changes = [];
     const selected = [];
     const module = {};
-    vm.runInNewContext(ts.transpileModule(`${declaration(parsed, "FloorSelector")}\nexports.FloorSelector = FloorSelector;`, {
+    vm.runInNewContext(ts.transpileModule(`${declaration(floorParsed, "FloorSelector")}\nexports.FloorSelector = FloorSelector;`, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
     }).outputText, {
       exports: module, useTheme: () => ({ colors: {}, fonts: {}, type: {} }),
       useState: () => [true, (value) => changes.push(value)],
-      floorLabel: (floor) => `Floor ${floor}`, softShadow: () => ({}),
+      floorLabel: (floor) => `Floor ${floor}`, softShadow: () => ({}), cardShadow: () => ({}),
       View: "View", Text: "Text", Pressable: "Button", FitText: "FitText", PropertyArtwork: "Artwork", ChevronDown: "Down",
       SheetShell: "Sheet", PickerOptionRow: "Option", spacing: { xs: 4, sm: 8, md: 12 }, radii: { card: 10 },
       require: (name) => { assert.equal(name, "react/jsx-runtime"); return { jsx, jsxs: jsx, Fragment: "Fragment" }; },
@@ -179,7 +180,7 @@ test("section dropdown preserves zero counts, marks the selected option and clos
     useSoftShadow: () => () => ({}),
     useTheme: () => ({ colors: { muted: "grey" }, fonts: {} }),
     useState: () => [hook++ === 0 ? true : 0, (value) => updates.push(value)],
-    useCallback: (fn) => fn, useHardwareBack: () => {},
+    useCallback: (fn) => fn, useHardwareBack: () => {}, useMemo: (fn) => fn(),
     View: "View", Text: "Text", Pressable: "Pressable", AnimatedPressable: "Button",
     SectionHeading: "Heading", FilterBubble: "Filter", PickerOptionRow: "Option",
     StyleSheet: { absoluteFill: {} }, spacing: { xs: 4, sm: 8, md: 12 }, radii: { card: 10 },

@@ -38,7 +38,7 @@ function harness(colors) {
   const tags = load(read("src/features/enquiry/enquiry-tags.tsx"), {
     "react-native": { Text: "Text", View: "View" },
     "lucide-react-native": { Timer: "Timer" },
-    "@/components/skeletons/boundary": { GhostPill: "GhostPill" },
+    "@/components/skeletons/boundary": { GhostPill: "GhostPill", useIsSkeleton: () => false },
     "@/theme/spacing": { spacing, radii: { card: 16 } },
     "@/theme/use-theme": { useTheme },
   });

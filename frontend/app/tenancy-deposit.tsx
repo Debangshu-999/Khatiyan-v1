@@ -39,7 +39,8 @@ export default function TenancyDepositScreen() {
   }
 
   return (
-    <ScreenScrollView>
+    // Fills the screen, so the history's end note centres in the space left (user, 2026-11-14).
+    <ScreenScrollView contentContainerStyle={{ flexGrow: 1 }}>
       <ScreenHeader
         italicTail="account."
         subtitle="Your deposit balance, and every movement on it."

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.khatiyan.d_modules.property.model.DamageLevel;
 import com.khatiyan.c_shared.concurrency.RequiresVersion;
 import com.khatiyan.c_shared.identity.UserPrincipal;
 import com.khatiyan.d_modules.billing.api.dto.BillingCycleResponse;
@@ -55,9 +56,11 @@ public class DamageRecordController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId,
             @RequestParam(defaultValue = "false") boolean history,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) DamageLevel level,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return damageRecords.page(user.userId(), propertyId, history, page, size);
+        return damageRecords.page(user.userId(), propertyId, history, search, level, page, size);
     }
 
     @PostMapping("/properties/{propertyId}/damage-records")

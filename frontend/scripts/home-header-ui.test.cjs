@@ -32,36 +32,24 @@ const viewGlobals = { View: "View", FitText: "Text", Text: "Text", AnimatedPress
 
 for (const [mode, colors] of Object.entries(themes)) {
   const useTheme = () => ({ colors, fonts, isDark: mode === "dark", type: { caption: {} } });
-  test(`${mode}: the original compact greeting wraps naturally with its accented name and subtitle and preserves every action`, () => {
+  test(`${mode}: the owner header is the location with the bell and action centre in one row, no greeting`, () => {
+    // No greeting or description (user, 2026-11-14): the property card rises into their space.
     const Header = component("WorkspaceHomeHeader", { ...viewGlobals, useTheme, spacing, HomeLocationBar: "HomeLocationBar" });
-    const children = [jsx("Notifications", {}), jsx("LatestEvents", {}), jsx("ActionCenter", {})];
+    const children = [jsx("Notifications", {}), jsx("ActionCenter", {})];
     const location = { status: "ready", city: "Kolkata" };
     const onRefreshLocation = () => {};
     const tree = Header({ children, firstName: "Debangshu", greeting: "Good morning", location, onRefreshLocation, subtitle: "Manage your property.", topInset: 32 });
     assert.equal(tree.props.style.backgroundColor, colors.primary);
     assert.equal(tree.props.style.paddingTop, 32 + spacing.sm);
-    const lines = nodes(tree, "Text"); assert.equal(lines.length, 3);
-    assert.equal(Array.from(lines[0].props.children).slice(0, 3).join(""), "Good morning, ");
-    assert.equal(Array.from(lines[1].props.children).join(""), "Debangshu.");
-    assert.equal(flat(lines[0].props.style).color, colors.onPrimary);
-    assert.equal(flat(lines[0].props.style).fontFamily, fonts.display);
-    assert.equal(flat(lines[0].props.style).fontSize, 22);
-    assert.equal(flat(lines[0].props.style).lineHeight, 28);
-    assert.equal(lines[0].props.children[3], lines[1], "The name belongs to the greeting's text flow, not a forced second row");
-    assert.equal(flat(lines[1].props.style).color, mode === "dark" ? "rgba(5, 5, 5, 0.88)" : "#DCE8FF");
-    assert.equal(flat(lines[1].props.style).fontStyle, "italic");
-    assert.equal(flat(lines[1].props.style).fontWeight, "400");
-    assert.equal(lines[2].props.children, "Manage your property.");
-    assert.equal(lines[2].props.numberOfLines, 2);
-    assert.equal(flat(lines[2].props.style).fontSize, 11);
+    assert.equal(tree.props.style.flexDirection, "row");
+    assert.equal(nodes(tree, "Text").length, 0, "No greeting or description");
     const locationBar = nodes(tree, "HomeLocationBar")[0];
-    assert.equal(locationBar.props.minimal, undefined);
     assert.equal(locationBar.props.compact, true);
     assert.equal(locationBar.props.location, location);
     assert.equal(locationBar.props.onRefresh, onRefreshLocation);
     const actionRow = nodes(tree, "View").find((node) => node.props.children === children);
-    assert.equal(actionRow.props.style.flexDirection, "column");
-    assert.equal(actionRow.props.style.alignItems, "flex-end");
+    assert.equal(actionRow.props.style.flexDirection, "row");
+    assert.equal(actionRow.props.style.alignItems, "center");
     children.forEach((child) => assert.equal(nodes(tree, child.type).length, 1));
   });
   test(`${mode}: original icon tabs meet the page with one curved fill, without a grey pill or underline`, () => {
@@ -139,8 +127,9 @@ test("only owner/manager Home opts into the new banner, and its actions retain t
   const file = read("app/(tabs)/index.tsx");
   assert.match(file, /\{isWorkspace \? \(\s*<WorkspaceHomeHeader/);
   const header = file.slice(file.indexOf("<WorkspaceHomeHeader"), file.indexOf("</WorkspaceHomeHeader>"));
-  assert.match(header, /HomeAlertsButton[^]*?router\.push\("\/notifications"\)/);
-  assert.match(header, /<LatestEventsButton activity=\{headerRecentActivity\}/);
-  assert.match(header, /HomeAttentionButton count=\{headerAttentionCount\}[^]*?router\.push\("\/owner-action-center"\)/);
+  // The yellow 3D bell and the 3D action centre, no recent activity (user, 2026-11-14).
+  assert.match(header, /HomeAlertsButton[^]*?router\.push\("\/notifications"\)\} yellow/);
+  assert.doesNotMatch(header, /LatestEventsButton/);
+  assert.match(header, /HomeAttentionButton colored count=\{headerAttentionCount\}[^]*?router\.push\("\/owner-action-center"\)/);
   assert.doesNotMatch(header, /Quick actions|owner-quick-actions/);
 });

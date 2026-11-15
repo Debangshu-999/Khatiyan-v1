@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { EmptyBookings } from "@/components/empty-art";
 import { useLocalSearchParams } from "expo-router";
 import { Text, View } from "react-native";
 import { ArrowRight, BedDouble, CalendarCheck, CalendarDays, ChevronDown, ChevronUp, CircleHelp, Fan, FileText, IndianRupee, Snowflake, Wallet } from "lucide-react-native";
@@ -61,8 +62,8 @@ export default function BookingRequestScreen() {
     {!id ? <EmptyState icon={CalendarCheck} title="Start from an attended visit" description="Open My visits or My enquiries and choose Book a stay on the property you visited." action={<View style={{ alignSelf: "stretch", flexDirection: "row" }}><ActionButton label="My visits" onPress={() => router.push("/my-visits")} /></View>} />
       : query.isError ? <LoadFailed error={query.error} onReload={() => void query.refetch()} />
       : !options || (options.canBook && identityQuery.isLoading) ? <BookingRequestSkeleton />
-      : options.existingRequestId ? <EmptyState artworkNode={<BookingsIcon size={64} />} title="You already have a booking here" description={options.whyNot ?? "Open it to see where it stands."} action={<View style={{ alignSelf: "stretch", flexDirection: "row" }}><ActionButton label="View existing booking" onPress={() => router.replace({ pathname: "/my-booking-detail", params: { requestId: options.existingRequestId! } })} /></View>} />
-      : <EmptyState artworkNode={<BookingsIcon size={64} />} title="Booking unavailable" description={options.whyNot ?? "This property is not available for booking yet."} />}
+      : options.existingRequestId ? <EmptyState artworkNode={<EmptyBookings size={120} />} title="You already have a booking here" description={options.whyNot ?? "Open it to see where it stands."} action={<View style={{ alignSelf: "stretch", flexDirection: "row" }}><ActionButton label="View existing booking" onPress={() => router.replace({ pathname: "/my-booking-detail", params: { requestId: options.existingRequestId! } })} /></View>} />
+      : <EmptyState artworkNode={<EmptyBookings size={120} />} title="Booking unavailable" description={options.whyNot ?? "This property is not available for booking yet."} />}
   </ScreenScrollView>;
 }
 

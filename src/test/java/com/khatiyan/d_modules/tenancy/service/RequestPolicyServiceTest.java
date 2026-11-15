@@ -512,11 +512,31 @@ class RequestPolicyServiceTest {
     }
 
     @Test
+    @DisplayName("past the rent window, the checkout window previews a request raised when the next one opens")
+    void pastTheRentWindowTheDatesAreTheNextWindows() {
+        Tenancy tenancy = activeTenancy();
+        LocalDate today = LocalDate.now(REQUEST_ZONE);
+        // Started six days ago, rent was due yesterday: the window has closed.
+        BillingCycleResponse cycle = billingCycle(2, today.minusDays(6), today.plusDays(24), today.minusDays(1));
+        LocalDate nextCycleEnd = today.plusDays(55);
+        withCheckoutWindowInputs(tenancy, cycle, NoticePeriod.ONE_MONTH);
+        when(billingModule.periodEndAfterCycles(tenancy.getId(), cycle.periodStartDate(), 1))
+                .thenReturn(nextCycleEnd);
+
+        ExitCheckoutWindowResponse window = exitRequestService.getExitCheckoutWindow(TENANT_ID);
+
+        assertThat(window.noticeAnchorDate()).isEqualTo(cycle.periodEndDate().plusDays(1));
+        assertThat(window.earliestCheckoutDate()).isEqualTo(nextCycleEnd);
+        assertThat(window.nextRequestWindowOpensOn()).isEqualTo(cycle.periodEndDate().plusDays(1));
+        assertThat(window.requestWindowClosesOn()).isEqualTo(today.minusDays(1));
+    }
+
+    @Test
     @DisplayName("a short notice that lands past the cycle end rolls into the next cycle instead of refusing")
     void subMonthNoticeRollsForwardIntoTheNextCycle() {
         Tenancy tenancy = activeTenancy();
         LocalDate today = LocalDate.now(REQUEST_ZONE);
-        BillingCycleResponse cycle = billingCycle(2, today.minusDays(25), today.plusDays(5));
+        BillingCycleResponse cycle = billingCycle(2, today.minusDays(25), today.plusDays(5), today.plusDays(2));
         LocalDate nextCycleEnd = today.plusDays(35);
         withCheckoutWindowInputs(tenancy, cycle, NoticePeriod.FIVE_DAYS);
         when(billingModule.periodEndAfterCycles(tenancy.getId(), cycle.periodStartDate(), 1))
@@ -533,7 +553,7 @@ class RequestPolicyServiceTest {
     void wholeMonthNoticeRollsForwardPastTheLeadTime() {
         Tenancy tenancy = activeTenancy();
         LocalDate today = LocalDate.now(REQUEST_ZONE);
-        BillingCycleResponse cycle = billingCycle(2, today.minusDays(25), today.plusDays(5));
+        BillingCycleResponse cycle = billingCycle(2, today.minusDays(25), today.plusDays(5), today.plusDays(2));
         LocalDate nextCycleEnd = today.plusDays(35);
         withCheckoutWindowInputs(tenancy, cycle, NoticePeriod.ONE_MONTH);
         when(billingModule.periodEndAfterCycles(tenancy.getId(), cycle.periodStartDate(), 0))
@@ -816,6 +836,11 @@ class RequestPolicyServiceTest {
     }
 
     private static BillingCycleResponse billingCycle(int cycleNumber, LocalDate periodStart, LocalDate periodEnd) {
+        return billingCycle(cycleNumber, periodStart, periodEnd, periodStart.plusDays(5));
+    }
+
+    /** A cycle with its own rent due date, which closes the window an exit request can be raised in. */
+    private static BillingCycleResponse billingCycle(int cycleNumber, LocalDate periodStart, LocalDate periodEnd, LocalDate rentDueDate) {
         return new BillingCycleResponse(
                 BILLING_CYCLE_ID,
                 "BIL-2026-000001",
@@ -833,7 +858,7 @@ class RequestPolicyServiceTest {
                 cycleNumber,
                 periodStart,
                 periodEnd,
-                periodStart.plusDays(5),
+                rentDueDate,
                 BillingCollectionTiming.CYCLE_START,
                 3,
                 12_000_00L,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { EmptyDeposit } from "@/components/empty-art";
 import { AppState, Linking, Platform, Text, View } from "react-native";
 import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { WalletLockCard } from "@/features/billing/wallet-lock-card";
@@ -507,7 +508,7 @@ function EntryList({
   if (entries.length === 0) {
     return (
       <EmptyState
-        artworkNode={<DepositHistoryArtwork size={96} />}
+        artworkNode={<EmptyDeposit size={120} />}
         compact
         description={description}
         title={title}

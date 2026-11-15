@@ -6,15 +6,20 @@ import { CenterModal } from "@/components/center-modal";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, Text, View, type ImageSourcePropType } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { AlertCircle, CalendarDays, CircleCheck, Clock3, History, Receipt, ReceiptText, SlidersHorizontal, X } from "lucide-react-native";
+import { AlertCircle, CalendarDays, ChevronRight, CircleCheck, Clock3, History, Receipt, ReceiptText, SlidersHorizontal, X } from "lucide-react-native";
 
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { PaginationBar } from "@/components/pagination-bar";
 import { PickerOptionRow } from "@/components/picker-option-row";
-import { SearchField } from "@/components/search-field";
+import { SearchField, SearchFilterButton } from "@/components/search-field";
+import { FilteredSearch } from "@/components/filtered-queue";
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { TabSwitcher } from "@/components/tab-switcher";
 import { ScreenHeader } from "@/components/screen-header";
+import { PastBillsIcon } from "@/components/past-bills-icon";
+import { ColorCalendarIcon } from "@/components/color-calendar-icon";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
 import { SkeletonList, SkeletonTiles } from "@/components/skeleton";
@@ -31,6 +36,7 @@ import { formatMoney } from "@/features/owner/bill-views";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   billTitle,
+  isDamageBill,
   useListMyTenancyBillingCyclesQuery,
   type BillingCycle,
 } from "@/store/services/billing-api";
@@ -41,7 +47,7 @@ import {
 } from "@/store/services/payment-intent-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { paginateArray } from "@/store/pagination";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 
 /** Which kind of bill the switcher is showing. */
 type BillTab = "RENT_CYCLE" | "ONE_OFF";
@@ -99,6 +105,57 @@ const NO_BILL_ILLUSTRATION = require("../assets/empty-states/No-Bill_512x436.png
  * that mixes "pay this" with "you paid this" makes the reader do the filtering
  * the screen should have done.
  */
+type BillTypeFilter = "ALL" | "RENT" | "DAMAGE" | "OTHER";
+/** The owner's bill-type filter (user, 2026-11-11). */
+const BILL_TYPE_OPTIONS: { label: string; value: BillTypeFilter }[] = [
+  { label: "All bills", value: "ALL" },
+  { label: "Rent cycles", value: "RENT" },
+  { label: "Damage bills", value: "DAMAGE" },
+  { label: "Other bills", value: "OTHER" },
+];
+
+function matchesBillType(cycle: BillingCycle, filter: BillTypeFilter) {
+  if (filter === "RENT") return cycle.category === "RENT_CYCLE";
+  if (filter === "DAMAGE") return cycle.category === "ONE_OFF" && isDamageBill(cycle);
+  if (filter === "OTHER") return cycle.category === "ONE_OFF" && !isDamageBill(cycle);
+  return true;
+}
+
+/** Earlier months' bills, one compact row with the count (user, 2026-11-11). */
+function PastBillsRow({ onPress }: { onPress: () => void }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityLabel="Past bills"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.borderStrong,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.md,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        ...cardShadow(colors.shadow),
+      }}
+    >
+      {/* A colour bill with the past clock (user, 2026-11-14). */}
+      <PastBillsIcon size={44} />
+      <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
+        <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>Past bills</Text>
+        <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>Bills from earlier months</Text>
+      </View>
+      <View style={{ alignItems: "center", backgroundColor: colors.neutralSoft, borderRadius: 999, height: 30, justifyContent: "center", width: 30 }}>
+        <ChevronRight color={colors.muted} size={16} strokeWidth={2.3} />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
 export default function TenancyBillsScreen() {
   const router = useGuardedRouter();
   const { colors, fonts } = useTheme();
@@ -110,7 +167,7 @@ export default function TenancyBillsScreen() {
   const [viewingIntents, setViewingIntents] = useState<BillingCycle | null>(null);
   const [payingBill, setPayingBill] = useState<BillingCycle | null>(null);
   const [deciding, setDeciding] = useState<PaymentIntent | null>(null);
-  const [tab, setTab] = useState<BillTab>("RENT_CYCLE");
+  const [billType, setBillType] = useState<BillTypeFilter>("ALL");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<BillStatusFilter>("ALL");
   const [statusPickerOpen, setStatusPickerOpen] = useState(false);
@@ -234,7 +291,7 @@ export default function TenancyBillsScreen() {
     const term = search.trim().toLowerCase();
     const thisMonth = istMonthKey(new Date());
     return cycles
-      .filter((cycle) => cycle.category === tab)
+      .filter((cycle) => matchesBillType(cycle, billType))
       .filter((cycle) => istMonthKey(new Date(cycle.periodStartDate)) === thisMonth)
       .filter((cycle) => status === "ALL" || cycle.status === status)
       .filter(
@@ -243,13 +300,13 @@ export default function TenancyBillsScreen() {
           || cycle.referenceCode.toLowerCase().includes(term)
           || billTitle(cycle).toLowerCase().includes(term),
       );
-  }, [cycles, search, status, tab]);
+  }, [billType, cycles, search, status]);
 
   // Back to the first page whenever the list underneath changes. Staying on
   // page three of a list that now has one page is how a filter looks broken.
   useEffect(() => {
     setPage(0);
-  }, [search, status, tab]);
+  }, [billType, search, status]);
 
   const paged = paginateArray(shown, page, BILL_PAGE_SIZE);
 
@@ -311,7 +368,8 @@ export default function TenancyBillsScreen() {
   }
 
   return (
-    <ScreenScrollView safeAreaEdges={["top", "bottom"]}>
+    // Closer under the title bar than the 18 default, no empty band (user, 2026-11-14).
+    <ScreenScrollView contentContainerStyle={{ paddingTop: spacing.sm }} safeAreaEdges={["top", "bottom"]}>
       <ScreenHeader
         italicTail="bills."
         subtitle="Manage this month's rent, charges and other bills all in one place."
@@ -335,7 +393,8 @@ export default function TenancyBillsScreen() {
             paddingVertical: 6,
           }}
         >
-          <CalendarDays color={colors.muted} size={14} strokeWidth={2.2} />
+          {/* The owner's colour calendar, as on their month picker (user, 2026-11-14). */}
+          <ColorCalendarIcon size={16} />
           <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 13 }}>
             {currentMonthLabel()}
           </Text>
@@ -349,15 +408,14 @@ export default function TenancyBillsScreen() {
             <MetricTile
               icon={AlertCircle}
               iconPlacement="side"
-              iconTone="danger"
+              iconTone="ink"
               label="Due now"
-              tone={dueNowPaise > 0 ? "danger" : "default"}
               value={formatMoney(dueNowPaise)}
             />
             <MetricTile
               icon={Clock3}
               iconPlacement="side"
-              iconTone="warning"
+              iconTone="ink"
               label="Overdue"
               value={String(overdueCount)}
             />
@@ -366,14 +424,14 @@ export default function TenancyBillsScreen() {
             <MetricTile
               icon={CircleCheck}
               iconPlacement="side"
-              iconTone="success"
+              iconTone="ink"
               label="Paid so far"
               value={formatMoney(paidPaise)}
             />
             <MetricTile
               icon={CalendarDays}
               iconPlacement="side"
-              iconTone="primary"
+              iconTone="ink"
               label="Next due"
               value={nextDue ? formatDueDate(nextDue) : "—"}
             />
@@ -382,61 +440,46 @@ export default function TenancyBillsScreen() {
         )}
       </View>
 
+      {/* Under the four tiles, one compact row (user, 2026-11-11). */}
+      <PastBillsRow
+        onPress={() => router.push({ pathname: "/tenancy-billing-history", params: { tenancyId } })}
+      />
+
       {/* No heading over this. The switcher names what is below it, and a
           "To pay" title above a tab that can be showing paid bills would be
           describing the wrong list half the time. */}
       {billingStartsIn > 0 ? <StartsSoonBubble title={startsInLabel("Billing", billingStartsIn)} /> : null}
 
-      <TabSwitcher<BillTab>
-        active={tab}
-        onChange={setTab}
-        options={[
-          {
-            dot: unpaidThisMonth.some((cycle) => cycle.category === "RENT_CYCLE"),
-            icon: ReceiptText,
-            label: "Billing cycles",
-            value: "RENT_CYCLE",
-          },
-          {
-            dot: unpaidThisMonth.some((cycle) => cycle.category === "ONE_OFF"),
-            icon: Receipt,
-            label: "Other bills",
-            value: "ONE_OFF",
-          },
-        ]}
-      />
-
-      {/* No heading over the list (user, 2026-09-27). The count is a small
-          blue line under the search instead, where it reads as the result of
-          the search and filter above it. */}
+      {/* One list for every bill, filtered by kind beside the search, as the
+          owner's Billing does (user, 2026-11-11). */}
+      <FilteredSearch<BillTypeFilter>
+        // "All", or the kind's first word and an ellipsis, so the pill stays small (user, 2026-11-11).
+        bubbleLabel={(option) => (option.value === "ALL" ? "All" : `${option.label.split(" ")[0]}…`)}
+        onChange={setBillType}
+        options={BILL_TYPE_OPTIONS}
+        purpose="Bill type"
+        search={
+          <SearchField
+            autoCapitalize="characters"
+            onChangeText={setSearch}
+            placeholder="Search by bill reference"
+            trailing={
+              <SearchFilterButton accessibilityLabel="Filter bills by payment status" active={status !== "ALL"} inside onPress={() => setStatusPickerOpen(true)} />
+            }
+            value={search}
+          />
+        }
+        value={billType}
+      >
       <View style={{ gap: spacing.sm }}>
-        <SearchField
-          autoCapitalize="characters"
-          onChangeText={setSearch}
-          placeholder="Search by bill reference"
-          trailing={
-            <IconButton
-              accessibilityLabel="Filter bills by payment status"
-              icon={SlidersHorizontal}
-              onPress={() => setStatusPickerOpen(true)}
-            />
-          }
-          value={search}
-        />
-        <View
-          style={{
-            alignSelf: "flex-start",
-            backgroundColor: colors.primarySoft,
-            borderCurve: "continuous",
-            borderRadius: 8,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 5,
-          }}
-        >
-          <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansBold, fontSize: 12 }}>
-            {`${shown.length} ${tab === "RENT_CYCLE" ? "billing cycle" : "other bill"}${shown.length === 1 ? "" : "s"}`}
-          </Text>
-        </View>
+        {shown.length > 0 ? (
+          // Snug between the search and the list: 8 above, 6 below (user, 2026-11-14).
+          <View style={{ alignSelf: "flex-start", backgroundColor: colors.surfaceSunken, borderRadius: 999, marginBottom: -4, marginTop: -6, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
+            <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 11 }}>
+              {`${shown.length} bill${shown.length === 1 ? "" : "s"}`}
+            </Text>
+          </View>
+        ) : null}
 
         {cyclesQuery.isFetching && cycles.length === 0 ? (
           <SkeletonList rows={2} />
@@ -446,9 +489,7 @@ export default function TenancyBillsScreen() {
             description={
               search.trim() || status !== "ALL"
                 ? "Nothing matched. Try a different reference or status."
-                : tab === "RENT_CYCLE"
-                  ? "This month's rent cycle appears here once it is raised. Earlier ones are in Past bills."
-                  : "One-off charges raised this month appear here. Earlier ones are in Past bills."
+                : "This month's bills appear here once they are raised. Earlier ones are in Past bills."
             }
             title={search.trim() || status !== "ALL" ? "No matching bills" : "Nothing this month"}
           />
@@ -456,7 +497,7 @@ export default function TenancyBillsScreen() {
           <>
             {/* Billing cycles are never paged: a month holds one live cycle
                 (user, 2026-09-27). Other bills can pile up, so they keep it. */}
-            {(tab === "RENT_CYCLE" ? shown : paged.pageItems).map((cycle) => (
+            {paged.pageItems.map((cycle) => (
               <TenantBillCard
                 cycle={cycle}
                 key={cycle.id}
@@ -470,7 +511,7 @@ export default function TenancyBillsScreen() {
             {/* On Other bills, shown whenever there is a bill, not only once
                 there are two pages: the bar carries the running total as well
                 as the position, so on a single page it still says something. */}
-            {tab === "ONE_OFF" && paged.totalElements > 0 ? (
+            {paged.totalPages > 1 ? (
               <PaginationBar
                 hasNext={paged.hasNext}
                 hasPrevious={paged.hasPrevious}
@@ -484,18 +525,7 @@ export default function TenancyBillsScreen() {
           </>
         )}
       </View>
-
-      {/* The owner's history-route card, which is a card and not a section:
-          artwork beside the words, the eyebrow naming what is behind it, and
-          the count on the button rather than in a heading above it. */}
-      <BillsRouteCard
-        artwork={BILLING_HISTORY_ILLUSTRATION}
-        buttonLabel={`${pastCount} past bill${pastCount === 1 ? "" : "s"}`}
-        description="Bills from earlier months, paid or still owed."
-        eyebrow="Billing history"
-        onPress={() => router.push({ pathname: "/tenancy-billing-history", params: { tenancyId } })}
-        title="View past bills"
-      />
+      </FilteredSearch>
 
       {statusPickerOpen ? (
         <StatusFilterDialog
@@ -600,7 +630,6 @@ function BillsRouteCard({
           mark left the card looking half empty beside it. */}
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>{eyebrow}</Text>
           <Text style={[type.display, { color: colors.ink, fontSize: 22, lineHeight: 27 }]}>{title}</Text>
           {/* Beside the artwork, not stacked under the row. Under it, the
               description was a third block with a gap above it and the card
@@ -680,7 +709,8 @@ function StatusFilterDialog({
             </ModalTitle>
           </View>
 
-          <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg }}>
+          {/* A little room under the title (user, 2026-11-11). */}
+          <View style={{ paddingBottom: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}>
             {STATUS_OPTIONS.map((option) => (
               <PickerOptionRow
                 icon={<FilterMark value={option.value} />}

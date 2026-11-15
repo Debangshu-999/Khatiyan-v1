@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import { ChevronDown, ChevronUp, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { SectionHeading } from "@/components/section-heading";
 import { useHardwareBack } from "@/components/use-hardware-back";
@@ -29,11 +30,18 @@ export function FilteredQueue<T extends string>({
   count,
   heading,
   headingNode,
+  hideHeader = false,
   onChange,
   options,
   value,
 }: {
   blink?: boolean;
+  /**
+   * Leaves out the count and the filter pill, for a queue with nothing in it under
+   * any filter (Manage Visits' Upcoming and Missed, user 2026-11-14): its empty state
+   * says so, and a filter over nothing has nothing to narrow.
+   */
+  hideHeader?: boolean;
   children: ReactNode;
   count?: number;
   heading: string;
@@ -60,15 +68,17 @@ export function FilteredQueue<T extends string>({
 
   return (
     <View style={{ gap: spacing.md, minHeight: open ? menuTop + menuHeight + spacing.sm : undefined }}>
-      <View
-        onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
-        style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}
-      >
-        <View style={{ flex: 1, minWidth: 0 }}>
-          {headingNode ?? <TabHeading count={count} text={heading} />}
+      {hideHeader ? null : (
+        <View
+          onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
+          style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {headingNode ?? <TabHeading count={count} text={heading} />}
+          </View>
+          <FilterBubble blink={blink} label={chosen.label} onPress={() => setOpen((current) => !current)} open={open} />
         </View>
-        <FilterBubble blink={blink} label={chosen.label} onPress={() => setOpen((current) => !current)} open={open} />
-      </View>
+      )}
       {children}
       {open ? (
         <>
@@ -138,6 +148,7 @@ export function FilteredQueue<T extends string>({
 export function SectionWithDropdown<T extends string>({
   beforeFilter,
   children,
+  header,
   icon,
   onChange,
   options,
@@ -149,6 +160,11 @@ export function SectionWithDropdown<T extends string>({
   /** An optional compact control beside the existing filter, without changing its UI. */
   beforeFilter?: ReactNode;
   children: ReactNode;
+  /**
+   * Draws the controls into something else instead of a subheading: the screen's
+   * own header, say, with the controls beside its title (user, 2026-11-14: Manage).
+   */
+  header?: (controls: ReactNode) => ReactNode;
   /** A mark before the chosen label, saying what the list is for. */
   icon?: ComponentType<LucideProps>;
   onChange: (value: T) => void;
@@ -174,31 +190,41 @@ export function SectionWithDropdown<T extends string>({
   }, []);
   useHardwareBack(closeOnBack, open);
 
-  const filterControl = replacement ?? (
-    <FilterBubble
-      blink={false}
-      icon={icon}
-      label={chosen.label}
-      onPress={() => setOpen((current) => !current)}
-      open={open}
-      purpose={purpose}
-    />
+  // Kept the same element until something in it changes: a screen header that
+  // carries these (Manage's, which lifts itself into the fixed bar) re-publishes
+  // on every new element, and a fresh one each render looped without end.
+  const filterControl = useMemo(
+    () =>
+      replacement ?? (
+        <FilterBubble
+          blink={false}
+          icon={icon}
+          label={chosen.label}
+          onPress={() => setOpen((current) => !current)}
+          open={open}
+          purpose={purpose}
+        />
+      ),
+    [chosen.label, icon, open, purpose, replacement],
+  );
+
+  const controls = useMemo(
+    () =>
+      beforeFilter ? (
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+          {beforeFilter}
+          {filterControl}
+        </View>
+      ) : (
+        filterControl
+      ),
+    [beforeFilter, filterControl],
   );
 
   return (
     <View style={{ gap: spacing.md, minHeight: open ? menuTop + menuHeight + spacing.sm : undefined }}>
       <View onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}>
-        <SectionHeading
-          title={title}
-          trailing={
-            beforeFilter ? (
-              <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-                {beforeFilter}
-                {filterControl}
-              </View>
-            ) : filterControl
-          }
-        />
+        {header ? header(controls) : <SectionHeading title={title} trailing={controls} />}
       </View>
       {children}
       {open && !replacement ? (
@@ -278,15 +304,117 @@ export function SectionWithDropdown<T extends string>({
 }
 
 /**
+ * A search box with the filter bubble beside it (user, 2026-11-03). The same bubble
+ * and the same list as {@link FilteredQueue}: the list floats over the cards below,
+ * inside this wrapper, which grows while it is open so Android delivers its touches.
+ */
+export function FilteredSearch<T extends string>({
+  bubbleLabel,
+  children,
+  onChange,
+  options,
+  purpose,
+  search,
+  value,
+}: {
+  /** What the closed pill says, shorter than the option itself (2026-11-11: My bills). */
+  bubbleLabel?: (option: FilterOption<T>) => string;
+  children: ReactNode;
+  onChange: (value: T) => void;
+  options: FilterOption<T>[];
+  /** What the choice is, for a screen reader. */
+  purpose: string;
+  search: ReactNode;
+  value: T;
+}) {
+  const softShadow = useSoftShadow();
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [menuHeight, setMenuHeight] = useState(0);
+  const chosen = options.find((option) => option.value === value) ?? options[0];
+  const menuTop = headerHeight + spacing.xs;
+
+  const closeOnBack = useCallback(() => {
+    setOpen(false);
+    return true;
+  }, []);
+  useHardwareBack(closeOnBack, open);
+
+  return (
+    <View style={{ gap: spacing.md, minHeight: open ? menuTop + menuHeight + spacing.sm : undefined }}>
+      <View
+        onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
+        style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>{search}</View>
+        <FilterBubble blink={false} label={bubbleLabel ? bubbleLabel(chosen) : chosen.label} onPress={() => setOpen((current) => !current)} open={open} pill purpose={purpose} />
+      </View>
+      {children}
+      {open ? (
+        <>
+          {/* Clear, so a tap anywhere closes the list instead of opening the
+              card under it. A sibling of the list, never its parent. */}
+          <Pressable accessibilityLabel={`Close ${purpose.toLowerCase()}`} onPress={() => setOpen(false)} style={StyleSheet.absoluteFill} />
+          <View
+            onLayout={(event) => setMenuHeight(event.nativeEvent.layout.height)}
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderCurve: "continuous",
+              borderRadius: radii.card,
+              borderWidth: 1,
+              elevation: 12,
+              padding: spacing.xs,
+              position: "absolute",
+              right: 0,
+              ...softShadow(colors.shadow, 6, 14, 0.16),
+              top: menuTop,
+              width: 200,
+              zIndex: 20,
+            }}
+          >
+            {options.map((option) => (
+              <PickerOptionRow
+                key={option.value}
+                label={option.label}
+                onPress={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                selected={option.value === value}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+/**
  * The bubble that opens a queue's filter. It blinks a red ring while escalated
  * concerns are waiting, as the Escalated chip it replaced did.
  */
+/**
+ * A choice on a pill beside a search bar (user, 2026-11-13): just enough of it,
+ * then … ("Room change" reads "Room…"), so the search keeps its width.
+ */
+export function pillChoice(label: string) {
+  const words = label.trim().split(/\s+/);
+  return words.length > 1 ? `${words[0]}…` : label;
+}
+
+/** The widest a pill's choice gets before it ends in …, whatever the words. */
+export const PILL_CHOICE_MAX_WIDTH = 56;
+
 function FilterBubble({
   blink,
   icon: Icon,
   label,
   onPress,
   open,
+  pill = false,
   purpose = "Filter",
 }: {
   blink: boolean;
@@ -294,6 +422,8 @@ function FilterBubble({
   label: string;
   onPress: () => void;
   open: boolean;
+  /** Beside a search bar: the request desk's round grey pill, the bar's own shape (user, 2026-11-13). */
+  pill?: boolean;
   purpose?: string;
 }) {
   const { colors, fonts } = useTheme();
@@ -321,16 +451,16 @@ function FilterBubble({
       onPress={onPress}
       style={{
         alignItems: "center",
-        // Light grey, with the chevron sitting straight on it (user, 2026-09-30).
-        backgroundColor: colors.surfaceSunken,
-        borderColor: open ? colors.primary : colors.border,
-        borderRadius: 999,
+        // White with the search bar's edge, no grey fill (user, 2026-11-14).
+        backgroundColor: colors.surface,
+        borderColor: `${colors.ink}40`,
+        borderRadius: pill ? 999 : FILTER_CHIP_RADIUS,
         borderWidth: 1,
         flexDirection: "row",
-        gap: 6,
+        gap: pill ? 4 : 6,
+        ...(pill ? { height: 36 } : { paddingVertical: 6 }),
         paddingLeft: spacing.md,
         paddingRight: spacing.sm,
-        paddingVertical: 6,
       }}
     >
       {blink ? (
@@ -350,7 +480,8 @@ function FilterBubble({
         />
       ) : null}
       {Icon ? <Icon color={colors.ink} size={14} strokeWidth={2.3} /> : null}
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>{label}</Text>
+      {/* Just enough of the choice, then … (user, 2026-11-13). */}
+      <Text ellipsizeMode="tail" numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: pill ? 12.5 : 13, maxWidth: pill ? PILL_CHOICE_MAX_WIDTH : 84 }}>{pill ? pillChoice(label) : label}</Text>
       {open ? (
         <ChevronUp color={colors.inkSoft} size={16} strokeWidth={2.4} />
       ) : (

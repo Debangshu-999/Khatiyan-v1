@@ -53,6 +53,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/sessions").authenticated()
                         .requestMatchers("/api/v1/notifications/**").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        // Spring forwards a failure here. Locked, a crash in a public call
+                        // like token refresh came back as a 401 and signed the app out (2026-11-07).
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         // A mail's "Open in app" button: a page that hands a screen name to the app.
                         .requestMatchers(HttpMethod.GET, "/api/v1/open").permitAll()

@@ -349,6 +349,15 @@ class VisitDayIntegrationTest {
         assertThatThrownBy(() -> visitDay.propertyHistory(owner, property, 0, 12, "LATE"))
                 .isInstanceOf(com.khatiyan.c_shared.exception.ValidationException.class);
 
+        // Searched by visit ID or the visitor's name, any case (user, 2026-11-14).
+        VisitCardResponse attendedCard = visitDay.propertyHistory(owner, property, 0, 12, "VISITED").items().get(0);
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12, "ALL", attendedCard.referenceCode().toLowerCase()).items())
+                .extracting(VisitCardResponse::visitId).containsExactly(attended);
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12, "ALL", attendedCard.prospectName().toUpperCase()).items())
+                .extracting(VisitCardResponse::visitId).contains(attended);
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12, "ALL", "nobody-by-this-name").totalElements()).isZero();
+        assertThat(visitDay.propertyHistory(owner, property, 0, 12, "ALL", "  ").totalElements()).isEqualTo(3);
+
         // Each visitor sees their own records, including their cancellation.
         assertThat(visitDay.myHistory(prospects.get(2), 0, 12).items())
                 .singleElement().satisfies(card -> {

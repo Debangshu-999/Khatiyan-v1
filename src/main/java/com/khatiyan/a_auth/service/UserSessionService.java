@@ -88,6 +88,32 @@ public class UserSessionService {
     }
 
     /**
+     * Ends the live sessions an earlier install on this same device left behind (user,
+     * 2026-11-07).
+     *
+     * <p>An uninstalled app, or a browser whose storage was cleared, cannot sign itself
+     * out, so its session stayed live for 30 days and held one of the four places. The
+     * server is never told of an uninstall. What it does see is the same device signing in
+     * again: the same name on the same platform. That new sign-in replaces the old ones,
+     * before the cap is counted. Called only once credentials are proven.
+     *
+     * <p>A blank name matches nothing, as it says nothing about which device it was.
+     */
+    @Transactional
+    public void replaceSameDevice(UUID userId, String deviceLabel, String platform, Instant now) {
+        if (deviceLabel == null || deviceLabel.isBlank()) {
+            return;
+        }
+        for (UserSession session : userSessionRepository.findLiveByUser(userId, now)) {
+            if (deviceLabel.equals(session.getDeviceLabel()) && java.util.Objects.equals(platform, session.getPlatform())) {
+                session.revoke(now);
+                authStateCache.sessionRevoked(session.getJti(), session.getExpiresAt());
+                log.info("Session replaced by the same device signing in again userId={} jti={}", userId, session.getJti());
+            }
+        }
+    }
+
+    /**
      * Ends one session as part of signing in, with no caller session to protect.
      *
      * <p>Separate from {@link #revoke} because that one refuses to revoke the
@@ -116,6 +142,8 @@ public class UserSessionService {
         // Decided BEFORE the row is saved, or the row we just wrote would be the
         // prior sighting that proves the device is not new.
         boolean unfamiliar = isUnfamiliarDevice(userId, deviceLabel);
+        // Every sign-in path comes through here, the Firebase one included.
+        replaceSameDevice(userId, deviceLabel, platform, now);
 
         String refreshToken = newRefreshToken();
         userSessionRepository.save(UserSession.opened(
@@ -144,6 +172,7 @@ public class UserSessionService {
         if (current.isPresent()) {
             UserSession session = current.get();
             if (!session.isLive(now)) {
+                log.info("Refresh refused, the session has ended sessionId={} userId={}", session.getJti(), session.getUserId());
                 return Optional.empty();
             }
             session.rotateRefreshToken(hash(next), now, now.plus(sessionLifetime));
@@ -151,6 +180,8 @@ public class UserSessionService {
         }
         Optional<UserSession> previous = userSessionRepository.findByPreviousRefreshTokenHash(presentedHash);
         if (previous.isEmpty() || !previous.get().isLive(now)) {
+            // Logged so a sign-out can be explained afterwards (2026-11-07). Never the token itself.
+            log.info("Refresh refused, {}", previous.isEmpty() ? "the token is not known" : "the session has ended sessionId=" + previous.get().getJti());
             return Optional.empty();
         }
         UserSession session = previous.get();

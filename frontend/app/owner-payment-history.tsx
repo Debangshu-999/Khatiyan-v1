@@ -1,7 +1,7 @@
-import { useMemo, useState, type ComponentType } from "react";
+import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { CheckCircle2, Clock3, ReceiptText, WalletCards, type LucideProps } from "lucide-react-native";
+import { ReceiptText } from "lucide-react-native";
 
 import { FilterBubble } from "@/components/filter-bubbles";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
@@ -10,7 +10,6 @@ import { EmptyState } from "@/components/empty-state";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
 import { OwnerPaymentListSkeleton } from "@/components/skeletons/owner";
 import { MonthSelector, currentMonth } from "@/components/month-selector";
 import { useAvailableAccounts } from "@/features/account/accounts";
@@ -21,6 +20,8 @@ import {
 } from "@/features/owner/bill-views";
 import { useAppSelector } from "@/store/hooks";
 import { useListPropertyBillingCyclesQuery } from "@/store/services/billing-api";
+import { BillStatusMark } from "@/features/owner/status-filter-marks";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
@@ -108,12 +109,12 @@ export default function OwnerPaymentHistoryScreen() {
           </View>
 
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <HistoryMetric icon={CheckCircle2} label="Paid" value={String(paidCount)} />
-            <HistoryMetric icon={Clock3} label="Late" value={String(lateCount)} />
-            <HistoryMetric icon={WalletCards} label="Unpaid" value={String(unpaidCount)} />
+            <HistoryMetric label="Paid" status="PAID" value={String(paidCount)} />
+            <HistoryMetric label="Late" status="LATE_PAY" value={String(lateCount)} />
+            <HistoryMetric label="Unpaid" status="UNPAID" value={String(unpaidCount)} />
           </View>
 
-          <Section title={`${visible.length} bill${visible.length === 1 ? "" : "s"}`}>
+          <View style={{ gap: spacing.md }}>
             {cyclesQuery.isFetching && visible.length === 0 ? <OwnerPaymentListSkeleton rows={4} /> : null}
 
             {!cyclesQuery.isFetching && visible.length === 0 ? (
@@ -145,7 +146,7 @@ export default function OwnerPaymentHistoryScreen() {
                 totalPages={totalPages}
               />
             ) : null}
-          </Section>
+          </View>
         </>
       )}
     </ScreenScrollView>
@@ -167,15 +168,15 @@ function PaymentHistoryHeader({ propertyName }: { propertyName: string | null })
   );
 }
 function HistoryMetric({
-  icon: Icon,
   label,
+  status,
   value,
 }: {
-  icon: ComponentType<LucideProps>;
   label: string;
+  status: string;
   value: string;
 }) {
-  const { colors, fonts, type } = useTheme();
+  const { colors, fonts } = useTheme();
 
   return (
     <View
@@ -191,11 +192,12 @@ function HistoryMetric({
         minWidth: 0,
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.md,
+        ...cardShadow(colors.shadow),
       }}
     >
-      <Icon color={colors.ink} size={22} strokeWidth={2.1} />
+      <BillStatusMark value={status} />
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker, fontSize: 9 }]}>
+        <FitText numberOfLines={1} style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 13 }}>
           {label}
         </FitText>
         <FitText

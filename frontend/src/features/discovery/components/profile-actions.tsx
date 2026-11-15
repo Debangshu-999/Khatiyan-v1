@@ -1,40 +1,35 @@
-import { useState, type RefObject } from "react";
-import { Image, StyleSheet, Text, View, type ImageSourcePropType } from "react-native";
-import { BlurView } from "expo-blur";
+import { useState } from "react";
+import { View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { FitText } from "@/components/fit-text";
 import { useToast } from "@/components/toast";
 import { BookAStayFlow, DirectVisitFlow } from "@/features/discovery/components/direct-booking-flows";
 import { EnquireFlow } from "@/features/discovery/components/enquire-action";
+import { EnquireArt, StayArt, VisitArt } from "@/features/discovery/components/profile-action-art";
+import { ProfileSection, SECTION_TONES } from "@/features/discovery/components/property-profile";
 import { errorMessage } from "@/features/forms/server-error";
 import { ConfirmDialog } from "@/features/owner/owner-ui";
 import { useChangeEnquiryMindMutation, useGetMyEnquiryForPropertyQuery } from "@/store/services/enquiry-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { FitText } from "@/components/fit-text";
-
-/** The Enquiries screen's empty-state picture, the Visits tool's and the Bookings tool's, on Home. */
-const ENQUIRE_ARTWORK = require("../../../../assets/empty-states/enquiries.png");
-const VISIT_ARTWORK = require("../../../../assets/images/workspace/manage_visits.png");
-const BOOKING_ARTWORK = require("../../../../assets/icons/home-tools/bookings.png");
-
-/** The row's height. The screen needs it to know when the one in the page is in full view. */
-export const PROFILE_ACTIONS_HEIGHT = 60;
 
 /**
- * The property profile's three actions, in one row (user, 2026-10-17):
- * Enquire, Visit and Booking, in a fixed footer (user, 2026-11-02). The sheets
- * behind the buttons are mounted once.
+ * The property profile's three actions (user, 2026-10-17): Enquire, Book a
+ * visit and Book a stay. Out of the fixed footer and into a Next steps section
+ * above Property details, as bubbles on an orange wash (user, 2026-11-14). The
+ * sheets behind them are mounted once.
  *
  * <p>Who sees what: nothing for someone who manages the place. Someone who
  * stays there may enquire, and books no visit or stay there, which the server
  * refuses too. Enquire reads "Enquiry sent" while one is open, as it did.
  *
- * @return the row, drawn floating or resting, null when there is nothing to
- *         offer; and the sheets, to mount once on the screen
+ * @return the Next steps section, null when there is nothing to offer; and the
+ *         sheets, to mount once on the screen
  */
 export function useProfileActions(propertyId: string | null, propertyName: string) {
   const toast = useToast();
@@ -69,20 +64,15 @@ export function useProfileActions(propertyId: string | null, propertyName: strin
     }
   }
 
-  function row(floating: boolean, blurTarget?: RefObject<View | null>) {
+  function nextSteps() {
     if (!available) return null;
-    return <View style={{ flexDirection: "row", gap: spacing.sm }}>
-      <GlassActionButton
-        artwork={ENQUIRE_ARTWORK}
-        blurTarget={blurTarget}
-        disabled={!canEnquire}
-        floating={floating}
-        label={canEnquire ? "Enquire" : "Enquiry sent"}
-        onPress={enquire}
-      />
-      {staysHere ? null : <GlassActionButton artwork={VISIT_ARTWORK} blurTarget={blurTarget} floating={floating} label="Visit" onPress={() => setStep("VISIT")} />}
-      {staysHere ? null : <GlassActionButton artwork={BOOKING_ARTWORK} blurTarget={blurTarget} floating={floating} label="Booking" onPress={() => setStep("BOOKING")} />}
-    </View>;
+    return <NextSteps
+      canEnquire={canEnquire}
+      onBookStay={() => setStep("BOOKING")}
+      onBookVisit={() => setStep("VISIT")}
+      onEnquire={enquire}
+      staysHere={staysHere}
+    />;
   }
 
   const sheets = !propertyId ? null : <>
@@ -103,34 +93,61 @@ export function useProfileActions(propertyId: string | null, propertyName: strin
     {refusal ? <AlertModal message={refusal} onClose={() => setRefusal(null)} /> : null}
   </>;
 
-  return { available, row, sheets };
+  return { available, nextSteps, sheets };
 }
 
 /**
- * One of the profile's actions on frosted glass (user, 2026-10-17): a
- * rectangle with rounded corners, a picture beside its name, the page showing
- * through, as the owner Home screen's top does. Floating it wears the shadow a
- * phone draws. Resting in the page it has a border instead.
- *
- * @param blurTarget what the glass blurs on Android, where a blur sees only
- *                   inside a BlurTargetView. The floating row passes the page's
+ * Next steps (user, 2026-11-14): two bold orange lines before the title, an
+ * orange wash behind, and the three actions as bubbles, each with its drawing
+ * over its name. Who stays here gets Enquire alone.
  */
-export function GlassActionButton({
-  artwork,
-  blurTarget,
-  disabled = false,
-  floating = false,
-  label,
-  onPress,
+function NextSteps({
+  canEnquire,
+  onBookStay,
+  onBookVisit,
+  onEnquire,
+  staysHere,
 }: {
-  artwork: ImageSourcePropType;
-  blurTarget?: RefObject<View | null>;
-  disabled?: boolean;
-  floating?: boolean;
-  label: string;
-  onPress: () => void;
+  canEnquire: boolean;
+  onBookStay: () => void;
+  onBookVisit: () => void;
+  onEnquire: () => void;
+  staysHere: boolean;
 }) {
-  const { colors, fonts, isDark } = useTheme();
+  const { colors, isDark } = useTheme();
+  const tone = SECTION_TONES.nextSteps;
+  return <LinearGradient
+    colors={isDark ? ["#2B1A0B", colors.surface] : ["#FFEBD6", "#FFF8F1"]}
+    end={{ x: 1, y: 1 }}
+    start={{ x: 0, y: 0 }}
+    style={{
+      borderColor: isDark ? "#5A3412" : "#FED7AA",
+      borderCurve: "continuous",
+      borderRadius: radii.card,
+      borderWidth: 1,
+      padding: spacing.md,
+      ...cardShadow(colors.shadow),
+    }}
+  >
+    <ProfileSection
+      lines={2}
+      tagline={staysHere ? "You stay here. Ask the team anything." : "Ask a question, see it in person, or reserve your bed."}
+      title="Next steps"
+      tone={tone}
+    >
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        <StepBubble art={<EnquireArt size={40} />} disabled={!canEnquire} label={canEnquire ? "Enquire" : "Enquiry sent"} onPress={onEnquire} />
+        {staysHere ? null : <StepBubble art={<VisitArt size={40} />} label="Book a visit" onPress={onBookVisit} />}
+        {staysHere ? null : <StepBubble art={<StayArt size={40} />} label="Book a stay" onPress={onBookStay} />}
+      </View>
+    </ProfileSection>
+  </LinearGradient>;
+}
+
+/** One of the Next steps: a white bubble with an orange edge, the drawing over the name. */
+function StepBubble({ art, disabled = false, label, onPress }: { art: React.ReactNode; disabled?: boolean; label: string; onPress: () => void }) {
+  const { colors, fonts } = useTheme();
+  const tone = SECTION_TONES.nextSteps;
   return <AnimatedPressable
     accessibilityLabel={label}
     accessibilityRole="button"
@@ -138,36 +155,21 @@ export function GlassActionButton({
     disabled={disabled}
     onPress={onPress}
     style={{
-      borderRadius: radii.card + 6,
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderColor: `${tone}66`,
+      borderCurve: "continuous",
+      borderRadius: 22,
+      borderWidth: 1.5,
       flex: 1,
-      height: PROFILE_ACTIONS_HEIGHT,
+      gap: 6,
       minWidth: 0,
-      // The shadow a phone draws too: the profile sits on the Discover tab, where the shared hook keeps the
-      // tab screens' old one, which only a browser draws.
-      ...(floating ? softShadow(colors.shadow, 6, 18) : {}),
+      opacity: disabled ? 0.6 : 1,
+      paddingHorizontal: spacing.xs,
+      paddingVertical: spacing.sm + 2,
     }}
   >
-    {/* The rounding and clipping belong to a plain View around the blur, which does not clip itself on Android. */}
-    <View style={{
-      borderColor: !floating ? colors.borderStrong : isDark ? "rgba(255, 255, 255, 0.16)" : "rgba(255, 255, 255, 0.7)",
-      borderRadius: radii.card + 6,
-      borderWidth: 1,
-      flex: 1,
-      overflow: "hidden",
-    }}>
-      {floating ? <BlurView
-        blurMethod="dimezisBlurViewSdk31Plus"
-        blurTarget={blurTarget}
-        intensity={isDark ? 55 : 60}
-        style={StyleSheet.absoluteFill}
-        tint={isDark ? "dark" : "light"}
-      /> : null}
-      {/* The translucent wash: all the glass an older phone gets, and the ground when it rests in the page. */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? "rgba(16, 16, 16, 0.55)" : "rgba(255, 255, 255, 0.55)" }]} />
-      <View style={{ alignItems: "center", flex: 1, flexDirection: "row", gap: 6, justifyContent: "center", paddingHorizontal: spacing.sm }}>
-        <Image accessibilityIgnoresInvertColors resizeMode="contain" source={artwork} style={{ height: 30, width: 30 }} />
-        <FitText numberOfLines={1} minimumFontScale={0.8} style={{ color: disabled ? colors.muted : colors.ink, flexShrink: 1, fontFamily: fonts.sansBold, fontSize: 14 }}>{label}</FitText>
-      </View>
-    </View>
+    {art}
+    <FitText minimumFontScale={0.8} numberOfLines={1} style={{ color: disabled ? colors.muted : colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>{label}</FitText>
   </AnimatedPressable>;
 }

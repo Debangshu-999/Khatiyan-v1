@@ -361,3 +361,17 @@ test("notice attachment advice uses the same TipBoard as Room photos, without ch
   assert.equal(exports.AttachmentSection({ ...props, editing: false }), null);
   assert.match(fs.readFileSync(path.join(__dirname, "..", "src/features/property/room-type-sheet.tsx"), "utf8"), /<TipBoard>Rooms with photos/);
 });
+
+test("a new start or end time clears both time errors, so a fixed order unblocks Create", () => {
+  const file = process.env.NOTICE_CREATE_SOURCE ? fs.readFileSync(process.env.NOTICE_CREATE_SOURCE, "utf8") : text;
+  const body = (name) => {
+    const at = file.indexOf(`function ${name}(`);
+    assert.ok(at >= 0, `${name} exists`);
+    return file.slice(at, file.indexOf("\n  }\n", at));
+  };
+  // "The end must come after the start" sits on the end, but moving either time can fix it.
+  assert.match(body("clearTimeErrors"), /form\.clearField\("from"\);\s*form\.clearField\("to"\);/);
+  assert.match(body("applyPicked"), /clearTimeErrors\(\);/);
+  // Clearing a time by its own button releases the gate as well.
+  assert.equal((file.match(/set(?:From|To)\(null\);\s*clearTimeErrors\(\);/g) ?? []).length, 2);
+});

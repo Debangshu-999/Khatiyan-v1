@@ -37,6 +37,8 @@ public record PropertyDiscoveryDetailResponse(
         PreferredTenantType preferredFor,
         boolean foodIncluded,
         Set<MealType> includedMeals,
+        /** The current meal rating, only when the owner chose to show it. Null otherwise. */
+        Double mealRating,
         boolean electricityIncluded,
         /** Whether visitors are allowed. Null when the owner has not said. */
         Boolean visitorsAllowed,
@@ -106,6 +108,7 @@ public record PropertyDiscoveryDetailResponse(
     public static PropertyDiscoveryDetailResponse from(
             PropertyResponse property,
             PropertyDiscoveryProfile profile,
+            Double mealRating,
             Double distanceKm,
             String directionsUrl,
             Long startingRoomRentPaise,
@@ -136,6 +139,7 @@ public record PropertyDiscoveryDetailResponse(
                 property.preferredFor(),
                 property.foodIncluded(),
                 property.includedMeals(),
+                mealRating,
                 property.electricityIncluded(),
                 property.visitorsAllowed(),
                 property.bathroomType(),

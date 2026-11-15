@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { EmptyVisits } from "@/components/empty-art";
 import { ImageBackground, Linking, Text, View } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import {
@@ -203,7 +204,7 @@ export default function MyVisitsScreen() {
         ) : list.length === 0 ? (
           <EmptyState
             // The Property screen's own Visiting Hours mark (user, 2026-10-04).
-            artworkNode={<PropertyVisitsIcon size={64} />}
+            artworkNode={<EmptyVisits size={120} />}
             description={TAB_COPY[tab].empty}
             title={TAB_COPY[tab].emptyTitle}
           />

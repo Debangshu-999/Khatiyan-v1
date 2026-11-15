@@ -54,7 +54,7 @@ public class BillReceiptPdfService {
     /** Dates are the tenant's, so they are read in the tenant's zone. */
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
-    private static final Pattern DAMAGE_CHARGE = Pattern.compile("^Damage (DMG-\\d{4}-\\d+): (.+) \\((D[123])\\)(, split \\d+)?$");
+    private static final Pattern DAMAGE_CHARGE = Pattern.compile("^Damage (DMG-\\d{4}-\\d+): (.+?)(?: \\((D[123])\\))?(, split \\d+)?$");
 
     /**
      * The receipt as PDF bytes.
@@ -128,6 +128,12 @@ public class BillReceiptPdfService {
         for (BillingCycleLineItemResponse extra : extras) {
             charges.append(chargeRow(extra.label(), extra.amountPaise()));
         }
+        // Damages raised together share one bill (user, 2026-11-07), so the receipt says so.
+        long damageCount = extras.stream().filter(extra -> DAMAGE_CHARGE.matcher(extra.label()).matches()).count();
+        String damageNote = damageCount > 1
+                ? "<div class=\"note\">This bill covers " + damageCount
+                        + " damages raised together. Each line is one damage, with its DMG code under it.</div>"
+                : "";
         if (unitemised > 0) {
             charges.append(row("Extra charges", money(unitemised), false));
         }
@@ -158,7 +164,7 @@ public class BillReceiptPdfService {
 
         String billDetails = detailRow("Bill Number", cycle.referenceCode(), true)
                 + detailRow(cycle.category() == BillingCycleCategory.ONE_OFF ? "Bill name" : "Bill Cycle", billTitle(cycle), false)
-                + detailRow("Bill Date", date(cycle.createdAt()), false)
+                + detailRow("Generated On", date(cycle.createdAt()), false)
                 + detailRow("Due Date", date(cycle.rentDueDate()), false)
                 + detailRow("Bill Status", humanize(cycle.status().name()), false)
                 + detailRow("Paid On", date(paidOn), false);
@@ -291,9 +297,9 @@ public class BillReceiptPdfService {
                 row("Total Amount Due", money(cycle.totalAmountPaise()), true),
                 // Nothing to ask for once it is settled. Asking for payment on a
                 // receipt for money already received is the line a tenant replies to.
-                paidOn == null
+                damageNote + (paidOn == null
                     ? "<div class=\"note\">Please make the payment by the due date. Thank you for your support.</div>"
-                    : "");
+                    : ""));
     }
 
     private static String row(String label, String amount, boolean strong) {
@@ -311,7 +317,9 @@ public class BillReceiptPdfService {
     private static String chargeRow(String label, long amountPaise) {
         Matcher damage = DAMAGE_CHARGE.matcher(label);
         return damage.matches()
-                ? row("Damage: " + damage.group(2) + " - " + damage.group(3) + (damage.group(4) == null ? "" : damage.group(4)), "(" + damage.group(1) + ")", money(amountPaise), false)
+                // The level is left out for a damage recorded without one (2026-11-07).
+                ? row("Damage: " + damage.group(2) + (damage.group(3) == null ? "" : " - " + damage.group(3))
+                        + (damage.group(4) == null ? "" : damage.group(4)), "(" + damage.group(1) + ")", money(amountPaise), false)
                 : row(label, money(amountPaise), false);
     }
 
@@ -323,7 +331,7 @@ public class BillReceiptPdfService {
     /** Rent cycles are numbered; damage has a short bill name, with item details in the charges table. */
     private static String billTitle(BillingCycleResponse cycle) {
         if (cycle.cycleNumber() != null) {
-            return "Cycle " + cycle.cycleNumber();
+            return "Rent cycle #" + cycle.cycleNumber();
         }
         String label = cycle.lineItems().isEmpty() ? "One-off bill" : cycle.lineItems().get(0).label();
         Matcher damage = DAMAGE_CHARGE.matcher(label);

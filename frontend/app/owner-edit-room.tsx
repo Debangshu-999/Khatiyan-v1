@@ -199,7 +199,8 @@ export default function OwnerEditRoomScreen() {
     <>
       <ScreenScrollView
         safeAreaEdges={["top"]}
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE + insets.bottom }}
+        // Room type starts right under the header bar, no gap above it (user, 2026-11-08).
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE + insets.bottom, paddingTop: 0 }}
         surface={colors.formSurface}
       >
         <ScreenHeader
@@ -208,7 +209,7 @@ export default function OwnerEditRoomScreen() {
           title="Edit"
         />
 
-        <View style={{ gap: spacing.lg, marginTop: spacing.md }}>
+        <View style={{ gap: spacing.lg }}>
           {rooms.isLoading || molds.isLoading ? (
             <OwnerSettingsFormSkeleton fields={5} />
           ) : !room || !seeded ? (

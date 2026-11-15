@@ -82,6 +82,8 @@ export type PropertyDiscoveryDetail = PropertyDiscoveryCard & {
   images: PropertyImage[];
   showOwnerContact: boolean;
   showManagerContact: boolean;
+  /** The current meal rating, only when the owner chose to show it. */
+  mealRating: number | null;
 };
 
 /**
@@ -268,6 +270,9 @@ export type OwnerDiscoveryProfile = {
   publicVisible: boolean;
   showOwnerContact: boolean;
   showManagerContact: boolean;
+  showMealRating: boolean;
+  /** The current meal rating, whether or not the listing shows it. Null with none. */
+  mealRating: number | null;
   publishedAt: string | null;
   active: boolean;
 };
@@ -281,6 +286,7 @@ export type UpdateOwnerDiscoveryProfilePayload = {
   profileImageUrl?: string | null;
   showOwnerContact?: boolean | null;
   showManagerContact?: boolean | null;
+  showMealRating?: boolean | null;
 };
 
 /** One image in a property's discovery gallery. `cover` is the listing thumbnail. */
@@ -381,6 +387,43 @@ export const discoveryApi = api.injectEndpoints({
         url: `/api/v1/discovery/properties/${propertyId}`,
         params: cleanParams({ latitude, longitude }),
       }),
+      providesTags: ["Discovery"],
+    }),
+    // Saved properties (user, 2026-11-14): the bookmark on a profile and the Saved properties screen.
+    listSavedPropertyIds: builder.query<string[], void>({
+      query: () => ({ url: "/api/v1/discovery/me/saved-properties/ids" }),
+      providesTags: ["SavedProperty"],
+    }),
+    listSavedProperties: builder.query<PropertyDiscoveryCard[], { latitude?: number | null; longitude?: number | null }>({
+      query: ({ latitude, longitude }) => ({
+        url: "/api/v1/discovery/me/saved-properties",
+        params: cleanParams({ latitude, longitude }),
+      }),
+      providesTags: ["SavedProperty"],
+    }),
+    setPropertySaved: builder.mutation<void, { propertyId: string; saved: boolean }>({
+      invalidatesTags: ["SavedProperty"],
+      // The bookmark fills at once, and a refusal puts it back.
+      async onQueryStarted({ propertyId, saved }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          discoveryApi.util.updateQueryData("listSavedPropertyIds", undefined, (ids) => {
+            const without = ids.filter((id) => id !== propertyId);
+            return saved ? [propertyId, ...without] : without;
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+      query: ({ propertyId, saved }) => ({
+        method: saved ? "PUT" : "DELETE",
+        url: `/api/v1/discovery/me/saved-properties/${propertyId}`,
+      }),
+    }),
+    getListingPreview: builder.query<PropertyDiscoveryDetail, string>({
+      query: (propertyId) => ({ url: `/api/v1/properties/${propertyId}/discovery-profile/preview` }),
       providesTags: ["Discovery"],
     }),
     listMyLocalPlaces: builder.query<PropertyLocalPlace[], LocalPlaceSearch>({
@@ -602,6 +645,7 @@ export const {
   useCreateLocalPlaceSubcategoryMutation,
   useDeleteLocalPlaceMutation,
   useGetDiscoveryPropertyQuery,
+  useGetListingPreviewQuery,
   useGetOwnerDiscoveryProfileQuery,
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
@@ -611,6 +655,9 @@ export const {
   useMakePropertyImageCoverMutation,
   useRemovePropertyImageMutation,
   useListMyLocalPlacesQuery,
+  useListSavedPropertiesQuery,
+  useListSavedPropertyIdsQuery,
+  useSetPropertySavedMutation,
   useGetMyLocalPlacesMapQuery,
   useListMyLocalPlaceTaxonomyQuery,
   usePublishOwnerDiscoveryProfileMutation,

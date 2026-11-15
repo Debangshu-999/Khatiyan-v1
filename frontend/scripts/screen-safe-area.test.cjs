@@ -72,6 +72,7 @@ function harness({ os = "android", insets = defaultInsets, segments = ["owner-ac
     "@/components/screen-header": { ScreenHeader, ScreenHeaderScrollContext: { Provider: "HeaderContext" } },
     "@/store/api": { API_TAGS: [], api: { util: { invalidateTags() {} } } },
     "@/store/hooks": { useAppDispatch: () => () => {} },
+    "@/lib/pull-refresh": { announcePullRefreshed: () => {}, untilQueriesSettle: async () => {} },
     "@/store/slices/location-slice": { fetchCurrentLocation() {} },
     "@/theme/spacing": { spacing },
     "@/theme/use-theme": { useTheme: () => ({ colors: { background: "background", surface: "surface" } }) },
@@ -184,7 +185,10 @@ test("scrolling and the fit-to-content reset retain the same safe frame and shar
   const marker = descendants(page.scroll).find((node) => node.key === "screen/natural-bottom");
   marker.props.onLayout({ nativeEvent: { layout: { y: 200 } } });
   page = h.render(); h.flush();
-  assert.equal(page.scroll.props.scrollEnabled, false);
+  // A fitting page stays scrollable on a phone so the pull-to-refresh gesture works
+  // (user, 2026-11-07). It has no room to move. With refresh off it locks as before.
+  assert.equal(page.scroll.props.scrollEnabled, true);
+  assert.equal(h.render({ refreshable: false }).scroll.props.scrollEnabled, false);
   assert.equal(page.context.props.value.scrollY.value, 0);
   assertSafeFrame(page, defaultInsets);
 });
@@ -220,7 +224,9 @@ for (const os of ["android", "ios", "web"]) {
     marker.props.onLayout({ nativeEvent: { layout: { y: 300 } } });
     page.scroll.props.onContentSizeChange(390, 428);
     page = h.render(props); h.flush();
-    assert.equal(page.scroll.props.scrollEnabled, false);
+    // Locked on the web. On a phone it stays pullable for refresh (2026-11-07).
+    assert.equal(page.scroll.props.scrollEnabled, os !== "web");
+    assert.equal(h.render({ ...props, refreshable: false }).scroll.props.scrollEnabled, false);
   });
 }
 

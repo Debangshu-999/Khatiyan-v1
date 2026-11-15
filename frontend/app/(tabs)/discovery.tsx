@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { EMPTY_ART_FOR_PICTURE, EmptySearch } from "@/components/empty-art";
 import { useLocalSearchParams } from "expo-router";
 import { Animated, Easing, Image, ImageBackground, Text, View, type ImageSourcePropType, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { ArrowUpRight, MapPin, TrainFront } from "lucide-react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { LoadFailed } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
@@ -30,7 +33,7 @@ import { PropertyProfileLayer, type PropertyProfileLayerHandle } from "@/feature
 import type { ProfileSource } from "@/features/analytics/use-profile-view";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
 import { useAppSelector } from "@/store/hooks";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import {
   useListLocationAreasQuery,
   useListLocationCitiesQuery,
@@ -148,6 +151,7 @@ function NearbyMapCard({ onPress }: { onPress: () => void }) {
           borderRadius: 20,
           borderWidth: 1,
           overflow: "hidden",
+          ...cardShadow(colors.shadow),
         }}
       >
         <View
@@ -246,6 +250,9 @@ export default function DiscoveryScreen() {
   // (see PropertyProfileLayer), opened through this ref so that opening or
   // closing it never re-renders the results list underneath.
   const profileLayer = useRef<PropertyProfileLayerHandle>(null);
+  // View saved (user, 2026-11-14), beside the title. Memoised: a compact header re-publishes on a
+  // new trailing element, and a fresh one every render loops.
+  const viewSaved = useMemo(() => <ViewSavedButton onPress={() => router.push("/saved-properties")} />, [router]);
   const openProfile = useCallback(
     (propertyId: string, source: ProfileSource = "SEARCH") => profileLayer.current?.open(propertyId, source),
     [],
@@ -300,7 +307,9 @@ export default function DiscoveryScreen() {
   const capabilitiesQuery = useGetAiCapabilitiesQuery(undefined, { refetchOnMountOrArgChange: 60 });
   const [smartSearch, smartSearchState] = useSmartSearchMutation();
   const aiInFlight = useRef(false);
-  const aiAvailable = capabilitiesQuery.data?.smartSearch ?? false;
+  // There from the first frame while the answer is on its way, or the card pops in over the
+  // screen after a moment (user, 2026-11-02). It goes only once the server says it is off.
+  const aiAvailable = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.smartSearch ?? true;
   /**
    * While AI search is on, it is the ONLY input method.
    *
@@ -839,6 +848,7 @@ export default function DiscoveryScreen() {
         italicTail="places."
         subtitle="Properties and local services around your selected location."
         title="Discover"
+        trailing={viewSaved}
       />
 
       <TabSwitcher active={activeTab} onChange={setActiveTab} options={tabs} />
@@ -983,7 +993,7 @@ export default function DiscoveryScreen() {
           {hasActiveSearch && !showingAiResults && !aiSearching ? (
             <>
           {/* Direct, not the Card's own: a tab's card shadow is one phones do not draw. */}
-          <Card style={{ borderRadius: 28, overflow: "hidden", ...softShadow(colors.shadow, 4, 12) }}>
+          <Card style={{ borderRadius: 28, overflow: "hidden", ...cardShadow(colors.shadow) }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, justifyContent: "space-between" }}>
               <View style={{ flex: 1, gap: spacing.xs }}>
                 {/* Sort sits beside the title (user, 2026-10-02), not on a
@@ -1049,13 +1059,7 @@ export default function DiscoveryScreen() {
                   paddingTop: spacing.sm,
                 }}
               >
-                <Image
-                  resizeMethod="resize"
-                  accessibilityIgnoresInvertColors
-                  resizeMode="contain"
-                  source={EMPTY_SEARCH_ILLUSTRATION}
-                  style={{ height: 144, width: 144 }}
-                />
+                <EmptySearch size={144} />
                 <Text
                   style={{
                     color: colors.ink,
@@ -1319,16 +1323,24 @@ function EmptySearchPrompt({
   }, [bob]);
 
   const iconTranslateY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -7] });
+  // The picture's vector redraw in the empty-state tone (user, 2026-11-14), still bobbing.
+  const Art = EMPTY_ART_FOR_PICTURE.get(artwork);
 
   return (
-    <View style={{ alignItems: "center", gap: spacing.lg, justifyContent: "center", paddingVertical: spacing.xxl }}>
-      <Animated.Image
-        resizeMethod="resize"
-        accessibilityIgnoresInvertColors
-        resizeMode="contain"
-        source={artwork}
-        style={{ height: 138, transform: [{ translateY: iconTranslateY }], width: 138 }}
-      />
+    <View style={{ alignItems: "center", gap: spacing.sm, justifyContent: "center", paddingVertical: spacing.xxl }}>
+      {Art ? (
+        <Animated.View style={{ transform: [{ translateY: iconTranslateY }] }}>
+          <Art size={138} />
+        </Animated.View>
+      ) : (
+        <Animated.Image
+          resizeMethod="resize"
+          accessibilityIgnoresInvertColors
+          resizeMode="contain"
+          source={artwork}
+          style={{ height: 138, transform: [{ translateY: iconTranslateY }], width: 138 }}
+        />
+      )}
       <View style={{ alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.lg }}>
         <Text
           style={{
@@ -1343,5 +1355,36 @@ function EmptySearchPrompt({
         </Text>
       </View>
     </View>
+  );
+}
+
+/**
+ * The pill beside Discover's title that opens Saved properties (user, 2026-11-14):
+ * an orange-to-rose gradient, not blue, with the bookmark and the words in white,
+ * and no shadow. Nothing in it may wrap or shrink: the header measures it on web
+ * before the words are laid out, and a wrapping label measured narrow and spilled
+ * off the screen.
+ */
+function ViewSavedButton({ onPress }: { onPress: () => void }) {
+  const { fonts } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityLabel="View saved properties"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{ borderRadius: 999, flexShrink: 0, overflow: "hidden" }}
+    >
+      <LinearGradient
+        colors={["#EA580C", "#DB2777"]}
+        end={{ x: 1, y: 0.5 }}
+        start={{ x: 0, y: 0.5 }}
+        style={{ alignItems: "center", flexDirection: "row", flexShrink: 0, gap: 6, height: 36, paddingHorizontal: spacing.md }}
+      >
+        <MaterialCommunityIcons color="#FFFFFF" name="bookmark-multiple" size={16} />
+        <Text numberOfLines={1} style={{ color: "#FFFFFF", flexShrink: 0, fontFamily: fonts.sansBold, fontSize: 13, letterSpacing: 0.1 }}>
+          View saved
+        </Text>
+      </LinearGradient>
+    </AnimatedPressable>
   );
 }

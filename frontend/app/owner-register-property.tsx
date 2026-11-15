@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CalendarDays } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useUnsavedChanges } from "@/components/use-unsaved-changes";
@@ -15,10 +14,12 @@ import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
+import { matchIndianState } from "@/features/property/indian-states";
+import { StateDropdown } from "@/features/property/state-dropdown";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal } from "@/features/geo/map-location-picker";
+import { Card } from "@/components/card";
 import { ChoiceCard, ChoiceGrid, ChoiceSection } from "@/components/choice-section";
-import { SectionHeading } from "@/components/section-heading";
 import { FacilitiesField } from "@/features/owner/facilities-field";
 import { StayChoiceSections } from "@/features/property/stay-choice-sections";
 import {
@@ -176,7 +177,7 @@ export default function OwnerRegisterPropertyScreen() {
         ...(address.trim() ? {} : { address: "Enter address line 1." }),
         ...(area.trim() ? {} : { area: "Enter the area or locality." }),
         ...(city.trim() ? {} : { city: "Enter the city." }),
-        ...(state.trim() ? {} : { state: "Enter the state." }),
+        ...(matchIndianState(state) ? {} : { state: "Choose the state." }),
         ...(pincode.trim() ? {} : { pincode: "Enter the pincode." }),
       };
     }
@@ -251,7 +252,8 @@ export default function OwnerRegisterPropertyScreen() {
   const [electricityIncluded, setElectricityIncluded] = useState(false);
   // Unanswered until the owner picks one. Registering without it is allowed,
   // and the listing then says "Not specified" rather than guessing.
-  const [visitorsAllowed, setVisitorsAllowed] = useState<boolean | null>(null);
+  // Never blank (user, 2026-11-08): it shows on the profile, so it starts on "Not allowed".
+  const [visitorsAllowed, setVisitorsAllowed] = useState<boolean>(false);
   const [bathroomType, setBathroomType] = useState<BathroomType>("COMMON");
   const [availableSharingTypes, setAvailableSharingTypes] = useState<RoomType[]>([]);
   const [facilities, setFacilities] = useState<PropertyFacility[]>([]);
@@ -318,7 +320,7 @@ export default function OwnerRegisterPropertyScreen() {
       ...(address.trim() ? {} : { address: "Enter address line 1." }),
       ...(area.trim() ? {} : { area: "Enter the area or locality." }),
       ...(city.trim() ? {} : { city: "Enter the city." }),
-      ...(state.trim() ? {} : { state: "Enter the state." }),
+      ...(matchIndianState(state) ? {} : { state: "Choose the state." }),
       ...(pincode.trim() ? {} : { pincode: "Enter the pincode." }),
       ...(availableSharingTypes.length ? {} : { sharing: "Choose at least one sharing option." }),
       ...(facilities.length || customFacilities.length ? {} : { facilities: "Add at least one facility." }),
@@ -374,7 +376,7 @@ export default function OwnerRegisterPropertyScreen() {
         rentGraceDays: grace,
         rentLateFeePerDayPaise: rupeesToPaise(lateFee),
         standardDepositPaise: depositPaise,
-        state: state.trim(),
+        state: matchIndianState(state) ?? state.trim(),
         type: propertyType,
       }).unwrap();
       unsaved.markSaved();
@@ -439,8 +441,10 @@ export default function OwnerRegisterPropertyScreen() {
     if (picked.city) {
       setCity(picked.city);
     }
-    if (picked.state) {
-      setState(picked.state);
+    // Only a state on the list: the dropdown cannot show anything else (2026-11-08).
+    const pickedState = matchIndianState(picked.state);
+    if (pickedState) {
+      setState(pickedState);
     }
     if (picked.pincode) {
       setPincode(picked.pincode);
@@ -495,7 +499,8 @@ export default function OwnerRegisterPropertyScreen() {
       {/* Held still while the form scrolls under it: the step count and the bar
           answer "where am I and how much is left", which is asked precisely when
           someone has scrolled far enough to have pushed the answer off screen. */}
-      <PinnedWizardHeader onHeightChange={wizardHeader.onHeightChange}>
+      {/* A deep blue header (user, 2026-11-08). */}
+      <PinnedWizardHeader onHeightChange={wizardHeader.onHeightChange} tone="deep">
         <WizardHeader
           accentWord="property"
           onBack={previousStep ? () => setStep(previousStep) : undefined}
@@ -505,11 +510,15 @@ export default function OwnerRegisterPropertyScreen() {
           onClose={() => router.back()}
           step={stepIndex}
           title="Register a"
+          tone="deep"
           totalSteps={REGISTER_STEPS.length}
         />
       </PinnedWizardHeader>
 
       <ScreenScrollView
+        // The pinned Continue sits over the bottom padding, so that room is not
+        // spare. Without this the page counted it as fitting and locked (user, 2026-11-07).
+        bottomPaddingCovered
         // Cleared by the measured header rather than a guessed number — the
         // header is not the same height on every step. lg, not sm: the panel is
         // an object with a curved edge, and content arriving right against that
@@ -522,13 +531,17 @@ export default function OwnerRegisterPropertyScreen() {
       >
 
       {step === "basics" ? (
-      <FormSection title="Name & location">
+      <FormSection>
+        <Card>
         <FormInput autoCapitalize="words" label="Property name" error={form.errors.name} onChangeText={(next) => { setName(next); form.clearField("name"); }} placeholder="e.g. Sunrise Residency" value={name} required />
+        </Card>
         <LocationPinCard
           addressSummary={addressSummaryLine(area, city, pincode)}
           coords={coords}
           onPress={() => setPickerOpen(true)}
+          raised
         />
+        <Card>
         <FormInput label="Address line 1" multiline error={form.errors.address} onChangeText={(next) => { setAddress(next); form.clearField("address"); }} placeholder="Building, street, landmark" value={address} required />
         <FormInput autoCapitalize="words" label="Address line 2 / Area" error={form.errors.area} onChangeText={(next) => { setArea(next); form.clearField("area"); }} placeholder="Area or locality" value={area} required />
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -536,16 +549,17 @@ export default function OwnerRegisterPropertyScreen() {
             <FormInput autoCapitalize="words" label="City" error={form.errors.city} onChangeText={(next) => { setCity(next); form.clearField("city"); }} placeholder="City" value={city} required />
           </View>
           <View style={{ flex: 1 }}>
-            <FormInput autoCapitalize="words" label="State" error={form.errors.state} onChangeText={(next) => { setState(next); form.clearField("state"); }} placeholder="State" value={state} required />
+            <StateDropdown error={form.errors.state} onChange={(next) => { setState(next); form.clearField("state"); }} value={matchIndianState(state)} />
           </View>
         </View>
         <FormInput keyboardType="number-pad" label="Pincode" maxLength={6} error={form.errors.pincode} onChangeText={(next) => { setPincode(next); form.clearField("pincode"); }} placeholder="6 digit pincode" value={pincode} required />
+        </Card>
       </FormSection>
 
       ) : null}
 
       {step === "rooms" ? (
-      <FormSection title="Rooms & inclusions">
+      <FormSection>
         {/* What the property is and what it offers, together: the two answers
             that decide every room type on the next step. */}
         <ChoiceCard style={{ gap: spacing.md }}>
@@ -576,6 +590,7 @@ export default function OwnerRegisterPropertyScreen() {
         </ChoiceCard>
 
         <StayChoiceSections
+          plain
           bathroomType={bathroomType}
           electricityIncluded={electricityIncluded}
           includedMeals={includedMeals}
@@ -611,7 +626,7 @@ export default function OwnerRegisterPropertyScreen() {
       ) : null}
 
       {step === "types" ? (
-      <FormSection title="Room types">
+      <FormSection>
         <ChoiceCard style={{ gap: spacing.md }}>
           <View style={{ gap: 4 }}>
             {ROOM_TYPE_INTRO.map((line) => (
@@ -637,7 +652,7 @@ export default function OwnerRegisterPropertyScreen() {
       ) : null}
 
       {step === "pricing" ? (
-      <FormSection title="Pricing & policy">
+      <FormSection>
         <ChoiceCard style={{ gap: spacing.md }}>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <View style={{ flex: 1 }}>
@@ -684,7 +699,8 @@ export default function OwnerRegisterPropertyScreen() {
             </View>
           ) : null}
           description="Can guests book short stays by the day?"
-          icon={CalendarDays}
+          contentStyle={{ marginLeft: 0 }}
+          softSelection
           title="Offers daily stays"
         >
           <ChoiceGrid
@@ -699,7 +715,11 @@ export default function OwnerRegisterPropertyScreen() {
       ) : null}
 
       {step === "images" ? (
-      <FormSection title="Listing images" trailing={<UploadRulesInfo max={MAX_PROPERTY_IMAGES} />}>
+      <FormSection>
+        {/* The upload rules, now that the step has no heading to sit beside (user, 2026-11-07). */}
+        <View style={{ alignSelf: "flex-end" }}>
+          <UploadRulesInfo max={MAX_PROPERTY_IMAGES} />
+        </View>
         <ChoiceCard style={{ gap: spacing.md }}>
           {images.length < MAX_PROPERTY_IMAGES ? (
             <AddPhotoTarget busy={uploading} onPress={() => void pickImages()} />
@@ -735,7 +755,7 @@ export default function OwnerRegisterPropertyScreen() {
       ) : null}
 
       {step === "listing" ? (
-      <FormSection title="Discovery profile">
+      <FormSection>
         <ChoiceCard style={{ gap: spacing.md }}>
           <FormInput autoCapitalize="sentences" label="Headline" onChangeText={setHeadline} placeholder="Optional — short listing headline" value={headline} />
           <FormInput label="Description" multiline onChangeText={setDescription} placeholder="Optional — what should prospects know?" value={description} />
@@ -841,11 +861,7 @@ export default function OwnerRegisterPropertyScreen() {
  * owner is, and a second label naming the same step left two headings for one
  * section. The cards inside are the steps' own, matching edit property.
  */
-function FormSection({ children, title, trailing }: { children: ReactNode; title: string; trailing?: ReactNode }) {
-  return (
-    <View style={{ gap: spacing.md }}>
-      <SectionHeading title={title} trailing={trailing} />
-      <View style={{ gap: spacing.md }}>{children}</View>
-    </View>
-  );
+function FormSection({ children }: { children: ReactNode }) {
+  // No heading either, as on Edit property (user, 2026-11-07).
+  return <View style={{ gap: spacing.md }}>{children}</View>;
 }

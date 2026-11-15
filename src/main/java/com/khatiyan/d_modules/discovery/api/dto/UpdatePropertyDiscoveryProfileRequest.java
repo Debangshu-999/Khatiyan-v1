@@ -20,6 +20,9 @@ public record UpdatePropertyDiscoveryProfileRequest(
 
         Boolean showOwnerContact,
 
-        Boolean showManagerContact
+        Boolean showManagerContact,
+
+        /** Left alone when null, like the two above. */
+        Boolean showMealRating
 ) {
 }

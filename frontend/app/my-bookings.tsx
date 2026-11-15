@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmptyBookings } from "@/components/empty-art";
 import { Text, View } from "react-native";
 import { CalendarDays, Clock3, IndianRupee, MessageCircle } from "lucide-react-native";
 
@@ -46,7 +47,7 @@ export default function MyBookingsScreen() {
     {data ? <View style={{ alignSelf: "flex-start", backgroundColor: colors.primarySoft, borderRadius: 12, paddingHorizontal: spacing.md, paddingVertical: 8 }}>
       <Text style={{ color: colors.primaryDeep, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>{tenantBookingCount(items.length, tab)}</Text>
     </View> : null}
-    {data && !query.isError && !items.length ? <EmptyState artworkNode={<BookingsIcon size={64} />} title={emptyTitle} description={emptyDescription} action={search.trim() ? <View style={{ flexDirection: "row" }}><ActionButton label="Clear search" variant="secondary" onPress={() => setSearch("")} /></View> : tab === "ACTIVE" ? <View style={{ maxWidth: 320, width: "100%" }}><SplitButton left={{ label: "My visits", onPress: () => router.push("/my-visits") }} right={{ label: "My enquiries", onPress: () => router.push("/my-enquiries") }} /></View> : undefined} /> : null}
+    {data && !query.isError && !items.length ? <EmptyState artworkNode={<EmptyBookings size={120} />} title={emptyTitle} description={emptyDescription} action={search.trim() ? <View style={{ flexDirection: "row" }}><ActionButton label="Clear search" variant="secondary" onPress={() => setSearch("")} /></View> : undefined} /> : null}
     {items.map((item) => <TenantBookingListCard key={item.id} item={item} onChat={() => void openChat({ referenceCode: item.referenceCode, requestId: item.id, title: item.propertyName })} onOpen={() => router.push({ pathname: "/my-booking-detail", params: { requestId: item.id } })} />)}
   </ScreenScrollView>;
 }

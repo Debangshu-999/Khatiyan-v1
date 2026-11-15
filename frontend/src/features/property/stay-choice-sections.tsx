@@ -43,6 +43,9 @@ const PG_FOR_ICONS: Partial<Record<PgFor, ComponentType<LucideProps>>> = {
 
 const YES_NO = ["YES", "NO"] as const;
 
+/** In the order they are served, snacks before dinner, two to a row (user, 2026-11-07). */
+const MEALS_IN_DAY_ORDER: MealType[] = ["BREAKFAST", "LUNCH", "EVENING_SNACKS", "DINNER"];
+
 /**
  * Who a property is for and what comes with a stay, as registration and the
  * editor both ask it.
@@ -66,6 +69,7 @@ export function StayChoiceSections({
   onToggleMeal,
   onVisitorsAllowed,
   pgFor,
+  plain = false,
   preferredFor,
   visitorsAllowed,
 }: {
@@ -79,13 +83,17 @@ export function StayChoiceSections({
   onToggleMeal: (meal: MealType) => void;
   onVisitorsAllowed: (value: boolean) => void;
   pgFor: PgFor;
+  /** As on Property filters: no icon disc, a bold sentence-case title, choices full width (user, 2026-11-07). */
+  plain?: boolean;
   preferredFor: PreferredTenantType;
   /** Null until the owner answers, so nothing is selected rather than a guess. */
   visitorsAllowed: boolean | null;
 }) {
+  const look = (icon: ComponentType<LucideProps>) => (plain ? { contentStyle: { marginLeft: 0 }, softSelection: true } : { icon });
+
   return (
     <>
-      <ChoiceSection description="Who can stay at this property?" icon={UsersRound} title="PG/Hostel for">
+      <ChoiceSection description="Who can stay at this property?" {...look(UsersRound)} title="PG/Hostel for">
         <ChoiceGrid
           getIcon={(option) => PG_FOR_ICONS[option]}
           getLabel={humanizeToken}
@@ -95,7 +103,7 @@ export function StayChoiceSections({
         />
       </ChoiceSection>
 
-      <ChoiceSection description="Who is this property suitable for?" icon={GraduationCap} title="Preferred for">
+      <ChoiceSection description="Who is this property suitable for?" {...look(GraduationCap)} title="Preferred for">
         <ChoiceGrid
           getLabel={(option) => (option === "PROFESSIONAL" ? "Working" : humanizeToken(option))}
           onSelect={onPreferredFor}
@@ -108,14 +116,14 @@ export function StayChoiceSections({
           reading the filter gives an empty selection. */}
       <ChoiceSection
         description="Which meals are included in the rent?"
-        footnote="Leave all unselected if no meals are included."
-        icon={UtensilsCrossed}
+        footnote={plain && includedMeals.length > 0 ? "Tap a meal to remove it." : "Leave all unselected if no meals are included."}
+        {...look(UtensilsCrossed)}
         title="Meals included"
       >
-        <MultiChoiceGrid getLabel={humanizeToken} onToggle={onToggleMeal} options={MEAL_TYPES} selected={includedMeals} />
+        <MultiChoiceGrid columns={plain ? 2 : undefined} getLabel={(meal) => (plain && meal === "EVENING_SNACKS" ? "Snacks" : humanizeToken(meal))} onToggle={onToggleMeal} options={plain ? MEALS_IN_DAY_ORDER : MEAL_TYPES} selected={includedMeals} />
       </ChoiceSection>
 
-      <ChoiceSection description="Is electricity included in the rent?" icon={Zap} title="Electricity included">
+      <ChoiceSection description="Is electricity included in the rent?" {...look(Zap)} title="Electricity included">
         <ChoiceGrid
           getLabel={(option) => (option === "YES" ? "Yes" : "No")}
           onSelect={(option) => onElectricityIncluded(option === "YES")}
@@ -124,11 +132,11 @@ export function StayChoiceSections({
         />
       </ChoiceSection>
 
-      <ChoiceSection description="Choose the bathroom arrangement" icon={Bath} title="Bathroom type">
+      <ChoiceSection description="Choose the bathroom arrangement" {...look(Bath)} title="Bathroom type">
         <ChoiceGrid getLabel={humanizeToken} onSelect={onBathroomType} options={BATHROOM_TYPES} selected={bathroomType} />
       </ChoiceSection>
 
-      <ChoiceSection description="Can tenants have visitors?" icon={WavingPerson} title="Visitors">
+      <ChoiceSection description="Can tenants have visitors?" {...look(WavingPerson)} title="Visitors">
         <ChoiceGrid
           getLabel={(option) => (option === "YES" ? "Allowed" : "Not allowed")}
           onSelect={(option) => onVisitorsAllowed(option === "YES")}

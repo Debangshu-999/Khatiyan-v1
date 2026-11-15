@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   BackHandler,
   Dimensions,
   KeyboardAvoidingView,
@@ -36,7 +37,8 @@ import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { Lightbox } from "@/components/image-carousel";
 import { ChatMessagesSkeleton } from "@/components/skeletons";
 import { useToast } from "@/components/toast";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom } from "@/components/use-keyboard-inset";
+import { announceInputBlur, announceInputFocus } from "@/components/keyboard-intent";
 import { useHardwareBack } from "@/components/use-hardware-back";
 import { dayDivider } from "@/features/chat/chat-time";
 import { ChatAvatar } from "@/features/chat/chat-avatar";
@@ -61,6 +63,7 @@ import {
   type ChatMessage,
 } from "@/store/services/chat-api";
 import { useGetEnquiryChatActionsQuery } from "@/store/services/enquiry-chat-api";
+// The floating chat bubbles keep the faint shadow without the cards' grey edges (user, 2026-11-13).
 import { softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -77,7 +80,10 @@ export default function ChatThreadScreen() {
   const router = useGuardedRouter();
   const toast = useToast();
   const insets = useSafeAreaInsets();
-  const keyboardInset = useKeyboardInset();
+  // The modals' keyboard treatment (user, 2026-11-13): room that eases in as the input takes
+  // focus and settles on the keyboard's real height. It rests at the gesture bar's inset.
+  const { inset: keyboardInset, room: keyboardRoom } = useKeyboardRoom(insets.bottom);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [restingHeight, setRestingHeight] = useState(0);
   const params = useLocalSearchParams<{
@@ -156,9 +162,13 @@ export default function ChatThreadScreen() {
   const nativeResize = Math.max(0, restingHeight - viewportHeight);
   const keyboardVisible =
     Platform.OS === "android" && (keyboardInset > 0 || nativeResize > spacing.xxxl);
-  const keyboardClearance = keyboardVisible
-    ? Math.max(0, keyboardInset - nativeResize) + spacing.md
-    : 0;
+  const keyboardClearance = keyboardVisible ? Math.max(0, keyboardInset - nativeResize) : 0;
+  // The whole body rises by the room, less any part a native resize already gave.
+  const bodyLift = Animated.add(keyboardRoom, -nativeResize).interpolate({
+    extrapolateLeft: "clamp",
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
 
   const scrollToEnd = useCallback(() => {
     // A frame late: the new bubble has to be laid out before there is anything
@@ -363,7 +373,7 @@ export default function ChatThreadScreen() {
 
   return (
     <SafeAreaView
-      edges={["top"]}
+      edges={[]}
       onLayout={(event) => {
         const height = event.nativeEvent.layout.height;
         setViewportHeight(height);
@@ -371,121 +381,15 @@ export default function ChatThreadScreen() {
       }}
       style={{ backgroundColor: colors.chatSurface, flex: 1 }}
     >
-      {/* Lifted, not ruled. The thread is white now, and a hairline across the
-          top of a white screen is the heaviest mark on it — a shadow says the
-          same thing (this floats above the conversation) without drawing a
-          line through the design. */}
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.chatSurface,
-          elevation: 3,
-          flexDirection: "row",
-          gap: spacing.md,
-          paddingBottom: spacing.md,
-          paddingHorizontal: spacing.md,
-          paddingTop: spacing.xs,
-          ...softShadow(colors.shadow, 3, 8),
-          zIndex: 2,
-        }}
-      >
-        {/* The same grey disc as every other back and close button in the app.
-            A bare arrow floating on white was the one navigation control that
-            did not look like a control. */}
-        <AnimatedPressable
-          accessibilityLabel="Back"
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={goBack}
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 999,
-            height: 32,
-            justifyContent: "center",
-            width: 32,
-          }}
-        >
-          <ArrowLeft color={colors.inkSoft} size={17} strokeWidth={2.4} />
-        </AnimatedPressable>
-
-        {/* Beside the name, as every messaging app puts it — it is the fastest
-            way to confirm you opened the right conversation. Ringed in the page
-            grey so a light photograph still reads as a disc against white.
-
-            The building only when the other side IS the property — management
-            reading a team thread is looking at a tenant, not at a place. */}
-        <View
-          style={{
-            borderColor: colors.border,
-            borderRadius: 999,
-            borderWidth: 1,
-            padding: 2,
-          }}
-        >
-          <ChatAvatar
-            name={title}
-            photoUrl={thread?.counterpartPhotoUrl ?? params.photo}
-            size={38}
-            team={
-              thread
-                ? thread.kind === "TEAM" && thread.counterpartUserId === null
-                : params.team === "1"
-            }
-          />
-        </View>
-
-        <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: 6, minWidth: 0 }}>
-            <FitText
-              numberOfLines={1}
-              style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.3 }}
-            >
-              {title}
-            </FitText>
-            {thread?.pendingAgreement ? (
-              <AlertTriangle
-                accessibilityLabel="Agreement not signed yet"
-                color="#FFFFFF"
-                fill={colors.warning}
-                size={19}
-                strokeWidth={2.2}
-                // The display face sits low in its line box, so a centred
-                // icon read as floating above the name.
-                style={{ marginTop: 6 }}
-              />
-            ) : null}
-          </View>
-          {params.subtitle ? (
-            // Caps and tracked out, the app's eyebrow voice. At caption size it
-            // competed with the name for the same reading; as a kicker it reads
-            // as a label ON the name instead of a second line of equal weight.
-            <FitText numberOfLines={1} style={[type.eyebrow, { color: colors.kicker }]}>
-              {params.subtitle}
-            </FitText>
-          ) : null}
-        </View>
-      </View>
-
-      {/* Pinned under the header, the messages scrolling beneath it (user,
-          2026-10-03). */}
-      {thread?.enquiryMessage ? (
-        <EnquiryMessageRow
-          message={thread.enquiryMessage}
-          onPanelHeight={setEnquiryPanelHeight}
-          onToggle={() => setEnquiryOpen((current) => !current)}
-          open={enquiryOpen}
-        />
-      ) : null}
-
       <KeyboardAvoidingView
         // Match the app's input modals: iOS uses padding, while Android uses
         // the measured keyboard inset instead of a sticky height mode.
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1, marginBottom: keyboardClearance }}
+        style={{ flex: 1 }}
       >
+        <Animated.View style={{ backgroundColor: colors.chatSurface, flex: 1, paddingBottom: bodyLift }}>
         <ScrollView
-          contentContainerStyle={{ paddingVertical: spacing.sm }}
+          contentContainerStyle={{ paddingBottom: composerHeight + spacing.sm, paddingTop: headerHeight + spacing.sm }}
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => {
             if (!loading && messages.length > 0) {
@@ -590,6 +494,7 @@ export default function ChatThreadScreen() {
                   </Text>
                 ) : null}
                 <MessageBubble
+                  editing={editing?.id === message.id}
                   message={message}
                   onLongPress={
                     message.deleted || actionRows(message) === 0
@@ -617,11 +522,123 @@ export default function ChatThreadScreen() {
           })}
         </ScrollView>
 
+        {/* Floating over the conversation like a messenger's (user, 2026-11-13):
+            a round back button and a pill with the face, the name and a line
+            under it when there is one. */}
+        <View
+          onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
+          // The chat's own ground, no blur (user, 2026-11-13).
+          style={{ backgroundColor: colors.chatSurface, left: 0, position: "absolute", right: 0, top: 0, zIndex: 2 }}
+        >
+          <View
+            style={{
+              alignItems: "center",
+              flexDirection: "row",
+              gap: spacing.sm,
+              paddingBottom: spacing.sm,
+              paddingHorizontal: spacing.md,
+              paddingTop: insets.top + spacing.xs,
+            }}
+          >
+            <AnimatedPressable
+              accessibilityLabel="Back"
+              accessibilityRole="button"
+              hitSlop={6}
+              onPress={goBack}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surface,
+                borderColor: chatEdge(colors.ink),
+                borderRadius: 999,
+                borderWidth: 1,
+                height: 44,
+                justifyContent: "center",
+                width: 44,
+                ...softShadow(colors.shadow, 3, 9, 0.28),
+              }}
+            >
+              <ArrowLeft color={colors.ink} size={20} strokeWidth={2.4} />
+            </AnimatedPressable>
+
+            <View
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surface,
+                borderColor: chatEdge(colors.ink),
+                borderRadius: 999,
+                borderWidth: 1,
+                flexDirection: "row",
+                flexShrink: 1,
+                gap: spacing.sm,
+                minWidth: 0,
+                paddingLeft: 4,
+                paddingRight: spacing.md + 4,
+                paddingVertical: 4,
+                ...softShadow(colors.shadow, 3, 9, 0.28),
+              }}
+            >
+              <ChatAvatar
+                name={title}
+                photoUrl={thread?.counterpartPhotoUrl ?? params.photo}
+                size={38}
+                team={
+                  thread
+                    ? thread.kind === "TEAM" && thread.counterpartUserId === null
+                    : params.team === "1"
+                }
+              />
+              <View style={{ flexShrink: 1, minWidth: 0 }}>
+                <View style={{ alignItems: "center", flexDirection: "row", gap: 6, minWidth: 0 }}>
+                  <FitText
+                    numberOfLines={1}
+                    style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 17, letterSpacing: -0.25 }}
+                  >
+                    {title}
+                  </FitText>
+                  {thread?.pendingAgreement ? (
+                    <AlertTriangle
+                      accessibilityLabel="Agreement not signed yet"
+                      color="#FFFFFF"
+                      fill={colors.warning}
+                      size={17}
+                      strokeWidth={2.2}
+                    />
+                  ) : null}
+                </View>
+                {/* The extra line under the name, when there is one. */}
+                {params.subtitle ? (
+                  <FitText numberOfLines={1} style={[type.caption, { color: colors.muted, fontSize: 12 }]}>
+                    {params.subtitle}
+                  </FitText>
+                ) : null}
+              </View>
+            </View>
+          </View>
+          {/* Pinned under the header, the messages scrolling beneath it (user,
+              2026-10-03). */}
+          {thread?.enquiryMessage ? (
+            <EnquiryMessageRow
+              message={thread.enquiryMessage}
+              onPanelHeight={setEnquiryPanelHeight}
+              onToggle={() => setEnquiryOpen((current) => !current)}
+              open={enquiryOpen}
+            />
+          ) : null}
+        </View>
+
+        {/* The composer floats too, on the same frosted strip. Lifted by the
+            keyboard room itself: an absolute child sits on its parent's outer
+            edge and ignores the body's padding, so bottom 0 left it on the nav
+            bar and under the keyboard (user, 2026-11-13). */}
+        <Animated.View
+          onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
+          style={{ backgroundColor: colors.chatSurface, bottom: bodyLift, left: 0, position: "absolute", right: 0 }}
+        >
+
         {readOnly ? (
           <View
             style={{
-              backgroundColor: colors.chatSurface,
-              paddingBottom: spacing.md + insets.bottom,
+              paddingBottom: spacing.md,
               paddingHorizontal: spacing.md,
               paddingTop: spacing.md,
             }}
@@ -635,7 +652,7 @@ export default function ChatThreadScreen() {
             </Text>
           </View>
         ) : (
-        <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}>
+        <View>
           {enquiryActions ? (
             <EnquiryActionBar actions={enquiryActions} counterpartName={title} threadId={threadId} />
           ) : null}
@@ -643,7 +660,6 @@ export default function ChatThreadScreen() {
             <View
               style={{
                 alignItems: "center",
-                backgroundColor: colors.chatSurface,
                 flexDirection: "row",
                 gap: spacing.sm,
                 paddingHorizontal: spacing.md,
@@ -673,15 +689,10 @@ export default function ChatThreadScreen() {
             // The same ground as the message list, with no rule between them.
             // A bar in its own colour reads as a separate panel bolted on; the
             // input's own pill is enough to say where typing happens.
-            backgroundColor: colors.chatSurface,
             flexDirection: "row",
             gap: spacing.sm,
-            // Clears the gesture bar. SafeAreaView only pads the top here,
-            // because padding the bottom there would lift the whole message
-            // list off the keyboard as well.
-            // The keyboard-inset hook has already subtracted the gesture bar.
-            // Keep its normal clearance here so the pill stays fully above it.
-            paddingBottom: spacing.sm + insets.bottom,
+            // Clear of the gesture bar by the keyboard room, plus a little air (user, 2026-11-13).
+            paddingBottom: spacing.md,
             paddingHorizontal: spacing.md,
             paddingTop: spacing.sm,
           }}
@@ -693,16 +704,24 @@ export default function ChatThreadScreen() {
           <View
             style={{
               alignItems: "flex-end",
-              backgroundColor: colors.surfaceSunken,
-              borderRadius: 18,
+              backgroundColor: colors.surface,
+              borderColor: chatEdge(colors.ink),
+              borderRadius: 24,
+              borderWidth: 1,
               flex: 1,
               flexDirection: "row",
-              paddingRight: 6,
+              minHeight: 46,
+              paddingRight: 8,
+              ...softShadow(colors.shadow, 3, 9, 0.28),
             }}
           >
             <TextInput
               multiline
+              // The keyboard's early word, as the shared input gives it: the composer starts
+              // moving as the keyboard does, not once Android reports it (user, 2026-11-13).
+              onBlur={announceInputBlur}
               onChangeText={setDraft}
+              onFocus={announceInputFocus}
               placeholder={editing ? "Edit message" : "Message"}
               placeholderTextColor={colors.kicker}
               style={{
@@ -711,8 +730,8 @@ export default function ChatThreadScreen() {
                 fontFamily: fonts.sans,
                 fontSize: 15,
                 maxHeight: 110,
-                paddingHorizontal: spacing.sm + 2,
-                paddingVertical: 9,
+                paddingHorizontal: spacing.md,
+                paddingVertical: 11,
               }}
               value={draft}
             />
@@ -723,7 +742,7 @@ export default function ChatThreadScreen() {
               disabled={uploading || Boolean(editing)}
               hitSlop={8}
               onPress={() => setAttachOpen((open) => !open)}
-              style={{ height: 38, justifyContent: "center", paddingLeft: 4, width: 26 }}
+              style={{ height: 44, justifyContent: "center", paddingLeft: 4, width: 28 }}
             >
               {/* Blue, because while it spins it is the only moving thing on
                   the screen and has to read as work in progress rather than as
@@ -747,21 +766,21 @@ export default function ChatThreadScreen() {
             style={{
               alignItems: "center",
               backgroundColor: draft.trim() ? colors.primary : colors.surfaceSunken,
+              // A visible edge like the other floating controls (user, 2026-11-13).
+              borderColor: draft.trim() ? colors.primary : chatEdge(colors.ink),
               borderRadius: 999,
-              height: 38,
+              borderWidth: 1,
+              height: 46,
               justifyContent: "center",
-              // Lifted a touch (user, 2026-10-02): the one-line field renders a
-              // little taller than 38 on device, which left the circle sitting
-              // low against it.
-              marginBottom: 3,
-              width: 38,
+              width: 46,
+              ...softShadow(colors.shadow, 3, 9, 0.28),
             }}
           >
             {/* The paper plane's weight sits to its upper right. Nudged down
                 and left by a point so it reads as centred in the circle. */}
             <Send
               color={draft.trim() ? colors.onPrimary : colors.kicker}
-              size={17}
+              size={19}
               strokeWidth={2.3}
               style={{ marginLeft: -2, marginTop: 1 }}
             />
@@ -769,6 +788,7 @@ export default function ChatThreadScreen() {
         </View>
         </View>
         )}
+        </Animated.View>
         {/* Dims the conversation while the question is open. A tap closes it.
             Inside this area, not the row, so Android delivers the tap. */}
         {enquiryOpen ? (
@@ -778,6 +798,7 @@ export default function ChatThreadScreen() {
             style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]}
           />
         ) : null}
+        </Animated.View>
       </KeyboardAvoidingView>
 
       {/* Both live at screen level rather than inside the composer. Nested
@@ -794,14 +815,14 @@ export default function ChatThreadScreen() {
       ) : null}
 
       {attachOpen ? (
-        <View
+        <Animated.View
           style={{
             backgroundColor: colors.surface,
             borderColor: colors.border,
             borderCurve: "continuous",
             borderRadius: 14,
             borderWidth: 1,
-            bottom: composerHeight + keyboardClearance + spacing.xs,
+            bottom: Animated.add(bodyLift, composerHeight + spacing.xs),
             elevation: 6,
             right: spacing.md,
             overflow: "hidden",
@@ -816,7 +837,7 @@ export default function ChatThreadScreen() {
           <AttachChoice icon={ImageIcon} label="Photos" onPress={() => void attach(pickImages)} />
           <View style={{ backgroundColor: colors.border, height: 1 }} />
           <AttachChoice icon={FileText} label="Files" onPress={() => void attach(pickFiles)} />
-        </View>
+        </Animated.View>
       ) : null}
 
       {/* In its own window, because `measureInWindow` reports the held row in
@@ -1101,4 +1122,9 @@ function actionRows(message: ChatMessage) {
     (message.body ? 1 : 0) +
     (message.mine ? 1 : 0)
   );
+}
+
+/** The floating controls' light edge (user, 2026-11-13): 1px at 15% ink, no 3D card edge. */
+function chatEdge(ink: string) {
+  return `${ink}26`;
 }

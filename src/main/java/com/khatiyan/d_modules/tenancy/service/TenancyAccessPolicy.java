@@ -63,6 +63,11 @@ public class TenancyAccessPolicy {
                 ManagerResource.VACANCY_FINDER);
     }
 
+    /** Roll call settings and its WiFi (user, 2026-11-15): a rule of the stay, like the agreement. */
+    public void ensureCanManageRollCall(UUID actorUserId, UUID propertyId) {
+        propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.TENANCY_RULES);
+    }
+
     /** Ending a stay, or changing its terms. */
     public void ensureCanManageStays(UUID actorUserId, UUID propertyId) {
         propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.TENANCIES);

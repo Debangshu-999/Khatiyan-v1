@@ -1,13 +1,16 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { CalendarPicker } from "@/components/calendar-picker";
+import { WrapTitle } from "@/components/wrap-title";
 import { istToday } from "@/features/analytics/period";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { ActivityIndicator, Image, Linking, Platform, Text, View } from "react-native";
-import { ArrowLeft, ArrowRight, ChartNoAxesCombined, Download, FileText, Plus, Receipt, ReceiptIndianRupee, Scale, TrendingUp, Undo2, Wallet, WalletCards } from "lucide-react-native";
+import { ActivityIndicator, Linking, Platform, Text, View } from "react-native";
+import { Download, FileText, Plus, Receipt, TrendingUp, Undo2 } from "lucide-react-native";
+import { ExpenseArt, IncomeArt, NetArt, PnlHeroArt } from "@/components/control-art";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { HighlightPanel, highlightPalette } from "@/components/highlight-card";
 import { EmptyState } from "@/components/empty-state";
 import { MoneyText } from "@/components/money-text";
 import { ProgressBar } from "@/components/progress-bar";
@@ -50,8 +53,6 @@ import { FitText } from "@/components/fit-text";
 const NO_EXPENSE_ILLUSTRATION = require("../assets/empty-states/No-Expense_512x512.png");
 
 const PAGE_SIZE = 20;
-const PNL_PROFIT_ILLUSTRATION = require("../assets/images/workspace/pnl-profit.png");
-const PNL_LOSS_ILLUSTRATION = require("../assets/images/workspace/pnl-loss.png");
 
 export default function OwnerPnlScreen() {
   const router = useGuardedRouter();
@@ -246,35 +247,33 @@ function NetHero({ statement }: { statement: PnlStatement }) {
   const { colors, type } = useTheme();
   const profit = statement.netPaise >= 0;
   const accent = profit ? colors.jade : colors.danger;
+  const heroAccent = profit ? "#A9E9CE" : "#FFC4CA";
 
   return (
-    <Card>
-      <View style={{ gap: spacing.md }}>
+    <Card style={{ padding: 0, gap: 0 }}>
+      {/* No wavy lines (user, 2026-11-14), and a drawing for profit and for loss in place of the 3D picture. */}
+      <HighlightPanel motif={false} variant="finance" style={{ borderWidth: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 104 }}>
           <View style={{ flex: 1, gap: 4, minWidth: 0 }}>
-            <Text style={[type.eyebrow, { color: accent }]}>
+            <Text style={[type.eyebrow, { color: heroAccent }]}>
               {profit ? "Net profit" : "Net loss"}
             </Text>
-            <MoneyText animate color={accent} paise={Math.abs(statement.netPaise)} size={36} weight="700" />
-            <Text style={[type.caption, { color: colors.muted, lineHeight: 19 }]}>
+            <MoneyText animate color={heroAccent} symbolColor={heroAccent} paise={Math.abs(statement.netPaise)} size={36} weight="700" />
+            <Text style={[type.caption, { color: highlightPalette.finance.muted, lineHeight: 19 }]}>
               {profit ? "What you kept after expenses this month" : "What you lost after expenses this month"}
             </Text>
           </View>
 
-          <Image
-            accessibilityIgnoresInvertColors
-            accessible={false}
-            resizeMode="contain"
-            source={profit ? PNL_PROFIT_ILLUSTRATION : PNL_LOSS_ILLUSTRATION}
-            style={{ height: 96, width: 132 }}
-          />
+          <View accessible={false}>
+            <PnlHeroArt profit={profit} width={132} />
+          </View>
         </View>
+      </HighlightPanel>
 
+      <View style={{ gap: spacing.md, padding: spacing.lg }}>
         <View style={{ borderColor: colors.border, borderRadius: 16, borderWidth: 1, paddingHorizontal: spacing.md }}>
           <PnlSummaryRow
-            leftIcon={WalletCards}
-            rightColor={colors.jade}
-            rightIcon={ArrowLeft}
+            leftIcon={IncomeArt}
             sub={incomeComposition(statement)}
             title="Income"
             value={formatMoneyPaise(statement.totalIncomePaise)}
@@ -282,10 +281,7 @@ function NetHero({ statement }: { statement: PnlStatement }) {
           />
           <View style={{ backgroundColor: colors.border, height: 1 }} />
           <PnlSummaryRow
-            leftColor={colors.danger}
-            leftIcon={ReceiptIndianRupee}
-            rightColor={colors.danger}
-            rightIcon={ArrowRight}
+            leftIcon={ExpenseArt}
             sub="This month"
             title="Expense"
             value={formatMoneyPaise(statement.expensePaise)}
@@ -293,8 +289,7 @@ function NetHero({ statement }: { statement: PnlStatement }) {
           />
           <View style={{ backgroundColor: colors.border, height: 1 }} />
           <PnlSummaryRow
-            leftIcon={ChartNoAxesCombined}
-            rightIcon={Scale}
+            leftIcon={NetArt}
             sub={`Cash: ${signedMoney(statement.netRealizedPaise)}`}
             title="Net"
             value={signedMoney(statement.netPaise)}
@@ -308,20 +303,15 @@ function NetHero({ statement }: { statement: PnlStatement }) {
   );
 }
 
+/** A summary row (user, 2026-11-14): a coloured drawing on the left, nothing on the right. */
 function PnlSummaryRow({
-  leftColor,
   leftIcon: LeftIcon,
-  rightColor,
-  rightIcon: RightIcon,
   sub,
   title,
   value,
   valueColor,
 }: {
-  leftColor?: string;
-  leftIcon: typeof WalletCards;
-  rightColor?: string;
-  rightIcon: typeof TrendingUp;
+  leftIcon: typeof IncomeArt;
   sub: string;
   title: string;
   value: string;
@@ -331,8 +321,8 @@ function PnlSummaryRow({
 
   return (
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, minHeight: 82, paddingVertical: spacing.sm }}>
-      <View style={{ alignItems: "center", justifyContent: "center", width: 42 }}>
-        <LeftIcon color={leftColor ?? colors.primary} size={31} strokeWidth={2} />
+      <View style={{ alignItems: "center", justifyContent: "center", width: 44 }}>
+        <LeftIcon size={38} />
       </View>
 
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
@@ -348,10 +338,6 @@ function PnlSummaryRow({
         <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
           {sub}
         </FitText>
-      </View>
-
-      <View style={{ alignItems: "center", justifyContent: "center", width: 38 }}>
-        <RightIcon color={rightColor ?? colors.primary} size={28} strokeWidth={2} />
       </View>
     </View>
   );
@@ -537,9 +523,9 @@ function IncomeRow({
     <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: 14, borderWidth: 1, gap: spacing.sm, opacity: entry.reversed ? 0.6 : 1, padding: spacing.md }}>
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <FitText style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+          <WrapTitle style={[type.bodyStrong, { color: colors.ink }]}>
             {entry.source}
-          </FitText>
+          </WrapTitle>
           <FitText style={[type.caption, { color: colors.muted }]} numberOfLines={1}>
             {entry.receivedFrom ? `${entry.receivedFrom} · ` : ""}{formatDate(entry.receivedDate)}
           </FitText>

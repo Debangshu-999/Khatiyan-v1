@@ -32,8 +32,11 @@ public record MoveInChecklistInput(
             @Size(max = 80, message = "Keep each item's name under 80 characters")
             String name,
 
-            @NotNull(message = "Pick a damage level for every item")
+            /** Old clients only. The condition is what the checklist records now (2026-11-07). */
             DamageLevel damageLevel,
+
+            /** Working, Damaged or Broken, for every item (user, 2026-11-07). */
+            com.khatiyan.d_modules.tenancy.model.ItemCondition condition,
 
             @Size(max = 200, message = "Keep each item's note under 200 characters")
             String note,

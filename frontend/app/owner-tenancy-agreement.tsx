@@ -1,7 +1,8 @@
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { usePullRefreshed } from "@/lib/pull-refresh";
 import { Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Eye, FileSignature, Info, Plus, X } from "lucide-react-native";
@@ -89,7 +90,20 @@ export default function OwnerTenancyAgreementScreen() {
     }
     setDraft(stored);
     setMonthsText(stored.defaultValidityMonths != null ? String(stored.defaultValidityMonths) : "");
+    seededTemplate.current = stored;
   }, [settingsQuery.data?.propertyId]);
+  // A pull-to-refresh reloads the draft from the fresh copy when it has no edits (2026-11-07).
+  const seededTemplate = useRef<AgreementTemplate | null>(null);
+  usePullRefreshed(() => {
+    const fresh = settingsQuery.data?.template;
+    const base = seededTemplate.current;
+    if (!fresh || !base) return;
+    const months = base.defaultValidityMonths != null ? String(base.defaultValidityMonths) : "";
+    if (JSON.stringify(draft) !== JSON.stringify(base) || monthsText !== months) return;
+    setDraft(fresh);
+    setMonthsText(fresh.defaultValidityMonths != null ? String(fresh.defaultValidityMonths) : "");
+    seededTemplate.current = fresh;
+  });
 
   useEffect(() => {
     setPrematureExit(policiesQuery.data?.prematureExitPolicy ?? "");

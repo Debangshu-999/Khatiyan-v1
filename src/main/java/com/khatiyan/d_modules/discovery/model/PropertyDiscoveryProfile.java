@@ -49,6 +49,9 @@ public class PropertyDiscoveryProfile extends BaseEntity {
     @Column(name = "show_manager_contact", nullable = false)
     private boolean showManagerContact;
 
+    @Column(name = "show_meal_rating", nullable = false)
+    private boolean showMealRating;
+
     @Column(name = "published_at")
     private Instant publishedAt;
 
@@ -99,6 +102,10 @@ public class PropertyDiscoveryProfile extends BaseEntity {
         if (showManagerContact != null) {
             this.showManagerContact = showManagerContact;
         }
+    }
+
+    public void showMealRating(boolean show) {
+        this.showMealRating = show;
     }
 
     public void publish() {

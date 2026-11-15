@@ -12,6 +12,7 @@ function declaration(file, name) {
 }
 const code = ts.transpileModule([
   declaration("src/store/services/billing-api.ts", "billTitle"),
+  declaration("src/store/services/billing-api.ts", "isDamageBill"),
   declaration("src/features/owner/bill-views.tsx", "BillCancellationReason"),
   declaration("src/features/owner/bill-views.tsx", "BillCard"),
   declaration("src/features/billing/tenant-bill-card.tsx", "TenantBillCard"),
@@ -31,7 +32,7 @@ vm.runInNewContext(code, {
   View: "View", Text: "Text", FitText: "FitText", ReceiptText: "ReceiptIcon", CircleHelp: "HelpIcon",
   AnimatedPressable: "Button", BillStatusPill: "Status", CalendarDays: "CalendarIcon", BillTotal: "BillTotal",
   PaymentStatusBadge: "PaymentStatus", RefreshCw: "CycleIcon", LinearGradient: "Gradient", TenantBillStatusBadge: "TenantStatus",
-  TenantBillAction: "Action", History: "History", Banknote: "Banknote", useSoftShadow: () => () => ({}), softShadow: () => ({}),
+  TenantBillAction: "Action", History: "History", Banknote: "Banknote", MoreHorizontal: "More", SheetShell: "Sheet", PaymentClaimsIcon: "ClaimsIcon", useSoftShadow: () => () => ({}), softShadow: () => ({}), cardShadow: () => ({}),
   ActionButton: "ActionButton", OverflowDotsButton: "Overflow", BILL_ACTION_ROW_HEIGHT: 48, markPaidLabel: () => "Mark paid",
   payButtonLabel: () => "Pay now", tenantDiscountBreakdown: () => null, bookingTokenPaise: () => 0,
   formatTenantMoney: (paise) => `₹${paise / 100}`, formatTenantDate: () => "29 Oct",
@@ -53,14 +54,21 @@ test("owner tenant-bill cards place Total payable directly below the name, besid
   assert.equal(header.props.children[1].props.children[1].props.children[0].props.children, "Due date");
 });
 
-test("tenant-facing bill cards raise the payment section while leaving room below the heading", () => {
+test("tenant bill cards are the owner's card: total under the title, due date at the right, pay and view bill side by side (2026-11-11)", () => {
   const card = exportsForTest.TenantCard({ cycle: { ...damage, totalAmountPaise: 150000 }, openAttempt: null, onPay: null });
-  const payment = card.props.children[1];
-  assert.ok(card.props.style.gap + payment.props.style.marginTop > 0, "Keep a visible gap under the heading");
-  assert.equal(payment.props.style.marginTop, -6);
-  assert.equal(payment.props.style.paddingTop, 6);
-  assert.equal(payment.props.children[0].props.children[0].props.children, "Total payable");
-  assert.equal(payment.props.children[0].props.children[1].props.children[0].props.children, "₹1500");
+  const all = [];
+  (function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== "object") return;
+    all.push(node);
+    walk(node.props?.children);
+  })(card);
+  const total = all.find((node) => node.type === "BillTotal");
+  assert.equal(total.props.size, 30);
+  assert.ok(all.some((node) => node.type === "Text" && node.props.children === "Due date"));
+  // Pay and View bill side by side, no dots (user, 2026-11-11).
+  assert.deepEqual(all.filter((node) => node.type === "Action").map((node) => node.props.label), ["Pay now", "View bill"]);
+  assert.ok(!all.some((node) => node.type === "Button" && String(node.props.accessibilityLabel).startsWith("More for")));
 });
 
 test("cancelled bills show a boundary-labelled Reason box, without the old Cancelled prefix", () => {
@@ -92,11 +100,11 @@ test("one-off bill names match the receipt without exposing damage charge metada
   assert.equal(exportsForTest.billTitle({ ...damage, lineItems: [{ label: "Damage DMG-2026-000279: Cupboard (D3), split 2" }] }), "Damage bill");
   assert.equal(exportsForTest.billTitle({ ...damage, lineItems: [{ label: "Early-exit penalty" }] }), "Early-exit penalty");
   assert.equal(exportsForTest.billTitle({ ...damage, lineItems: [] }), "One-off bill");
-  assert.equal(exportsForTest.billTitle({ ...damage, cycleNumber: 2 }), "Cycle 2");
+  assert.equal(exportsForTest.billTitle({ ...damage, cycleNumber: 2 }), "Rent cycle #2");
 });
 
 test("billing module cards match Tenant bills: raised amount, divider, bill name and restored dates", () => {
-  for (const [cycle, expected] of [[damage, "Damage bill"], [{ ...damage, cycleNumber: 2, category: "RENT_CYCLE" }, "Cycle 2"]]) {
+  for (const [cycle, expected] of [[damage, "Damage bill"], [{ ...damage, cycleNumber: 2, category: "RENT_CYCLE" }, "Rent cycle #2"]]) {
     const card = exportsForTest.Card({ cycle, readOnly: false });
     const column = card.props.children[0].props.children[1];
     const row = column.props.children;

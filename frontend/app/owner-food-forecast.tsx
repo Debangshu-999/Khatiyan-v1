@@ -5,11 +5,11 @@ import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-n
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
+import { WrapTitle } from "@/components/wrap-title";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SelectionTabs } from "@/components/selection-tabs";
 import { AppBackground } from "@/components/app-background";
 import { EmptyState } from "@/components/empty-state";
-import { MarqueeText } from "@/components/marquee-text";
 import { SCREEN_HEADER_COLLAPSE_DISTANCE } from "@/components/header-scroll-layout";
 import { ScreenHeader, ScreenHeaderScrollContext } from "@/components/screen-header";
 import { FoodForecastSkeleton } from "@/components/skeletons";
@@ -49,7 +49,7 @@ import {
   type SkippedItem,
 } from "@/store/services/food-api";
 import type { MealType } from "@/store/services/property-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
@@ -295,7 +295,7 @@ export default function OwnerFoodForecastScreen() {
             borderCurve: "continuous",
             borderRadius: radii.card,
             borderWidth: 1,
-            ...softShadow(colors.shadow, 4, 12),
+            ...cardShadow(colors.shadow),
           }}
         >
           <View style={{ borderRadius: radii.card, overflow: "hidden" }}>
@@ -711,10 +711,9 @@ function ForecastRow({
           // left, and a faded control reads as a disabled one.
           style={{ flex: 1, minWidth: 0, opacity: faded ? 0.5 : 1 }}
         >
-          {/* Scrolls back and forth when it overflows rather than ellipsising.
-              "Paneer butter ma..." is not a dish anyone can identify at a
-              glance, and the column is narrow by design here. */}
-          <MarqueeText style={[type.bodyStrong, { color: colors.ink, fontSize: 13.5, lineHeight: 18 }]}>{item.itemName}</MarqueeText>
+          {/* The whole name, wrapping onto the next line (user, 2026-11-07). It scrolled
+              back and forth, and "Paneer butter ma..." is no dish anyone can identify. */}
+          <WrapTitle style={[type.bodyStrong, { color: colors.ink, fontSize: 13.5, lineHeight: 18 }]}>{item.itemName}</WrapTitle>
           {splittable ? (
             <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5 }}>
               across {item.profileBreakdown.length} profiles

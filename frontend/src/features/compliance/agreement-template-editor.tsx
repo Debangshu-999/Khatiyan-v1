@@ -7,7 +7,6 @@ import Svg, { Circle, Line, Path } from "react-native-svg";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { DeleteIcon } from "@/components/delete-icon";
 import { SheetShell } from "@/components/sheet-shell";
-import { SectionHeading as ScreenSectionHeading } from "@/components/section-heading";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { ConfirmDialog, FormInput } from "@/features/owner/owner-ui";
 import { ClauseBody } from "@/features/compliance/agreement-document";
@@ -389,9 +388,10 @@ function SectionHeading({
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
+  // Plain heading text, not the sub-header band (user, 2026-11-14).
   return (
     <View style={{ gap: 4 }}>
-      <ScreenSectionHeading title={title} />
+      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18, lineHeight: 24 }}>{title}</Text>
       {description ? <Text style={[type.description, { color: colors.muted }]}>{description}</Text> : null}
     </View>
   );

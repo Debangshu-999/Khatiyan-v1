@@ -27,7 +27,7 @@ import {
   MealsDoneForToday,
   canStillDelay,
 } from "@/features/food/meal-schedule-ui";
-import { MealAttendanceCard, MealRatingsLink } from "@/features/food/meal-attendance-ui";
+import { MealAttendanceCard, MealRatingsLink, MealScanHomeCard } from "@/features/food/meal-attendance-ui";
 import { FoodItemsSearch, FoodItemsTab, type ItemStatusFilter } from "@/features/food/owner-food-items";
 import { FoodProfilesTab } from "@/features/food/owner-food-profiles";
 import {
@@ -431,6 +431,8 @@ export default function OwnerFoodScreen() {
                   ) : schedule && schedule.timings.length > 0 ? (
                     <MealsDoneForToday />
                   ) : null}
+                  {/* Home's scan card, while a meal is serving (user, 2026-11-07). */}
+                  {propertyId ? <MealScanHomeCard propertyId={propertyId} /> : null}
                   {schedule && schedule.timings.length > 0 ? (
                     <MealTimingsCard onEdit={readOnly ? undefined : () => setTimingsOpen(true)} schedule={schedule} />
                   ) : null}

@@ -1,4 +1,3 @@
-import { useSegments } from "expo-router";
 import { Platform, type ViewStyle } from "react-native";
 
 /**
@@ -47,12 +46,43 @@ export function tabShadow(color: string, offsetY: number, blur: number, opacity 
  * alike: the new one inside a module or Home, the old one on other tabs.
  * Asked once at the top of the component, then used like {@link softShadow}.
  */
+/**
+ * Every card's depth, app wide (user, 2026-11-13): the owner's Edit property
+ * room-tab cards' look: a faint, tight shadow at 28% and thicker, darker
+ * bottom, right and left edges (user, 2026-11-13), so a card reads as raised without a visible shadow under it.
+ * Not for floating things (sheets, toasts, the map's overlays), which keep
+ * softShadow.
+ *
+ * <p>The edge stands in for `elevation: 1`, drawn by hand (user, 2026-11-13).
+ * On a phone that elevation WAS the 3D look, a dark rim heaviest along the
+ * bottom, but Android draws it at full strength while a tab cross-fades, so the
+ * old tab's cards flashed a shadow. A border is ordinary drawing and fades with
+ * its screen. Never put elevation back on a card.
+ */
+export function cardShadow(color: string): ViewStyle {
+  return {
+    ...softShadow(color, 3, 9, 0.28),
+    borderBottomColor: deepened(color, 1.1),
+    borderBottomWidth: 2,
+    borderLeftColor: deepened(color, 1.1),
+    borderLeftWidth: 2,
+    borderRightColor: deepened(color, 1.1),
+    borderRightWidth: 2,
+  };
+}
+
+/** The colour at more than its own strength, for an edge drawn where a shadow was. Capped at solid. */
+function deepened(color: string, factor: number) {
+  const parts = /^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/.exec(color);
+  if (!parts) return color;
+  const alpha = Math.min(1, Math.round(Number(parts[4]) * factor * 1000) / 1000);
+  return `rgba(${parts[1]}, ${parts[2]}, ${parts[3]}, ${alpha})`;
+}
+
 export function useSoftShadow() {
-  // The same test the screen's scroll view uses to leave room for the tab bar.
-  const segments: readonly string[] = useSegments();
-  const onATab = segments[0] === "(tabs)";
-  const onHome = onATab && (segments[1] == null || segments[1] === "index");
-  return onATab && !onHome ? tabShadow : softShadow;
+  // App wide now (user, 2026-11-09): every tab draws the shadow a phone shows,
+  // not only Home and the modules. Kept as a hook so callers need no change.
+  return softShadow;
 }
 
 /** The colour at part of its own strength. Only an rgba() colour can be weakened, and the theme's shadow is one. */

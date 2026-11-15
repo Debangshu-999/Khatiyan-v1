@@ -6,22 +6,12 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { Lightbox } from "@/components/image-carousel";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { SheetShell } from "@/components/sheet-shell";
-import { ROOM_AMENITY_ICONS } from "@/features/property/room-amenity-icons";
-import { ROOM_AMENITIES, ROOM_TYPES, type RoomMold, type RoomType } from "@/store/services/property-api";
-import { softShadow } from "@/theme/shadows";
+import { RoomAmenityStrip } from "@/features/property/room-amenity-strip";
+import { ROOM_TYPES, type RoomMold, type RoomType } from "@/store/services/property-api";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { formatMoneyPaise, humanizeToken } from "../discovery-format";
-import { FitText } from "@/components/fit-text";
-
-const AMENITY_LABELS: Record<string, string> = {
-  ATTACHED_TOILET: "Attached washroom",
-  COMMON_TOILET: "Common washroom",
-  BEDDING: "Bedding",
-  CUPBOARD: "Cupboard",
-  GEYSER: "Geyser",
-  TV: "TV",
-};
 
 export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
   const { colors, fonts, type } = useTheme();
@@ -41,7 +31,7 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
           borderWidth: 1,
           gap: spacing.xs,
           padding: spacing.xl,
-          ...softShadow(colors.shadow, 4, 12),
+          ...cardShadow(colors.shadow),
         }}
       >
         <ImageOff color={colors.kicker} size={28} strokeWidth={1.7} />
@@ -66,8 +56,20 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
           : 1,
     );
 
+  // The dropdown and the cards under it are one card, so only this one lifts (user, 2026-11-03).
   return (
-    <View style={{ gap: spacing.md }}>
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        gap: spacing.md,
+        padding: spacing.md,
+        ...cardShadow(colors.shadow),
+      }}
+    >
       <AnimatedPressable
         accessibilityLabel="Choose room type"
         accessibilityRole="button"
@@ -82,7 +84,6 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
           flexDirection: "row",
           minHeight: 54,
           paddingHorizontal: spacing.md,
-          ...softShadow(colors.shadow, 4, 12),
         }}
       >
         <Text style={{ color: colors.text, flex: 1, fontFamily: fonts.sansBold, fontSize: 16 }}>
@@ -102,7 +103,7 @@ export function RoomTypeShowcase({ roomTypes }: { roomTypes: RoomMold[] }) {
       )}
 
       {open ? (
-        <SheetShell onClose={() => setOpen(false)} title="Room type">
+        <SheetShell onClose={() => setOpen(false)} size="content" title="Room type">
           <View>
             {occupancies.map((occupancy, index) => {
               const matching = roomTypes.filter((room) => room.sharingType === occupancy);
@@ -132,10 +133,8 @@ function RoomVariantCard({ room }: { room: RoomMold }) {
   const { colors, fonts, type } = useTheme();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const images = room.images.map((image) => image.url).filter(Boolean);
-  const amenities = ROOM_AMENITIES.filter((amenity) => room.amenities.includes(amenity));
   const ConditioningIcon = room.conditioning === "AC" ? AirVent : Fan;
-  const conditioningLabel = room.conditioning === "AC" ? "AC" : "NON AC";
-  const roomLabel = `${humanizeToken(room.sharingType)} (${conditioningLabel})`;
+  const roomLabel = `${humanizeToken(room.sharingType)} ${room.conditioning === "AC" ? "AC" : "Non AC"}`;
 
   return (
     <View
@@ -147,7 +146,6 @@ function RoomVariantCard({ room }: { room: RoomMold }) {
         borderWidth: 1,
         gap: spacing.md,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 3, 10, 0.12),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -204,12 +202,9 @@ function RoomVariantCard({ room }: { room: RoomMold }) {
 
         <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
-            <Text style={{ color: colors.text, fontFamily: fonts.displaySoft, fontSize: 17, lineHeight: 22 }}>
-              {humanizeToken(room.sharingType)}
-            </Text>
             <ConditioningIcon color={colors.inkSoft} size={16} strokeWidth={1.9} />
-            <Text style={{ color: colors.text, fontFamily: fonts.displaySoft, fontSize: 15, lineHeight: 22 }}>
-              ({conditioningLabel})
+            <Text style={{ color: colors.text, fontFamily: fonts.displaySoft, fontSize: 17, lineHeight: 22 }}>
+              {roomLabel}
             </Text>
           </View>
           <View style={{ alignItems: "baseline", flexDirection: "row", flexWrap: "wrap", gap: 2 }}>
@@ -224,26 +219,8 @@ function RoomVariantCard({ room }: { room: RoomMold }) {
         </View>
       </View>
 
-      {amenities.length > 0 || room.customAmenities.length > 0 ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          {amenities.map((amenity) => {
-            const Icon = ROOM_AMENITY_ICONS[amenity];
-            return (
-              <View key={amenity} style={{ alignItems: "center", flexDirection: "row", gap: 6, width: "46%" }}>
-                <Icon color={colors.inkSoft} size={18} />
-                <FitText numberOfLines={2} style={[type.caption, { color: colors.inkSoft, flex: 1 }]}>
-                  {AMENITY_LABELS[amenity]}
-                </FitText>
-              </View>
-            );
-          })}
-          {room.customAmenities.map((name) => (
-            <Text key={name} style={[type.caption, { color: colors.inkSoft, width: "46%" }]}>
-              {name}
-            </Text>
-          ))}
-        </View>
-      ) : null}
+      {/* The strip the room cards in Rooms & beds use: icons, then +n for the rest (user, 2026-11-03). */}
+      <RoomAmenityStrip amenities={room.amenities} custom={room.customAmenities} small tiles />
 
       {lightboxOpen ? <Lightbox images={images} initialIndex={0} onClose={() => setLightboxOpen(false)} /> : null}
     </View>
@@ -260,14 +237,13 @@ function MissingVariant({ conditioning }: { conditioning: "AC" | "NON_AC"; occup
       style={{
         alignItems: "center",
         backgroundColor: colors.surface,
-        borderColor: colors.border,
-        borderCurve: "continuous",
+        borderColor: colors.kicker,
         borderRadius: radii.card,
-        borderWidth: 1,
+        borderStyle: "dotted",
+        borderWidth: 1.5,
         flexDirection: "row",
         gap: spacing.md,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
       }}
     >
       <Variant color={colors.kicker} size={30} strokeWidth={1.7} />

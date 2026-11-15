@@ -22,5 +22,10 @@ public record PinLoginRequest(
      * <p>Honoured on this request because the same call verifies credentials —
      * nothing is signed out unless the PIN or the e-mail code checks out first.
      */
-    UUID signOutSessionId
+    UUID signOutSessionId,
+    /**
+     * Ends every session the account holds before signing in, from Sign out all on the
+     * same list (user, 2026-11-07). Honoured for the same reason. Null is false.
+     */
+    Boolean signOutAll
 ) {}

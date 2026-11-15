@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { EmptyDamage } from "@/components/empty-art";
 import { Text, View } from "react-native";
 import { CircleHelp, Plus } from "lucide-react-native";
 
@@ -181,7 +182,7 @@ export function CheckoutDamageRecords({
       {rows.length === 0 ? (
         <EmptyState
           action={<View style={{ flexDirection: "row" }}>{addDamage}</View>}
-          artworkNode={<DamagesIcon size={72} />}
+          artworkNode={<EmptyDamage size={120} />}
           compact
           title="No open damages"
         />
@@ -232,7 +233,7 @@ export function CheckoutDamageRecords({
                   <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
                     <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
                       <Text numberOfLines={1} style={[smallBold, { flexShrink: 1 }]}>{damageRecordName(record)}</Text>
-                      <DamageLevelPill level={record.damageLevel} />
+                      {record.damageLevel ? <DamageLevelPill level={record.damageLevel} /> : null}
                     </View>
                     <Text style={[type.caption, { color: colors.muted }]}>
                       {[

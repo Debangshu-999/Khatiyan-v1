@@ -49,10 +49,11 @@ export function OwnerItemCatalogueScreenSkeleton() {
     <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ gap: spacing.lg }}>
       <SkeletonHeader />
       <Skeleton height={23} width="46%" />
-      <Card>
-        {[0, 1, 2, 3].map((index) => <Skeleton key={index} height={44} />)}
-        <Skeleton height={12} width="90%" /><Skeleton height={12} width="58%" />
-      </Card>
+      <Skeleton height={12} width="62%" />
+      {/* The four level boxes (2026-11-07). */}
+      <View style={{ gap: spacing.sm }}>
+        {[0, 1, 2, 3].map((index) => <Skeleton key={index} height={96} radius={10} />)}
+      </View>
       <Skeleton height={23} width="78%" />
       <Skeleton height={12} width="94%" />
       {[0, 1].map((index) => <Card key={index}>

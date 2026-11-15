@@ -77,8 +77,23 @@ public record TenancyExitRequestResponse(
      */
     long version,
     String decidedByRole,
-    String withdrawalDecidedByRole
+    String withdrawalDecidedByRole,
+    /** The property's name, on the tenant's own list (2026-11-11). Null elsewhere. */
+    String propertyName,
+    /** The room's number, on the tenant's own list. Null elsewhere. */
+    String roomNumber
 ) {
+    /** The same response, naming where it was raised. */
+    public TenancyExitRequestResponse withPlace(String propertyName, String roomNumber) {
+        return new TenancyExitRequestResponse(id, referenceCode, tenancyId, tenantUserId, tenantName, propertyId, roomId, type,
+            status, requestedCheckoutDate, approvedCheckoutDate, tenantReason, adminNotes, finalBillingAmountPaise,
+            depositPayable, depositSettlementAmountPaise, decidedByUserId, decidedByName, decidedAt, executedAt,
+            noticeAnchorDate, supersededRequestId, withdrawalRequestedAt, withdrawalReason, withdrawalDecidedAt,
+            withdrawalDecidedByUserId, withdrawalDecidedByName, withdrawalAdminNotes, withdrawalWindowOpen,
+            reRaiseAllowed, expiresAt, createdAt, updatedAt, version, decidedByRole, withdrawalDecidedByRole,
+            propertyName, roomNumber);
+    }
+
     public static TenancyExitRequestResponse from(TenancyExitRequest request) {
         return from(request, LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")), Map.of());
     }
@@ -152,7 +167,9 @@ public record TenancyExitRequestResponse(
             request.getUpdatedAt(),
             request.getVersion(),
             nameOf(roles, request.getDecidedByUserId()),
-            nameOf(roles, request.getWithdrawalDecidedByUserId())
+            nameOf(roles, request.getWithdrawalDecidedByUserId()),
+            null,
+            null
         );
     }
 

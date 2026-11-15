@@ -14,8 +14,8 @@ import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SegmentedChoice } from "@/components/segmented-choice";
 import { Card } from "@/components/card";
-import { useGetRoomItemConditionsQuery } from "@/store/services/damage-api";
-import { useSoftShadow } from "@/theme/shadows";
+import { useGetDamageRecordsQuery } from "@/store/services/damage-api";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { Divider } from "@/components/divider";
 import { EmptyState } from "@/components/empty-state";
 import { AlertModal } from "@/components/alert-modal";
@@ -78,6 +78,7 @@ import {
   useLazyLookupTenantQuery,
   useListPropertyUpcomingVacanciesQuery,
   useOnboardDailyStayMutation,
+  type ItemCondition,
   type TenancyOnboardingResult,
   type TenantLookup,
   type TenantPrefill,
@@ -96,10 +97,10 @@ import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
 import { useConvertBookingMutation, useGetPropertyBookingRequestQuery } from "@/store/services/booking-api";
 import { useOnboardExistingTenantMutation } from "@/store/services/compliance-api";
+import { ItemConditionDropdown } from "@/features/tenancy/item-condition";
 import { MultiImageField } from "@/features/uploads/multi-image-field";
 import { Lightbox } from "@/components/image-carousel";
 import { AMENITY_LABELS } from "@/features/property/amenity-picker";
-import { DamageLevelDropdown } from "@/features/tenancy/damage-level";
 import { ItemIcon } from "@/features/property/item-icon";
 
 type Step = "type" | "tenant" | "details" | "verify" | "handover" | "review" | "agreement" | "done";
@@ -113,7 +114,8 @@ type MoveInSection = "ROOM" | "AMENITY" | "BATHROOM";
 /** `fixed`: one of the room's own amenities, which stays on the list. */
 type MoveInItem = {
   name: string;
-  damageLevel: DamageLevel;
+  /** Working, Damaged or Broken, set fresh for this tenancy (user, 2026-11-07). Null until picked. */
+  condition: ItemCondition | null;
   note: string;
   custom: boolean;
   photoUrls: string[];
@@ -564,20 +566,21 @@ export default function OwnerOnboardTenantScreen() {
   // The move-in checklist starts from the room's amenities and the property's
   // damage list, without repeats, every item at NA (2026-10-29).
   const exitPoliciesQuery = useGetPropertyExitPoliciesQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
-  // The room's running condition, what a past checklist, a damage or a repair left (user, 2026-10-29).
-  const roomConditionsQuery = useGetRoomItemConditionsQuery(
-    { propertyId: selectedProperty?.id ?? "", roomId: roomId ?? "" },
-    { skip: !selectedProperty || !roomId || billingType === "DAILY" },
+  // Open damage records, to flag an item that may still be damaged (user, 2026-11-07).
+  const openDamagesQuery = useGetDamageRecordsQuery(
+    { history: false, propertyId: selectedProperty?.id ?? "" },
+    { skip: !selectedProperty || billingType === "DAILY" },
   );
+  const openDamageCode = (name: string) => (openDamagesQuery.data ?? []).find((record) => record.roomId === roomId
+    && record.itemName.trim().toLowerCase() === name.trim().toLowerCase())?.code ?? null;
   useEffect(() => {
-    if (step !== "handover" || moveInItems !== null || exitPoliciesQuery.isLoading || roomConditionsQuery.isFetching) return;
+    if (step !== "handover" || moveInItems !== null || exitPoliciesQuery.isLoading) return;
     // Only what the room's type picked (user, 2026-10-29), sorted into Room and
     // Bathroom by the damage list, the one list of what a room can have. AC is
     // the variant; the toilet is never an item; a common toilet's things are
     // not one tenant's, so they stay off.
     const attached = selectedProperty?.bathroomType === "ATTACHED";
     const categoryOf = new Map((exitPoliciesQuery.data?.damageCharges ?? []).map((charge) => [charge.name.toLowerCase(), charge.category]));
-    const conditionOf = new Map((roomConditionsQuery.data ?? []).map((condition) => [condition.itemName.trim().toLowerCase(), condition]));
     const seen = new Set<string>();
     const items: MoveInItem[] = [];
     const add = (name: string, known?: "ROOM" | "BATHROOM") => {
@@ -587,17 +590,14 @@ export default function OwnerOnboardTenantScreen() {
       if (category === "COMMON_TOILET") return;
       if (category === "BATHROOM" && !attached) return;
       seen.add(key);
-      // Its level and photos as the room has them now (user, 2026-10-29).
-      const condition = conditionOf.get(key);
-      const carried = (condition?.photoUrls ?? []).slice(0, 3);
+      // Nothing carried from an earlier tenant: condition and photos start empty (user, 2026-11-07).
       items.push({
-        carried,
+        condition: null,
         custom: false,
-        damageLevel: condition?.level ?? "NA",
         fixed: true,
         name: name.trim(),
         note: "",
-        photoUrls: carried,
+        photoUrls: [],
         section: category === "BATHROOM" ? "BATHROOM" : "ROOM",
       });
     };
@@ -608,38 +608,29 @@ export default function OwnerOnboardTenantScreen() {
       add(AMENITY_LABELS[amenity]);
     });
     (selectedRoom?.customAmenities ?? []).forEach((name) => add(name));
-    // Anything else the room's condition knows, added at a past move-in.
-    (roomConditionsQuery.data ?? []).forEach((condition) => add(condition.itemName, condition.section));
     setMoveInItems(items);
-  }, [exitPoliciesQuery.data, exitPoliciesQuery.isLoading, moveInItems, roomConditionsQuery.data, roomConditionsQuery.isFetching, selectedProperty, selectedRoom, step]);
+  }, [exitPoliciesQuery.data, exitPoliciesQuery.isLoading, moveInItems, selectedProperty, selectedRoom, step]);
   // Sent only when filled in: skipped, or not yet complete, nothing is recorded.
   // Every item needs at least one photo before the step can go on (user, 2026-10-29).
-  // Keys at least 1, every item a photo, every damage described (user, 2026-10-29).
+  // Keys at least 1, every item a condition and a photo (user, 2026-11-07).
   const moveInReady = Boolean(
     moveInItems && moveInItems.length > 0
-      && moveInItems.every((item) => item.photoUrls.length > 0 && (item.damageLevel === "NA" || item.note.trim()))
+      && moveInItems.every((item) => item.condition !== null && item.photoUrls.length > 0)
       && Number(keysHandedOver) >= 1,
   );
   const moveInPayload = billingType !== "DAILY" && moveInItems && moveInReady
     ? {
         items: moveInItems.map((item) => ({
+          condition: item.condition ?? "WORKING",
           custom: item.custom,
-          damageLevel: item.damageLevel,
           name: item.name,
-          note: item.damageLevel === "NA" || !item.note.trim() ? null : item.note.trim(),
+          note: item.note.trim() ? item.note.trim() : null,
           photoUrls: item.photoUrls,
           section: item.section,
         })),
         keysHandedOver: keysHandedOver ? Number(keysHandedOver) : null,
       }
     : null;
-  // What each level means at this property, for the ⓘ beside every dropdown.
-  const levelWords = exitPoliciesQuery.data?.damageLevels ?? [
-    { description: "No damage", level: "NA" as const },
-    { description: "Light wear. Cleaning or a small fix", level: "D1" as const },
-    { description: "Damaged. Needs repair", level: "D2" as const },
-    { description: "Broken or missing. Must be replaced", level: "D3" as const },
-  ];
   // Never for an existing tenant: they live here now, so their bed must be free now.
   const selectedRoomAvailableFrom = !existingTenant && selectedRoom && selectedRoom.availableVacancies <= 0
     ? upcomingRoomVacancies.get(selectedRoom.id) ?? null
@@ -1412,7 +1403,8 @@ export default function OwnerOnboardTenantScreen() {
     {/* Held still while the form scrolls under it: the step count and the bar
         answer "where am I and how much is left", which is asked precisely when
         someone has scrolled far enough to have pushed the answer off screen. */}
-    <PinnedWizardHeader onHeightChange={wizardHeader.onHeightChange}>
+    {/* A deep blue header, as on Register property (user, 2026-11-08). */}
+    <PinnedWizardHeader onHeightChange={wizardHeader.onHeightChange} tone="deep">
       <View style={{ gap: spacing.sm }}>
         <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
           {/* Both slots are always occupied, even when a button would do
@@ -1420,7 +1412,7 @@ export default function OwnerOnboardTenantScreen() {
               the first and last steps. */}
           <View style={{ width: 40 }}>
             {previousStep ? (
-              <HeaderButton icon={ArrowLeft} onPress={goBackStep} subtle />
+              <HeaderButton deep icon={ArrowLeft} onPress={goBackStep} subtle />
             ) : null}
           </View>
 
@@ -1428,18 +1420,18 @@ export default function OwnerOnboardTenantScreen() {
               fill that is banned, not the colour. */}
           <FitText
             numberOfLines={1}
-            style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
+            style={{ color: "#FFFFFF", flex: 1, fontFamily: fonts.display, fontSize: 19, textAlign: "center" }}
           >
             {onDone ? "Tenant " : "Onboard "}
-            <Text style={{ color: colors.primary }}>{onDone ? (bookedForFuture ? "booked" : "onboarded") : fromBooking ? "booking" : "tenant"}</Text>
+            <Text style={{ color: "#BFD3FF" }}>{onDone ? (bookedForFuture ? "booked" : "onboarded") : fromBooking ? "booking" : "tenant"}</Text>
           </FitText>
 
           <View style={{ alignItems: "flex-end", width: 40 }}>
-            <HeaderButton icon={X} onPress={closeWizard} subtle />
+            <HeaderButton deep icon={X} onPress={closeWizard} subtle />
           </View>
         </View>
 
-        {onDone ? null : <StepProgress step={stepIndex} totalSteps={stepOrder.length} />}
+        {onDone ? null : <StepProgress step={stepIndex} tone="deep" totalSteps={stepOrder.length} />}
       </View>
     </PinnedWizardHeader>
 
@@ -2105,9 +2097,9 @@ export default function OwnerOnboardTenantScreen() {
               eyebrow="Move-in checklist"
               onClose={() => setMoveInHelp(false)}
               steps={[
-                { title: "Required", body: "Every item needs at least one photo, up to 3, and the keys handed over." },
-                { title: "Starts from the room", body: "Each item shows its level and photos as the room has them now. Carried photos stay, add new ones beside them." },
-                { title: "A damage level for each item", body: "NA is no damage, D3 the worst. Any damage needs a note of what exactly is damaged." },
+                { title: "Required", body: "Every item needs a condition and at least one photo, up to 3, and the keys handed over." },
+                { title: "Condition", body: "Working, Damaged or Broken, for this move-in only. Add a note on anything worth recording." },
+                { title: "Open damage", body: "An item with an open damage record is flagged. If it has not been repaired or replaced, set its condition to match." },
                 { title: "The tenant answers", body: "They see it in their app and have 48 hours to accept it or note a difference. Unanswered, it counts as accepted." },
                 { title: "Used at move-out", body: "It is the record the room is compared against when the tenancy ends." },
               ]}
@@ -2230,11 +2222,11 @@ export default function OwnerOnboardTenantScreen() {
               .map((item, index) => ({ index, item }))
               .filter(({ item }) => item.section === section);
             if (entries.length === 0 && section === "AMENITY") return null;
-            const damaged = entries.filter(({ item }) => item.damageLevel !== "NA").length;
             const needPhotos = entries.filter(({ item }) => item.photoUrls.length === 0).length;
+            const notWorking = entries.filter(({ item }) => item.condition === "DAMAGED" || item.condition === "BROKEN").length;
             const summary = [
               `${entries.length} item${entries.length === 1 ? "" : "s"}`,
-              damaged > 0 ? `${damaged} with damage` : null,
+              notWorking > 0 ? `${notWorking} damaged or broken` : null,
               needPhotos > 0 ? `${needPhotos} need${needPhotos === 1 ? "s" : ""} a photo` : "all photographed",
             ].filter(Boolean).join(", ");
             return (
@@ -2261,12 +2253,22 @@ export default function OwnerOnboardTenantScreen() {
                 {entries.length === 0 ? (
                   <Text style={[type.caption, { color: colors.muted }]}>Nothing here yet. Use Add for anything in it.</Text>
                 ) : null}
-                {entries.map(({ index, item }) => {
+                {entries.map(({ index, item }, position) => {
                   const update = (change: Partial<MoveInItem>) =>
                     setMoveInItems((items) => (items ?? []).map((entry, at) => (at === index ? { ...entry, ...change } : entry)));
                   return (
-                    // Each item its own card (user, 2026-10-29).
-                    <ItemCard key={`${item.name}-${index}`}>
+                    // No box of its own: a thick band between items, the card's full width (user, 2026-11-07).
+                    <View
+                      key={`${item.name}-${index}`}
+                      style={{
+                        borderTopColor: colors.surfaceSunken,
+                        borderTopWidth: position === 0 ? 0 : 6,
+                        gap: spacing.md,
+                        marginHorizontal: -spacing.lg,
+                        paddingHorizontal: spacing.lg,
+                        paddingTop: position === 0 ? 0 : spacing.lg,
+                      }}
+                    >
                       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
                         <ItemIcon color={colors.inkSoft} name={item.name} size={20} />
                         <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.display, fontSize: 16 }}>{item.name}</Text>
@@ -2283,18 +2285,26 @@ export default function OwnerOnboardTenantScreen() {
                           </AnimatedPressable>
                         )}
                       </View>
-                      <DamageLevelDropdown levels={levelWords} onChange={(level) => update({ damageLevel: level })} value={item.damageLevel} />
-                      {/* Any damage is described (user, 2026-10-29). */}
-                      {item.damageLevel === "NA" ? null : (
-                        <Field label="What is damaged" required>
-                          <Input
-                            maxLength={200}
-                            onChangeText={(value) => update({ note: value })}
-                            placeholder="e.g. Torn corner, stain on the left side"
-                            value={item.note}
-                          />
-                        </Field>
-                      )}
+                      {/* An open damage record on it: a nudge, not a rule (user, 2026-11-07). */}
+                      {openDamageCode(item.name) ? (
+                        <NoticeBar
+                          message={`${openDamageCode(item.name)} is still open. If it has not been repaired or replaced, set the condition to match.`}
+                          selectable={false}
+                          title="Open damage record"
+                          tone="warning"
+                        />
+                      ) : null}
+                      <ItemConditionDropdown onChange={(condition) => update({ condition })} value={item.condition} />
+                      {/* A note for any condition, Working included (user, 2026-11-07). */}
+                      <Field label="Note">
+                        <Input
+                          maxLength={200}
+                          multiline
+                          onChangeText={(value) => update({ note: value })}
+                          placeholder={item.condition === "DAMAGED" || item.condition === "BROKEN" ? "Grille bent, cools slowly" : "Anything worth noting"}
+                          value={item.note}
+                        />
+                      </Field>
                       <MultiImageField
                         label={`Photos (${item.photoUrls.length} of 3)`}
                         max={3}
@@ -2346,7 +2356,7 @@ export default function OwnerOnboardTenantScreen() {
                           <Text style={[type.caption, { color: colors.kicker }]}>At least one photo is needed.</Text>
                         </View>
                       )}
-                    </ItemCard>
+                    </View>
                   );
                 })}
               </CollapsibleSection>
@@ -2377,7 +2387,7 @@ export default function OwnerOnboardTenantScreen() {
                         return;
                       }
                       const section = addingTo;
-                      setMoveInItems((items) => [...(items ?? []), { custom: true, damageLevel: "NA", fixed: false, name, note: "", photoUrls: [], section }]);
+                      setMoveInItems((items) => [...(items ?? []), { condition: null, custom: true, fixed: false, name, note: "", photoUrls: [], section }]);
                       setNewItemName("");
                       setAddingTo(null);
                     }}
@@ -2560,7 +2570,7 @@ export default function OwnerOnboardTenantScreen() {
               action={{ label: "Change", onPress: () => setStep("handover") }}
               rows={moveInPayload
                 ? [
-                    { label: "Items", value: `${moveInPayload.items.length}, ${moveInPayload.items.filter((item) => item.damageLevel !== "NA").length} with damage` },
+                    { label: "Items", value: `${moveInPayload.items.length}, ${moveInPayload.items.filter((item) => item.condition !== "WORKING").length} damaged or broken` },
                     { label: "Photos", value: String(moveInPayload.items.reduce((total, item) => total + item.photoUrls.length, 0)) },
                     ...(moveInPayload.keysHandedOver != null ? [{ label: "Keys handed over", value: String(moveInPayload.keysHandedOver) }] : []),
                   ]
@@ -3619,7 +3629,7 @@ function CollapsibleSection({
         borderRadius: radii.card,
         borderWidth: 1,
         // The same lift as every Card, the keys card's (user, 2026-10-29).
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <AnimatedPressable
@@ -3819,6 +3829,8 @@ function Input({
         fontSize: 15,
         opacity: locked ? 0.7 : 1,
         padding: spacing.md,
+        // A note box is a few lines tall, typed from the top (2026-11-07).
+        ...(props.multiline ? { minHeight: 96, textAlignVertical: "top" as const } : null),
       }}
     />
   );
@@ -4087,11 +4099,14 @@ function PrimaryButton({
 }
 
 function HeaderButton({
+  deep,
   icon: Icon,
   label,
   onPress,
   subtle,
 }: {
+  /** White on a see-through disc, for the deep blue header (2026-11-08). */
+  deep?: boolean;
   icon: typeof ArrowLeft;
   label?: string;
   onPress: () => void;
@@ -4114,14 +4129,14 @@ function HeaderButton({
         onPress={onPress}
         style={{
           alignItems: "center",
-          backgroundColor: colors.surfaceSunken,
+          backgroundColor: deep ? "rgba(255,255,255,0.18)" : colors.surfaceSunken,
           borderRadius: 999,
           height: 28,
           justifyContent: "center",
           width: 28,
         }}
       >
-        <Icon color={colors.inkSoft} size={15} strokeWidth={2.4} />
+        <Icon color={deep ? "#FFFFFF" : colors.inkSoft} size={15} strokeWidth={2.4} />
       </AnimatedPressable>
     );
   }

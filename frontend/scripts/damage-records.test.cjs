@@ -26,7 +26,9 @@ test("damage cards use the tenancy-style labelled Room, Tenant and Recorded colu
     "@/store/hooks": { useAppSelector: (select) => select({ auth: { user: { id: "viewer" } } }) },
     "@/theme/spacing": { radii: { card: 10 }, spacing: { xxs: 4, xs: 6, sm: 10, md: 14, lg: 18 } },
     "@/theme/use-theme": { useTheme: () => ({ colors: { border: "grey", muted: "muted", ink: "black" }, fonts: { sansBold: "Bold" }, type: { caption: {} } }) },
-    "@/theme/shadows": { useSoftShadow: () => () => ({}) },
+    "@/theme/shadows": { useSoftShadow: () => () => ({}), cardShadow: () => ({}) },
+    // The card's arrow pill (2026-11-14).
+    "lucide-react-native": { ChevronRight: "ChevronRight" },
   };
   const code = ts.transpileModule(read("src/features/damage/damage-record-card.tsx"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
@@ -130,16 +132,37 @@ test("repair history reuses the damage card and preserves its outcome, repairer,
 });
 
 test("recording a damage: four parts, the room by floor, one level label, the cost from the catalogue", () => {
+  // Each part titled with lines between, no subheading bands or boxes (user, 2026-11-07).
   for (const band of ["Room & item", "The damage", "Who is responsible", "Photos & notes"]) {
-    assert.match(sheet, new RegExp(`<SectionHeading title="${band}" />`));
+    assert.match(sheet, new RegExp(`<FormCard (first )?title="${band}">`));
   }
+  assert.doesNotMatch(sheet, /<SectionHeading/);
+  // Floors fold open one at a time, and the level list pushes the form down.
+  assert.match(sheet, /const expanded = floor === shownFloor;/);
+  assert.match(sheet, /onPress=\{\(\) => setOpenFloor\(expanded \? CLOSED_ALL : floor\)\}/);
+  assert.match(sheet, /<DamageLevelDropdown[\s\S]*?\binline\b/);
   // The room by floor, in building order, its rooms in number order.
   assert.match(sheet, /function RoomByFloorField\(/);
   assert.match(sheet, /\.sort\(\(\[left\], \[right\]\) => compareFloors\(left, right\)\)/);
   assert.match(sheet, /localeCompare\(b\.roomNumber, undefined, \{ numeric: true \}\)/);
   // One label on the level, its own, and only D1 to D3 offered.
   assert.match(sheet, /<DamageLevelDropdown\s+label="New damage level"/);
-  assert.match(sheet, /options=\{DAMAGE_OPTIONS\}/);
+  // D1 to D3, never the level the item is already at on a new record, nothing picked to start (user, 2026-11-07).
+  // Levels are price tiers only (user, 2026-11-07): asked only for an item priced at more than one.
+  assert.match(sheet, /const asksLevel = Boolean\(record\?\.damageLevel\) \|\| tiers\.length > 1;/);
+  assert.match(sheet, /const levelOptions = tiers\.length > 1 \? tiers : DAMAGE_OPTIONS;/);
+  assert.match(sheet, /options=\{levelOptions\}/);
+  assert.match(sheet, /useState<DamageLevel \| null>\(record\?\.damageLevel \?\? null\)/);
+  assert.match(sheet, /level: !asksLevel \|\| level \? undefined : "Pick a level"/);
+  assert.match(sheet, /damageLevel: asksLevel \? level : null,/);
+  // One open damage per item: the cost locks and Save and Charge now wait for the fix (user, 2026-11-07).
+  assert.doesNotMatch(sheet, /blockedReason|"Broken"|graded/);
+  assert.match(sheet, /\$\{openOnItem\} is still open for \$\{itemName\}\. Mark it repaired or replaced before recording a new damage\./);
+  assert.match(sheet, /const blockedByOpen = openOnItem !== null;/);
+  assert.match(sheet, /editable=\{!blockedByOpen\}/);
+  assert.match(sheet, /disabled=\{busy \|\| blockedByOpen\} label="Charge now"/);
+  // The catalogue fills the cost on every item or level change, still editable.
+  assert.match(sheet, /if \(price\) \{\s+setCost\(String\(Math\.round\(price \/ 100\)\)\);/);
   assert.doesNotMatch(sheet, /DamageLevelInfo/);
   assert.match(sheet, /function catalogueCost\(/);
   assert.match(sheet, /prefix="₹"/);
@@ -313,7 +336,7 @@ test("damage Edit sits beside the title; Delete and Charge now share a row and k
     assert.equal(render(props).props.footer, undefined);
   }
   const shell = read("src/components/sheet-shell.tsx");
-  assert.match(shell, /<\/ModalTitle>\s+\{headerRight\}/, "The action is in the title row, to the right of its title");
+  assert.match(shell, /<\/ModalTitle>\s+(?:\)\s+)*(?:\)\}\s+)?\{headerRight\}/, "The action is in the title row, to the right of its title");
 });
 
 test("read-only damage text cannot opt into native long-press selection", () => {
@@ -322,7 +345,7 @@ test("read-only damage text cannot opt into native long-press selection", () => 
     assert.doesNotMatch(text, /selectable=\{true\}/);
   }
   assert.match(detail, /<Text selectable=\{false\}[^>]*>\{note\}<\/Text>/);
-  assert.match(damages, /<NoticeBar[^>]*selectable=\{false\}/);
+  assert.match(read("src/features/damage/record-damage-sheet.tsx"), /<NoticeBar[\s\S]*?selectable=\{false\}/);
 });
 
 test("one Damages screen: Open and History, Record, card actions, and repairs", () => {
@@ -338,8 +361,9 @@ test("one Damages screen: Open and History, Record, card actions, and repairs", 
   // Every level can be repaired or replaced, D1 included (user, 2026-10-31).
   assert.doesNotMatch(damages, /damageLevel === "D1"/);
   assert.match(damages, /label="Mark replaced"/);
-  assert.match(damages, /const below = ORDER\.slice\(0, ORDER\.indexOf\(record\.damageLevel\)\);/);
-  assert.match(damages, /level: outcome === "repair" \? level : "NA"/);
+  // A fix asks no level (user, 2026-11-07: levels are only price tiers).
+  assert.match(damages, /const payload = \{ level: null, note: note\.trim\(\) \|\| null, photoUrls: photos \};/);
+  assert.doesNotMatch(damages, /label="Level now"/);
   assert.match(damages, /max=\{3\}/);
   assert.match(read("app/_layout.tsx"), /<Stack\.Screen name="owner-damages"/);
   // It sits in the Property workspace beside the item catalogue, which is settings only again.
@@ -419,10 +443,17 @@ test("repair and replacement sheets hug their content with a pinned action and s
   assert.equal(saving.props.footer.props.children.props.label, "Saving…");
 });
 
-test("the tenant sees their own share and bill, and nothing when there is none", () => {
-  assert.match(tenant, /if \(records\.length === 0\) return null;/);
+test("the tenant sees their own share and bill on the owner's card, on its own screen (2026-11-10)", () => {
+  assert.match(tenant, /title="No damage records"/);
   assert.match(tenant, /record\.shares\.find\(\(share\) => share\.tenancyId === tenancyId\)/);
-  assert.match(read("app/(tabs)/tenancy.tsx"), /<TenantDamageRecords tenancyId=\{activeTenancy\.tenancy\.id\} \/>/);
+  assert.match(tenant, /<DamageRecordCard key=\{record\.id\} record=\{record\} viewerTenancyId=\{tenancyId\}>/);
+  // A sticky search by damage ID or item, with a level dropdown beside it (user, 2026-11-14).
+  const screen = read("app/tenancy-damages.tsx");
+  assert.match(screen, /<TenantDamageRecords level=\{level\} search=\{search\} tenancyId=\{tenancyId\} \/>/);
+  assert.match(screen, /stickyHeaderIndices=\{\[1\]\}/);
+  assert.match(screen, /placeholder="Search by damage ID or item"/);
+  assert.match(read("src/features/damage/tenant-damage-records.tsx"), /record\.code\.toLowerCase\(\)\.includes\(needle\) \|\| record\.itemName\.toLowerCase\(\)\.includes\(needle\)/);
+  assert.doesNotMatch(read("app/(tabs)/tenancy.tsx"), /TenantDamageRecords/);
 });
 
 test("every change sends the version back", () => {

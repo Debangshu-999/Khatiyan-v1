@@ -2,13 +2,11 @@ import { Text, View } from "react-native";
 import type { ComponentType } from "react";
 import {
   AlertTriangle,
-  CircleAlert,
   CalendarDays,
   CheckCircle2,
   Clock3,
   ReceiptText,
   RefreshCw,
-  WalletCards,
   XCircle,
   type LucideProps,
 } from "lucide-react-native";
@@ -18,7 +16,8 @@ import { BookingTokenNote } from "@/features/billing/booking-token-note";
 import { CardNameRow, CardStatus, NAME_UNDER_STATUS, cardText, smallerCardText } from "@/components/card-name-row";
 import { GhostText } from "@/components/skeleton-boundary";
 import { radii, spacing } from "@/theme/spacing";
-import { softShadow } from "@/theme/shadows";
+import { UnpaidBillGlyph } from "@/components/billing-vector-icons";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
@@ -274,11 +273,11 @@ export function BillStatusPill({ cycle }: { cycle: BillingCycle }) {
             ? { background: colors.surfaceSunken, color: colors.muted, icon: XCircle }
             // Everything still owing shares the blue, so the ICON is what tells
             // them apart — a clock for a bill whose date has not arrived, a
-            // circled exclamation for one that is waiting to be paid.
+            // bill with a cross for one that is waiting to be paid.
             : {
                 background: colors.primarySoft,
                 color: colors.primaryDeep,
-                icon: cycle.status === "UPCOMING" ? Clock3 : CircleAlert,
+                icon: cycle.status === "UPCOMING" ? Clock3 : UnpaidBillGlyph,
               };
 
   return (
@@ -345,7 +344,7 @@ export function PaymentStatusBadge({ cycle }: { cycle: BillingCycle }) {
             ? { background: colors.dangerSoft, color: colors.danger, icon: AlertTriangle, label: "Overdue" }
             : state === "CANCELLED"
               ? { background: colors.surfaceSunken, color: colors.muted, icon: XCircle, label: "Cancelled" }
-              : { background: colors.primarySoft, color: colors.primaryDeep, icon: CircleAlert, label: "Unpaid" };
+              : { background: colors.primarySoft, color: colors.primaryDeep, icon: UnpaidBillGlyph, label: "Unpaid" };
   return (
     <BillingStatusBadge
       background={display.background}
@@ -422,7 +421,7 @@ function PaymentTimingFooter({ cycle }: { cycle: BillingCycle }) {
               }
             : state === "CANCELLED"
               ? { color: colors.muted, icon: XCircle, label: "Bill cancelled" }
-              : { color: colors.primaryDeep, icon: WalletCards, label: "Payment due today" };
+              : { color: colors.primaryDeep, icon: UnpaidBillGlyph, label: "Payment due today" };
   const Icon = display.icon;
 
   return (
@@ -456,6 +455,7 @@ export function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
         borderWidth: 1,
         gap: spacing.md,
         padding: spacing.md,
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
@@ -472,7 +472,7 @@ export function PaymentHistoryRow({ cycle }: { cycle: BillingCycle }) {
           </CardNameRow>
           <FitText
             numberOfLines={1}
-            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: cardText(20), lineHeight: 24 }}
+            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: cardText(22), lineHeight: 27 }}
           >
             {cardName(tenantName)}
           </FitText>
@@ -523,7 +523,7 @@ export function BillCard({ cycle }: { cycle: BillingCycle }) {
         borderWidth: 1,
         gap: spacing.md,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>

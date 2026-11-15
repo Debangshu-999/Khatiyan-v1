@@ -13,7 +13,7 @@ function load(source, dependencies = {}) {
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
   vm.runInNewContext(outputText, { exports, require: (name) => {
     if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
-    if (name in SHARED_TEXT) return SHARED_TEXT[name]; assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
+    if (name in SHARED_TEXT) return SHARED_TEXT[name]; if (name === "@/components/empty-art") return new Proxy({}, { get: (_, key) => String(key) }); assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
     return dependencies[name];
   } });
   return exports;
@@ -123,6 +123,7 @@ function harness(options = {}) {
     "@/features/booking/booking-form-parts": { RoomRent: "RoomRent", roomKindLabel: (room) => `${room.conditioning === "AC" ? "AC" : "Non-AC"} · ${room.capacity} sharing` },
     "@/features/booking/owner-booking-status": { OwnerBookingStatus: "OwnerBookingStatus", OwnerTokenStatus: "OwnerTokenStatus" },
     "@/features/booking/booking-confirm-body": { BookingConfirmBody: "BookingConfirmBody" },
+    "@/features/booking/confirmed-booking-ticket": { ConfirmedBookingTicket: "ConfirmedBookingTicket" },
     // One page in, one page out. Adding pages together is the hook's own business.
     "@/hooks/use-accumulated-pages": { useAccumulatedPages: (key, response) => { accumulatedKeys.push(key); return response; } },
     "@/features/analytics/period": { istToday: () => "2026-10-27" },
@@ -578,7 +579,7 @@ test("with nothing in the list the Bookings screen sits still, and scrolls again
   assert.ok(scroll.includes('import { contentFitsWithoutScroll, getHeaderScrollMinHeight } from "@/components/header-scroll-layout";'));
 });
 
-test("cards use phone-visible shadows inside modules and Home, leaving the other tabs unchanged", () => {
+test("cards use phone-visible shadows on every screen, tabs included", () => {
   const drawn = [];
   const shadows = (os, version, segments) => load(read("src/theme/shadows.ts"), {
     "expo-router": { useSegments: () => segments },
@@ -592,28 +593,20 @@ test("cards use phone-visible shadows inside modules and Home, leaving the other
   assert.deepEqual({ ...shadows("web", undefined, []).softShadow("rgba(15, 23, 42, 0.16)", 2, 6) }, { boxShadow: "0px 2px 6px 0px rgba(15, 23, 42, 0.16)" });
   // Android before 9 has no box shadow, so it also gets the system's own.
   assert.equal(shadows("android", 27, []).softShadow("rgba(15, 23, 42, 0.16)", 4, 12).elevation, 3);
-  // The other tabs retain the original treatment; Home now opts in explicitly.
-  const tab = shadows("android", 34, ["(tabs)", "owner"]);
-  assert.deepEqual(JSON.parse(JSON.stringify(tab.useSoftShadow()("rgba(15, 23, 42, 0.16)", 4, 12))), { shadowColor: "rgba(15, 23, 42, 0.16)", shadowOffset: { height: 4, width: 0 }, shadowOpacity: 1, shadowRadius: 12 });
-  assert.equal(tab.useSoftShadow()("x", 4, 12).boxShadow, undefined);
+  // App wide (user, 2026-11-09): every tab draws the shadow a phone shows, as modules and Home do.
   assert.equal(modern.useSoftShadow()("rgba(15, 23, 42, 0.16)", 4, 12).boxShadow, "0px 4px 12px 0px rgba(15, 23, 42, 0.16)");
-  for (const segments of [["(tabs)"], ["(tabs)", "index"]]) {
-    assert.equal(shadows("android", 34, segments).useSoftShadow()("x", 4, 12).boxShadow, "0px 4px 12px 0px x");
-  }
-  for (const name of ["discovery", "chats", "owner", "account"]) {
-    assert.equal(shadows("android", 34, ["(tabs)", name]).useSoftShadow()("x", 4, 12).boxShadow, undefined, name);
+  for (const segments of [["(tabs)"], ["(tabs)", "index"], ["(tabs)", "discovery"], ["(tabs)", "chats"], ["(tabs)", "owner"], ["(tabs)", "account"], ["(tabs)", "tenancy"]]) {
+    assert.equal(shadows("android", 34, segments).useSoftShadow()("x", 4, 12).boxShadow, "0px 4px 12px 0px x", segments.join("/"));
   }
 
   // Every card is drawn by the shared Card, which asks which of the two it is to wear.
   const card = read("src/components/card.tsx");
-  assert.ok(card.includes("const softShadow = useSoftShadow();") && card.includes("...softShadow(colors.shadow, 4, 12)"));
+  assert.ok(card.includes("const softShadow = useSoftShadow();") && card.includes("...cardShadow(colors.shadow)"));
   assert.doesNotMatch(card, /shadowOpacity|elevation:/);
-  // Only Home's hand-drawn cards change; Manage still keeps the old treatment.
-  assert.match(read("app/(tabs)/index.tsx"), /\.\.\.softShadow\(colors\.shadow/);
-  assert.doesNotMatch(read("app/(tabs)/index.tsx"), /tabShadow/);
-  for (const file of ["app/(tabs)/owner.tsx"]) {
-    assert.ok(read(file).includes("...tabShadow(colors.shadow"), file);
-    assert.doesNotMatch(read(file), /\.\.\.softShadow\(/, file);
+  // No screen hand-draws the old browser-only shadow any more.
+  assert.match(read("app/(tabs)/index.tsx"), /\.\.\.(?:soft|card)Shadow\(colors\.shadow/);
+  for (const file of ["app/(tabs)/index.tsx", "app/(tabs)/owner.tsx", "app/(tabs)/account.tsx", "app/(tabs)/tenancy.tsx"]) {
+    assert.doesNotMatch(read(file), /tabShadow/, file);
   }
   const walk = (dir) => fs.readdirSync(path.join(__dirname, "..", dir), { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? walk(`${dir}/${entry.name}`) : /\.tsx?$/.test(entry.name) ? [`${dir}/${entry.name}`] : []);
   for (const file of [...walk("app"), ...walk("src")]) assert.doesNotMatch(read(file), /shadowColor: colors\.shadow/, file);
@@ -889,8 +882,10 @@ test("raised close-circle shadow is darker and symmetric, without Android's dire
     "react-native-gesture-handler": {},
     "react-native-safe-area-context": {},
     "@/components/leave-on-stale": {},
-    "@/components/keyboard-intent": { onKeyboardLeaving: () => () => {} },
+    "@/components/keyboard-intent": { holdKeyboardForModal: () => () => {}, onKeyboardLeaving: () => () => {} },
+    "@/components/use-keyboard-inset": { revealFocusedInput() {}, useKeyboardRoom: () => ({ inset: 0, room: 0 }), useRevealOnKeyboard() {} },
     "@/components/modal-title-rule": { ModalTitleRule: "ModalTitleRule" },
+    "@/components/help-modal-header": { SheetCloseButton: "SheetCloseButton" },
   }).CloseShadow;
   const shadow = shadowFor(34);
   assert.equal(shadow.boxShadow.length, 1);
@@ -901,14 +896,14 @@ test("raised close-circle shadow is darker and symmetric, without Android's dire
   assert.equal(shadowFor(27).elevation, 5);
 });
 
-test("shared top-right sheet close uses a smaller faded-black cross without shrinking its circle or touch target", () => {
+test("every sheet has the dark cross above it, and none inside, whatever it asks for", () => {
   const h = harness();
   const gesture = {};
   for (const method of ["enabled", "activeOffsetY", "failOffsetY", "simultaneousWithExternalGesture", "onBegin", "onUpdate", "onEnd", "runOnJS"]) gesture[method] = () => gesture;
   const shell = load(read("src/components/sheet-shell.tsx"), { ...h.dependencies,
     react: { ...h.dependencies.react, useCallback: (fn) => fn, useMemo: (fn) => fn() },
     "react-native": { ...h.dependencies["react-native"],
-      Animated: { Value: class { interpolate() { return 0; } }, View: "AnimatedView" },
+      Animated: { add: (a, b) => b, Value: class { interpolate() { return 0; } }, View: "AnimatedView" },
       Dimensions: { get: () => ({ height: 800 }) }, Keyboard: { isVisible: () => false },
       KeyboardAvoidingView: "KeyboardAvoidingView", Modal: "Modal",
       PanResponder: { create: () => ({ panHandlers: {} }) }, Platform: { OS: "android", Version: 34 },
@@ -916,27 +911,16 @@ test("shared top-right sheet close uses a smaller faded-black cross without shri
     "react-native-gesture-handler": { Gesture: { Pan: () => gesture }, GestureDetector: "GestureDetector", GestureHandlerRootView: "GestureHandlerRootView", ScrollView: "GestureScrollView" },
     "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 24, bottom: 20 }) },
     "@/components/leave-on-stale": { useLeavableSurface() {} },
-    "@/components/keyboard-intent": { onKeyboardLeaving: () => () => {} },
+    "@/components/keyboard-intent": { holdKeyboardForModal: () => () => {}, onKeyboardLeaving: () => () => {} },
+    "@/components/use-keyboard-inset": { revealFocusedInput() {}, useKeyboardRoom: () => ({ inset: 0, room: 0 }), useRevealOnKeyboard() {} },
     "@/components/modal-title-rule": { ModalTitleRule: "ModalTitleRule" },
+    "@/components/help-modal-header": { SheetCloseButton: "SheetCloseButton" },
   });
-  // No x by default (user, 2026-10-29): only a sensitive sheet, a PIN or a code, asks for one.
-  const plain = h.render(shell.SheetShell, { title: "Cancel booking?", onClose() {}, children: "Body" });
-  assert.equal(JSON.stringify(plain).includes('"accessibilityLabel":"Close"'), false);
-  for (const title of ["Cancel booking?", ""]) {
-    const tree = h.render(shell.SheetShell, { title, onClose() {}, showClose: true, children: "Body" });
-    const close = one(tree, "AnimatedPressable", (node) => node.props.accessibilityLabel === "Close");
-    const mark = one(close, "X");
-    assert.equal(mark.props.size, 18);
-    assert.equal(mark.props.color, "rgba(0, 0, 0, 0.6)");
-    assert.equal(close.props.style.backgroundColor, "#FFFFFF");
-    assert.equal(close.props.style.height, 32); assert.equal(close.props.style.width, 32);
-    assert.equal(close.props.hitSlop, 8);
-    assert.equal(close.props.style.boxShadow[0].color, "rgba(15, 23, 42, 0.28)");
-  }
-  for (const [variant, size, color] of [["circle", 16, themes.light.ink], ["plain", 21, themes.light.muted]]) {
-    const tree = h.render(shell.SheetShell, { title: "Other sheet", closeButtonVariant: variant, onClose() {}, showClose: true, children: "Body" });
-    const mark = one(tree, "X");
-    assert.equal(mark.props.size, size); assert.equal(mark.props.color, color);
+  // Every bottom-up sheet: the dark cross over its top edge, and nothing closes from inside (user, 2026-11-07).
+  for (const props of [{ title: "Cancel booking?" }, { title: "" }, { title: "PIN", showClose: true }, { title: "Other", closeButtonVariant: "circle", showClose: true }]) {
+    const tree = h.render(shell.SheetShell, { ...props, onClose() {}, children: "Body" });
+    assert.equal(nodes(tree, "SheetCloseButton").length, 1);
+    assert.equal(JSON.stringify(tree).includes('"accessibilityLabel":"Close"'), false);
   }
 });
 
@@ -1176,12 +1160,19 @@ test("the list has no pager: the next page is asked for from the screen's scroll
   }
 });
 
-test("a card is made as the tenant's My bookings card is, with a short status at the end of the name's row", () => {
+test("a booking keeps its name/status header and uses a token-style three-column fact row", () => {
   const h = harness();
   const card = h.render(h.list.BookingCard, { item: record({ tenantName: "Debangshu Das" }), onOpen() {} });
-  // The same card shell and soft bands as the tenant's.
+  // The same card shell; three facts now replace the separate room/date/rent bands.
   assert.equal(card.type, "Card"); assert.equal(card.props.style.padding, spacing.md); assert.equal(card.props.style.gap, spacing.sm);
-  assert.equal(nodes(card, "BookingInfoBand").length, 4); assert.equal(nodes(h.render(h.list.BookingCard, { item: record({ handlerName: "Ravi" }), onOpen() {} }), "BookingInfoBand").length, 5);
+  assert.equal(nodes(card, "BookingInfoBand").length, 1); assert.equal(nodes(h.render(h.list.BookingCard, { item: record({ handlerName: "Ravi" }), onOpen() {} }), "BookingInfoBand").length, 2);
+  const facts = nodes(card, "BookingFact");
+  assert.deepEqual(facts.map((node) => [node.props.label, node.props.value]), [["Room", "101"], ["Tenant's offer", "Rs 8800 / month"], ["Move-in", ui.bookingDateLabel(record().moveInDate)]]);
+  assert.equal(nodes(card, "BookingFactDivider").length, 2);
+  const factRow = card.props.children[1];
+  assert.equal(factRow.props.style.flexDirection, "row");
+  assert.equal(factRow.props.style.alignItems, "stretch");
+  assert.equal(nodes(factRow, "BookingFact").length, 3);
   assert.equal(nodes(card, "StateChip").length, 0); assert.equal(nodes(card, "StatusPill").length, 0);
   const tenant = read("app/my-bookings.tsx");
   for (const piece of ["BookingInfoBand icon={CalendarDays}", "BookingInfoBand icon={IndianRupee}", "BookingInfoBand icon={Clock3}", "gap: spacing.sm, padding: spacing.md"]) assert.ok(tenant.includes(piece), piece);
@@ -1199,14 +1190,37 @@ test("a card is made as the tenant's My bookings card is, with a short status at
   assert.equal(said({ status: "CONFIRMED", short: true }), "Confirmed");
   assert.ok(read("app/owner-booking-detail.tsx").includes('from "@/features/booking/owner-booking-status"'));
   assert.equal(read("app/owner-booking-detail.tsx").includes("function OwnerBookingStatus"), false);
-  // The room's number is a size down, and the band lines are a weight up from the plain description (user, 2026-10-11).
+  // The facts copy token-record typography; retained bands keep their medium weight.
   const styleOf = (tree, starts) => Object.assign({}, ...[].concat(one(tree, "Text", (node) => [].concat(node.props.children).join("").startsWith(starts)).props.style));
   const handled = h.render(h.list.BookingCard, { item: record({ handlerName: "Ravi" }), onOpen() {} });
-  assert.equal(styleOf(handled, "Room ").fontSize, 13); assert.ok(styleOf(handled, "Move-in: ").fontSize === undefined || styleOf(handled, "Move-in: ").fontSize > 13);
-  for (const line of ["Room ", "Move-in: ", "Handled by ", "Tenant's offer", "Expire"]) assert.equal(styleOf(handled, line).fontFamily, "medium", line);
+  for (const fact of nodes(handled, "BookingFact")) {
+    const drawnFact = fact.type(fact.props);
+    const [label, value] = nodes(drawnFact, "Text");
+    assert.equal(Object.assign({}, ...[].concat(label.props.style)).fontSize, 10);
+    assert.equal(value.props.style.fontFamily, "bold");
+    assert.equal(value.props.style.fontSize, 12);
+    assert.equal(value.props.numberOfLines, 2);
+  }
+  for (const line of ["Handled by ", "Expire"]) assert.equal(styleOf(handled, line).fontFamily, "medium", line);
   // One full-width button, strong only where the request is waiting on the property.
   assert.equal(button(card, "Review request").props.variant, "primary");
   assert.equal(button(h.render(h.list.BookingCard, { item: record({ status: "CONFIRMED" }), onOpen() {} }), "View booking").props.variant, "secondary");
+});
+
+test("booking fact row preserves agreed versus offered rent across list statuses", () => {
+  const h = harness();
+  for (const [status, currentOfferBy, expected] of [
+    ["AWAITING_HANDLER", "TENANT", "Tenant's offer"], ["AWAITING_TENANT", "MANAGEMENT", "Property's offer"],
+    ["AWAITING_TOKEN", "TENANT", "Agreed rent"], ["TOKEN_RECEIVED", "MANAGEMENT", "Agreed rent"],
+    ["CONFIRMED", "TENANT", "Agreed rent"], ["MOVED_IN", "TENANT", "Agreed rent"],
+    ["CANCELLED", "TENANT", "Rent"], ["EXPIRED", "MANAGEMENT", "Rent"],
+  ]) {
+    const card = h.render(h.list.BookingCard, { item: record({ status, currentOfferBy }), onOpen() {} });
+    const facts = nodes(card, "BookingFact");
+    assert.deepEqual(facts.map((node) => node.props.label), ["Room", expected, "Move-in"]);
+    assert.equal(facts[1].props.value, "Rs 8800 / month");
+    assert.equal(nodes(card, "BookingFactDivider").length, 2);
+  }
 });
 
 test("a request's clock on a card reads as days from now and the time it ends, on both sides' cards", () => {
@@ -1545,9 +1559,9 @@ test("final confirmation refuses stale versions or revoked capabilities; new and
 test("a confirmed booking past its move-in day says so in a pale red band under the rent", () => {
   const list = read("src/features/booking/booking-request-list.tsx");
   assert.match(list, /const pastDue = item\.status === "CONFIRMED" && item\.moveInDate < istToday\(\);/);
-  const rent = list.indexOf("<BookingInfoBand icon={IndianRupee}>");
+  const rent = list.indexOf('<BookingFact flex={1.1} label={note ?? "Rent"}');
   const due = list.indexOf('<BookingInfoBand icon={CalendarX} tone="danger">');
-  assert.ok(rent > 0 && due > rent, "under the rent band");
+  assert.ok(rent > 0 && due > rent, "under the rent fact row");
   assert.match(list, />Booking past due<\/Text>/);
   assert.match(read("src/features/booking/tenant-booking-parts.tsx"), /tone === "danger" \? \[colors\.dangerSoft, colors\.danger\]/);
 });

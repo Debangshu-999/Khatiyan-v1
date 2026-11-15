@@ -3,7 +3,7 @@ import { Text, View } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
 import { MarqueeText } from "@/components/marquee-text";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { metricFontSize } from "@/theme/metric-size";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -15,7 +15,8 @@ type MetricTileProps = {
   icon?: ComponentType<LucideProps>;
   /** Places side icons in a soft semantic circle instead of leaving them bare. */
   iconFilled?: boolean;
-  iconTone?: "primary" | "success" | "violet" | "warning" | "danger";
+  /** "ink": a black glyph, for a summary that should not read by colour (2026-11-11: My bills). */
+  iconTone?: "primary" | "success" | "violet" | "warning" | "danger" | "ink";
   /**
    * Where the glyph sits.
    *
@@ -71,7 +72,9 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconFilled = false
           ? colors.warningText
           : iconTone === "danger"
             ? colors.danger
-            : colors.primary;
+            : iconTone === "ink"
+              ? colors.ink
+              : colors.primary;
   const iconBackgroundColor =
     iconTone === "success"
       ? colors.successSoft
@@ -79,7 +82,7 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconFilled = false
         ? colors.warningSoft
         : iconTone === "danger"
           ? colors.dangerSoft
-          : iconTone === "violet"
+          : iconTone === "violet" || iconTone === "ink"
             ? colors.surfaceSunken
             : colors.primarySoft;
 
@@ -91,11 +94,10 @@ export function MetricTile({ dense = false, hint, icon: Icon, iconFilled = false
         borderCurve: "continuous",
         borderRadius: 12,
         borderWidth: 1,
-        elevation: 2,
         flex: 1,
         gap: spacing.xs,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 2, 6),
+        ...cardShadow(colors.shadow),
       }}
     >
       {/* Bare, on the tile's own white — the billing card's treatment. A tinted

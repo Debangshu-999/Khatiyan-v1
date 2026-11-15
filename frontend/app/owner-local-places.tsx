@@ -360,6 +360,7 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
           addressSummary={addressText.trim() ? addressText.trim() : null}
           coords={coords}
           onPress={() => setPickerOpen(true)}
+          raised
         />
         <FormInput label="Address" multiline onChangeText={setAddressText} placeholder="Filled from the pin — edit freely" value={addressText} />
 
@@ -428,10 +429,11 @@ function PlaceFormSheet({ editing, onClose, property }: { editing: PropertyLocal
   );
 }
 
+/** Worded like a FormInput's own label, as Place name is (user, 2026-11-07). */
 function FieldLabel({ children }: { children: string }) {
   const { colors, type } = useTheme();
   return (
-    <Text style={[type.caption, { color: colors.ink, fontWeight: "700" }]}>
+    <Text style={[type.label, { color: colors.muted }]}>
       {children}
     </Text>
   );

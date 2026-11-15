@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
-import { announceInputBlur } from "@/components/keyboard-intent";
+import { announceInputBlur, announceInputFocus } from "@/components/keyboard-intent";
 import {
   AccessibilityInfo,
   Animated,
@@ -236,6 +236,8 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
         }}
         onFocus={(event) => {
           setFocused(true);
+          // Sheets and dialogs make room now, not when Android reports the keyboard up.
+          announceInputFocus();
           onFocus?.(event);
         }}
         placeholder={marqueeActive || focused ? "" : fittedPlaceholder}

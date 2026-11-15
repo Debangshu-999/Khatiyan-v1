@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Animated, Easing, View, type DimensionValue } from "react-native";
 
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { COMPACT_SCREEN_HEADERS } from "@/components/compact-screen-header";
 import { ScreenHeader } from "@/components/screen-header";
 import { radii, spacing } from "@/theme/spacing";
@@ -59,10 +59,9 @@ function SkeletonSurface({ children, padding = spacing.md }: { children: ReactNo
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
-        elevation: 2,
         flex: 1,
         padding,
-        ...softShadow(colors.shadow, 2, 6),
+        ...cardShadow(colors.shadow),
       }}
     >
       {children}

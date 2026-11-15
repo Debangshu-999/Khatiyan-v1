@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmptyBeds } from "@/components/empty-art";
 import { Text, View } from "react-native";
 import { BedDouble, ChevronDown } from "lucide-react-native";
 
@@ -184,7 +185,7 @@ export default function OwnerExternalBookingScreen() {
         {optionsQuery.isLoading ? <OwnerDataListSkeleton bodyLines={2} rows={3} /> : null}
         {optionsQuery.isError ? <LoadFailed error={optionsQuery.error} onReload={() => void optionsQuery.refetch()} /> : null}
         {options && !options.open ? (
-          <EmptyState artworkNode={<BedDouble color={colors.muted} size={56} />} title={options.whyNot ?? "No bed is free to book here right now."} />
+          <EmptyState artworkNode={<EmptyBeds size={120} />} title={options.whyNot ?? "No bed is free to book here right now."} />
         ) : null}
 
         {options?.open ? (

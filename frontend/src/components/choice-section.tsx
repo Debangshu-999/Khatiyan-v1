@@ -3,7 +3,7 @@ import { Text, View, type ViewStyle } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -13,6 +13,8 @@ type LucideIcon = ComponentType<LucideProps>;
 const FADED_BLACK = "#5C5C5C";
 /** A section with no icon, as on Property filters, selects in faded black (user, 2026-11-01). */
 const FadedSelection = createContext(false);
+/** Pale blue with a blue edge when chosen, for every choice in a section of the property editor (user, 2026-11-07). */
+const SoftSelection = createContext(false);
 
 /**
  * A titled block of choices: an icon disc, a caps title, one line saying what
@@ -31,6 +33,7 @@ export function ChoiceSection({
   description,
   footnote,
   icon: Icon,
+  softSelection = false,
   title,
 }: {
   /**
@@ -46,12 +49,15 @@ export function ChoiceSection({
   /** A short line under the choices, for what an empty selection means. */
   footnote?: string;
   icon?: LucideIcon;
+  /** Pale blue selected choices with a blue edge, for the property editor (user, 2026-11-07). */
+  softSelection?: boolean;
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
 
   return (
-    <FadedSelection.Provider value={!Icon}>
+    <SoftSelection.Provider value={softSelection}>
+    <FadedSelection.Provider value={!Icon && !softSelection}>
     <ChoiceCard style={cardStyle}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
         {Icon ? (
@@ -105,6 +111,7 @@ export function ChoiceSection({
       {below}
     </ChoiceCard>
     </FadedSelection.Provider>
+    </SoftSelection.Provider>
   );
 }
 
@@ -126,10 +133,10 @@ export function ChoiceCard({ children, style }: { children: ReactNode; style?: V
           borderColor: colors.border,
           borderRadius: 16,
           borderWidth: 1,
-          elevation: 1,
           gap: spacing.sm,
           padding: spacing.md,
-          ...softShadow(colors.shadow, 3, 9, 0.28),
+          // The room-tab look every card shares now, edge drawn by hand (user, 2026-11-13).
+          ...cardShadow(colors.shadow),
         },
         style,
       ]}
@@ -176,12 +183,15 @@ export function MultiChoiceGrid<T extends string>({
   onToggle,
   options,
   selected,
+  soft = false,
 }: {
   columns?: 2 | 3;
   getLabel: (value: T) => string;
   onToggle: (value: T) => void;
   options: readonly T[];
   selected: readonly T[];
+  /** Pale blue with a blue edge when chosen, for the property editor's meals (user, 2026-11-07). */
+  soft?: boolean;
 }) {
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -192,6 +202,7 @@ export function MultiChoiceGrid<T extends string>({
           label={getLabel(option)}
           onPress={() => onToggle(option)}
           selected={selected.includes(option)}
+          soft={soft}
         />
       ))}
     </View>
@@ -204,16 +215,21 @@ export function ChoiceChip({
   label,
   onPress,
   selected,
+  soft: softProp = false,
 }: {
   columns?: 2 | 3;
   icon?: LucideIcon;
   label: string;
   onPress: () => void;
   selected: boolean;
+  soft?: boolean;
 }) {
   const { colors, isDark, fonts, type } = useTheme();
   const faded = useContext(FadedSelection);
-  const selectedFill = faded && !isDark ? FADED_BLACK : colors.inkSoft;
+  const soft = softProp || useContext(SoftSelection);
+  const selectedFill = soft ? colors.primarySoft : faded && !isDark ? FADED_BLACK : colors.inkSoft;
+  const selectedEdge = soft ? colors.primary : selectedFill;
+  const selectedInk = soft ? colors.primary : colors.surface;
 
   return (
     <AnimatedPressable
@@ -223,7 +239,7 @@ export function ChoiceChip({
       style={{
         alignItems: "center",
         backgroundColor: selected ? selectedFill : colors.surface,
-        borderColor: selected ? selectedFill : colors.border,
+        borderColor: selected ? selectedEdge : colors.border,
         borderRadius: 12,
         borderWidth: 1,
         flexBasis: columns === 2 ? "46%" : "28%",
@@ -237,13 +253,13 @@ export function ChoiceChip({
         paddingVertical: spacing.sm,
       }}
     >
-      {Icon ? <Icon color={selected ? colors.surface : colors.inkSoft} size={17} strokeWidth={2.3} /> : null}
+      {Icon ? <Icon color={selected ? selectedInk : colors.inkSoft} size={17} strokeWidth={2.3} /> : null}
       <Text
         numberOfLines={1}
         style={[
           type.caption,
           {
-            color: selected ? colors.surface : colors.ink,
+            color: selected ? selectedInk : colors.ink,
             fontFamily: fonts.sansBold,
             fontSize: label.length > 11 ? 10.25 : label.length > 8 ? 11.25 : 12.5,
             textAlign: "center",

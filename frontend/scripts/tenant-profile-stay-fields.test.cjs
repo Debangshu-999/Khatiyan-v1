@@ -31,7 +31,9 @@ test("Tenancy details names the agreement type, not a planned checkout", () => {
   assert.match(screen, /return "Indefinite"/);
 });
 
-test("the Tenancy agreement card is raised, with no arrow and a short note", () => {
+test("the Tenancy agreement card is the tenant's agreement card, in the owner's words", () => {
+  // As on the tenant's Tenancy tab (user, 2026-11-14).
   const module = fs.readFileSync(path.join(__dirname, "..", "app/owner-tenancy.tsx"), "utf8");
-  assert.match(module, /raised\s+showArrow=\{false\}\s+smallDescription\s+title="Tenancy agreement"\s+description="Set the term and clauses for monthly agreements\."/);
+  assert.match(module, /<AgreementHeroCard[\s\S]*?title="Tenancy agreement"/);
+  assert.match(module, /<AgreementHeroCard[\s\S]*?router\.push\("\/owner-tenancy-agreement"\)/);
 });

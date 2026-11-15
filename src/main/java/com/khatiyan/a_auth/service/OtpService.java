@@ -35,19 +35,22 @@ public class OtpService {
      * one stops a patient attacker, because 3 per 10 minutes alone still let
      * one number be sent 18 codes an hour, every one of them billed to us.
      *
-     * Per device: 20 in 5 minutes. The published policy names no figure for
+     * Per device: 20 in an hour (user, 2026-11-14; was 20 in 5 minutes), Twilio's
+     * published per-IP example. The original policy named no figure for
      * it, so this is the owner's own, set the same day.
      *
      * Valkey alone counts them. While it is down, codes are paused instead
      * (2026-10-18): a database fallback lost track of codes and wrong tries the
      * moment Valkey came back.
      */
-    private static final int MAX_PHONE_REQUESTS_BURST = 3;
-    private static final Duration PHONE_BURST_WINDOW = Duration.ofMinutes(10);
-    private static final int MAX_PHONE_REQUESTS_HOURLY = 5;
-    private static final Duration PHONE_HOURLY_WINDOW = Duration.ofHours(1);
+    /*
+     * The per-number limits are the resend schedule now (user, 2026-11-14),
+     * kept in the database by OtpSendSchedule: 30 seconds between the first 3
+     * codes in a day, then the gap doubles for every further 3. It replaced
+     * 3 in 10 minutes and 5 an hour. The per-device limit below stays.
+     */
     private static final int MAX_RECENT_IP_REQUESTS = 20;
-    private static final Duration IP_WINDOW = Duration.ofMinutes(5);
+    private static final Duration IP_WINDOW = Duration.ofHours(1);
     private static final int MAX_VERIFY_ATTEMPTS = 5;
     private static final Duration OTP_TTL = Duration.ofMinutes(10);
     /**
@@ -58,6 +61,11 @@ public class OtpService {
      * is still standing there.
      */
     static final Duration RESEND_COOLDOWN = Duration.ofSeconds(30);
+
+    /** The schedule's gap, for the tests that read it from here. */
+    static Duration resendGapAfter(long sent) {
+        return OtpSendSchedule.gapAfter(sent);
+    }
     private static final String RESEND_TOO_SOON = "Please wait before requesting another code";
     static final String CODES_CANNOT_BE_SENT = "Codes can't be sent right now. Try again in a few minutes.";
     static final String CODES_CANNOT_BE_CHECKED = "Codes can't be checked right now. Try again in a few minutes.";
@@ -67,6 +75,7 @@ public class OtpService {
     private final OtpDeliveryService otpDeliveryService;
     private final PasswordEncoder passwordEncoder;
     private final ValkeyHealth valkeyHealth;
+    private final OtpSendSchedule sendSchedule;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public OtpService(
@@ -74,12 +83,14 @@ public class OtpService {
             ValkeyOtpStore valkeyOtpStore,
             OtpDeliveryService otpDeliveryService,
             PasswordEncoder passwordEncoder,
-            ValkeyHealth valkeyHealth) {
+            ValkeyHealth valkeyHealth,
+            OtpSendSchedule sendSchedule) {
         this.otpRepository = otpRepository;
         this.valkeyOtpStore = valkeyOtpStore;
         this.otpDeliveryService = otpDeliveryService;
         this.passwordEncoder = passwordEncoder;
         this.valkeyHealth = valkeyHealth;
+        this.sendSchedule = sendSchedule;
     }
 
     @Transactional
@@ -117,6 +128,12 @@ public class OtpService {
         if (!valkeyHealth.available()) {
             throw new ServiceUnavailableException(CODES_CANNOT_BE_SENT);
         }
+        // Sign-in, setup, reset and email codes were claimed by AuthService before it
+        // looked the account up, so a number with no account is counted too. Codes an
+        // owner asks for (cash, agreements) are claimed here, on their own schedule.
+        if (!OtpSendSchedule.AUTH_SCOPE.equals(OtpSendSchedule.scopeOf(purpose))) {
+            claimSend(OtpSendSchedule.phoneKey(phone), purpose);
+        }
         try {
             enforceValkeyLimits(phone, requestIpAddress, purpose);
             valkeyOtpStore.saveOtp(phone, purpose, otpHash, now, OTP_TTL);
@@ -129,6 +146,21 @@ public class OtpService {
         otpDeliveryService.deliverOtp(phone, email, otp, purpose, resolvedChannel, detail);
 
         log.info("OTP issued using Valkey phone={} purpose={} channel={}", phone, purpose, resolvedChannel);
+    }
+
+    /**
+     * Takes a send on the resend schedule for this number or address, or refuses
+     * with the seconds left (user, 2026-11-14). Called before any account lookup.
+     */
+    @Transactional
+    public void claimSend(String identifier, OtpPurpose purpose) {
+        sendSchedule.claim(identifier, OtpSendSchedule.scopeOf(purpose), Instant.now());
+    }
+
+    /** Seconds before the next code to this number or address may be sent; 0 when now. */
+    @Transactional(readOnly = true)
+    public long sendWaitSeconds(String identifier, OtpPurpose purpose) {
+        return sendSchedule.waitSeconds(identifier, OtpSendSchedule.scopeOf(purpose), Instant.now());
     }
 
     @Transactional
@@ -209,7 +241,7 @@ public class OtpService {
     }
 
     /**
-     * The three rules, asked of Valkey.
+     * The rules, asked of Valkey: the cooldown, the day's resend schedule, and the device.
      *
      * <p>Cooldown first and set-if-absent, so a double tap cannot slip two codes
      * through, and so a request refused for coming too soon does not also spend
@@ -226,18 +258,6 @@ public class OtpService {
                     valkeyOtpStore.resendCooldownRemainingSeconds(phone, purpose));
         }
 
-        // Both windows are counted before either is judged, so a refusal
-        // reports the LONGER wait when both are exceeded. Reporting the burst
-        // window's few minutes first sent the person away only to be refused
-        // again, for the rest of the hour, when they came back.
-        long burstCount = valkeyOtpStore.incrementRequestCount(phone, PHONE_BURST_WINDOW);
-        long hourlyCount = valkeyOtpStore.incrementHourlyRequestCount(phone, PHONE_HOURLY_WINDOW);
-        long phoneWait = Math.max(
-                burstCount > MAX_PHONE_REQUESTS_BURST ? valkeyOtpStore.requestWindowRemainingSeconds(phone) : 0L,
-                hourlyCount > MAX_PHONE_REQUESTS_HOURLY ? valkeyOtpStore.hourlyRequestWindowRemainingSeconds(phone) : 0L);
-        if (burstCount > MAX_PHONE_REQUESTS_BURST || hourlyCount > MAX_PHONE_REQUESTS_HOURLY) {
-            throw new TooManyRequestsException("Too many requests", phoneWait);
-        }
 
         if (requestIpAddress == null || requestIpAddress.isBlank()) {
             return;

@@ -1,10 +1,13 @@
 import { CalendarPicker } from "@/components/calendar-picker";
+import { PastEmployeesArt } from "@/components/control-art";
+import { FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { formatIndianPhone } from "@/features/owner/phone-display";
 import { Children, Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Image, KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -34,7 +37,7 @@ import { TabSwitcher } from "@/components/tab-switcher";
 import { ActionButton, ChoiceButton, ConfirmDialog, FormInput, IconButton, NoticeBar, ViewOnlyChip, formatMoneyPaise, humanizeToken, paiseToRupees, rupeesToPaise } from "@/features/owner/owner-ui";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
 import { PaymentMethodIcon } from "@/features/billing/payment-method-toggle";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom, useRevealInputScroll } from "@/components/use-keyboard-inset";
 import { ALL_DAYS_MASK, WEEKDAYS, compactWeekdaysLabel, hasDay, weekdaysLabel, workingDaysInCurrentMonth } from "@/features/owner/working-days";
 import { MANAGEABLE_MODULES, fullAccessLevels } from "@/features/owner/manager-access-model";
 import { useAppSelector } from "@/store/hooks";
@@ -127,7 +130,6 @@ type EndTarget = {
 // The Manage screen's staff tile artwork, not a header-only variant. Reaching
 // this screen from that card and being met by a different drawing of the same
 // thing read as having arrived somewhere else.
-const STAFF_HISTORY_ILLUSTRATION = require("../../../assets/images/workspace/staff-history.png");
 const PAYROLL_PAYMENT_HISTORY_ILLUSTRATION = require("../../../assets/images/workspace/payroll-payment-history.png");
 
 // Laid out as the Billing header (user, 2026-10-02): same wash, the
@@ -218,7 +220,7 @@ function SalaryFilterButton({
         backgroundColor: active ? colors.primarySoft : colors.surface,
         borderColor: active ? colors.primarySoft : colors.border,
         borderCurve: "continuous",
-        borderRadius: 999,
+        borderRadius: FILTER_CHIP_RADIUS,
         borderWidth: 1,
         flex: 1,
         justifyContent: "center",
@@ -976,11 +978,13 @@ function SalaryPayslips({ months, readOnly, onEditAdjustment, onDeleteAdjustment
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                 <View style={{ alignItems: "center", flexDirection: "row", gap: 5, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 }}>
                   <CalendarCheck color={colors.muted} size={13} strokeWidth={2.2} />
-                  <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>Opened {formatDayMonth(month.openedOn)}</Text>
+                  {/* One string, one line, never shrunk: on a phone the measured width came
+                      up short and the month ("Nov") was dropped (user, 2026-11-08). */}
+                  <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 0, fontSize: 11 }]} textBreakStrategy="simple">{`Opened ${formatDayMonth(month.openedOn)}`}</Text>
                 </View>
                 {lastPayment ? <View style={{ alignItems: "center", flexDirection: "row", gap: 5, backgroundColor: colors.neutralSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 }}>
                   <Clock3 color={colors.muted} size={13} strokeWidth={2.2} />
-                  <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>Paid {paidDateTimeParts(lastPayment).date} · {paidDateTimeParts(lastPayment).time}</Text>
+                  <Text numberOfLines={1} style={[type.caption, { color: colors.muted, flexShrink: 0, fontSize: 11 }]} textBreakStrategy="simple">{`Paid ${paidDateTimeParts(lastPayment).date} · ${paidDateTimeParts(lastPayment).time}`}</Text>
                 </View> : null}
               </View>
 
@@ -1094,12 +1098,8 @@ function TeamHistoryCard({ property }: { property: OwnerProperty }) {
               Everyone who has left this property, with their service span, settlement and payslips.
             </Text>
           </View>
-          <Image
-            accessibilityIgnoresInvertColors
-            resizeMode="contain"
-            source={STAFF_HISTORY_ILLUSTRATION}
-            style={{ height: 78, width: 98 }}
-          />
+          {/* A coloured vector drawing (user, 2026-11-14), not the old picture. */}
+          <PastEmployeesArt size={78} />
         </View>
         <AnimatedPressable
           accessibilityRole="button"
@@ -1620,7 +1620,7 @@ function CategoryFilterBar({
           alignItems: "center",
           backgroundColor: colors.surface,
           borderColor: colors.border,
-          borderRadius: 14,
+          borderRadius: FILTER_CHIP_RADIUS,
           borderWidth: 1,
           flexDirection: "row",
           gap: spacing.sm,
@@ -2392,7 +2392,7 @@ function ManagerEmploymentModal({ manager, onClose, propertyId }: { manager: Man
   }
 
   return (
-    <Sheet onClose={onClose} title="Edit manager employment">
+    <Sheet onClose={onClose} title="Edit manager">
       {/* The name in the form rather than as the sheet's subtitle. A person's
           record should open with who it is about, in the same column as
           everything else about them.
@@ -2880,8 +2880,10 @@ function Sheet({
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
   const insets = useSafeAreaInsets();
+  const { room: keyboardRoom } = useKeyboardRoom(insets.bottom);
+  // The list scrolls to the focused input with the keyboard up (user, 2026-11-08).
+  const revealInput = useRevealInputScroll();
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => (
@@ -2890,16 +2892,16 @@ function Sheet({
           {/* The sheet's own panel. NOT a PinnedFooter — it happens to use the
               same bottom-inset expression, but this is the surface the content
               sits on, so it needs a real background. */}
-          <View
+          <SheetCloseButton onClose={() => dismiss()} />
+          <Animated.View
             style={{
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
-              marginBottom: keyboardInset,
-              maxHeight: "92%",
-              paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.md,
+              maxHeight: "100%",
+              paddingBottom: Animated.add(keyboardRoom, spacing.md),
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}
@@ -2915,10 +2917,10 @@ function Sheet({
               </View>
             </View>
             <ModalTitleRule />
-            <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <ScrollView {...revealInput} contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {children}
             </ScrollView>
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
       )}

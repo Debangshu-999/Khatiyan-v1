@@ -13,11 +13,11 @@ import { fonts as appFonts } from "@/theme/typography";
  */
 export const tenantFonts = {
   ...appFonts,
-  /** Softer than the app's ExtraBold operations heading. */
-  display: "PlusJakartaSans_700Bold",
-  displaySoft: "PlusJakartaSans_700Bold",
+  /** Softer than the app's operations heading. Google Sans, as everywhere (user, 2026-11-07). */
+  display: "GoogleSans_700Bold",
+  displaySoft: "GoogleSans_600SemiBold",
   /** Tenant controls and values use semibold instead of a blunt bold. */
-  sansBold: "Inter_600SemiBold",
+  sansBold: "GoogleSans_600SemiBold",
 };
 
 export const tenantType = {

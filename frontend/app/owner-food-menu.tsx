@@ -46,7 +46,7 @@ import {
   type SaveFoodMenuEntryBody,
 } from "@/store/services/food-api";
 import type { MealType } from "@/store/services/property-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
@@ -264,7 +264,7 @@ function MealSection({
         minHeight: 210,
         padding: spacing.lg,
         backgroundColor: colors.surface,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>

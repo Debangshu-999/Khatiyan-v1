@@ -2,17 +2,21 @@ import { formatIndianPhone } from "@/features/owner/phone-display";
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { SavedBookmarkIcon } from "./saved-bookmark-icon";
 import { AirVent } from "lucide-react-native";
 
+import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useToast } from "@/components/toast";
 import { openDialer } from "@/lib/dial";
 import { trackContactTap } from "@/features/analytics/use-profile-view";
-import type { PropertyDiscoveryDetail } from "@/store/services/discovery-api";
+import { useListSavedPropertyIdsQuery, useSetPropertySavedMutation, type PropertyDiscoveryDetail } from "@/store/services/discovery-api";
+import { errorMessage } from "@/features/forms/server-error";
 import { NOTICE_PERIOD_LABELS } from "@/store/services/property-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { ratingColor } from "@/features/food/meal-rating-tone";
 import { formatDepositPaise, formatMoneyPaise, humanizeToken } from "../discovery-format";
 import { PropertyMediaCarousel } from "./property-media-carousel";
 import { RoomTypeShowcase } from "./room-type-showcase";
@@ -21,10 +25,28 @@ import { FitText } from "@/components/fit-text";
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 
 /**
+ * Each section of the profile has its own colour (user, 2026-11-14, "a little
+ * more personality"): its dash, a line under its title and the icons in its
+ * cards wear it.
+ */
+export const SECTION_TONES = {
+  nextSteps: "#F97316",
+  details: "#2F6CD9",
+  facilities: "#16A34A",
+  preferences: "#7C3AED",
+  rooms: "#DB2777",
+  contacts: "#0D9488",
+};
+
+/**
+ * @param nextSteps the Next steps section (Enquire, Book a visit, Book a stay),
+ *                  shown above Property details. The listing preview has none.
  */
 export function PropertyProfile({
+  nextSteps,
   property,
 }: {
+  nextSteps?: ReactNode;
   property: PropertyDiscoveryDetail;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -94,6 +116,8 @@ export function PropertyProfile({
           crossed={!property.foodIncluded}
           icon="silverware-fork-knife"
           label={property.foodIncluded ? "Food Included" : "Food Not Included"}
+          // The meal rating under it, when the owner shows it (user, 2026-11-07).
+          rating={property.foodIncluded ? property.mealRating : null}
         />
         <QuickHighlight
           banned={!property.electricityIncluded}
@@ -106,8 +130,12 @@ export function PropertyProfile({
         />
       </View>
 
+      {nextSteps}
+
       <ProfileSection
+        tagline="The basics, before you choose."
         title="Property details"
+        tone={SECTION_TONES.details}
         trailing={
           <AnimatedPressable
             accessibilityLabel="View property on map"
@@ -140,26 +168,30 @@ export function PropertyProfile({
             justifyContent: "space-between",
           }}
         >
-          <DetailCard icon="home-outline" label="Property type" value={humanizeToken(property.type)} />
-          <DetailCard icon="currency-inr" label="Rent starts from" value={formatMoneyPaise(property.startingRoomRentPaise)} />
-          <DetailCard icon="sack-outline" label="Deposit" value={formatDepositPaise(property.standardDepositPaise)} />
+          <DetailCard tone={SECTION_TONES.details} icon="home-outline" label="Property type" value={humanizeToken(property.type)} />
+          <DetailCard tone={SECTION_TONES.details} icon="currency-inr" label="Rent starts from" value={formatMoneyPaise(property.startingRoomRentPaise)} />
+          <DetailCard tone={SECTION_TONES.details} icon="sack-outline" label="Deposit" value={formatDepositPaise(property.standardDepositPaise)} />
           <DetailCard
+            tone={SECTION_TONES.details}
             icon="calendar-month-outline"
             label="Stay type"
             value={property.dailyRentingAvailable ? "Monthly + Daily" : "Monthly only"}
           />
-          <DetailCard icon="clock-outline" label="Notice period" value={NOTICE_PERIOD_LABELS[property.noticePeriod]} />
+          <DetailCard tone={SECTION_TONES.details} icon="clock-outline" label="Notice period" value={NOTICE_PERIOD_LABELS[property.noticePeriod]} />
           <DetailCard
+            tone={SECTION_TONES.details}
             icon="timer-sand"
             label="Rent grace"
             value={property.rentGraceDays > 0 ? `${property.rentGraceDays} days` : "None"}
           />
           <DetailCard
+            tone={SECTION_TONES.details}
             icon="fan"
             label="Daily Non-AC"
             value={property.dailyRentingAvailable ? formatMoneyPaise(property.dailyGuestNonAcRatePaise) : "Not available"}
           />
           <DetailCard
+            tone={SECTION_TONES.details}
             icon="air-conditioner"
             label="Daily AC"
             value={property.dailyRentingAvailable ? formatMoneyPaise(property.dailyGuestAcRatePaise) : "Not available"}
@@ -167,26 +199,29 @@ export function PropertyProfile({
         </View>
       </ProfileSection>
 
-      <ProfileSection title="Facilities">
-        <FacilitiesGrid facilities={facilities} />
+      <ProfileSection tagline="What comes with the place." title="Facilities" tone={SECTION_TONES.facilities}>
+        <FacilitiesGrid facilities={facilities} tone={SECTION_TONES.facilities} />
       </ProfileSection>
 
-      <ProfileSection title="Stay preferences">
+      <ProfileSection tagline="House rules, the friendly version." title="Stay preferences" tone={SECTION_TONES.preferences}>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <PreferenceCard icon="account-group-outline" label="PG for" value={humanizeToken(property.pgFor)} />
+          <PreferenceCard tone={SECTION_TONES.preferences} icon="account-group-outline" label="PG for" value={humanizeToken(property.pgFor)} />
           <PreferenceCard
+            tone={SECTION_TONES.preferences}
             icon="account-outline"
             label="Preferred for"
             value={property.preferredFor === "PROFESSIONAL" ? "Working" : humanizeToken(property.preferredFor)}
           />
-          <PreferenceCard icon="shower-head" label="Bathroom" value={humanizeToken(property.bathroomType)} />
+          <PreferenceCard tone={SECTION_TONES.preferences} icon="shower-head" label="Bathroom" value={humanizeToken(property.bathroomType)} />
           <PreferenceCard
+            tone={SECTION_TONES.preferences}
             icon="lightbulb-outline"
             label="Electricity"
             value={property.electricityIncluded ? "Included" : "Not included"}
           />
-          <PreferenceCard icon="silverware-fork-knife" label="Food" value={foodPreference(property)} />
+          <PreferenceCard tone={SECTION_TONES.preferences} icon="silverware-fork-knife" label="Food" rating={property.mealRating} value={foodPreference(property)} />
           <PreferenceCard
+            tone={SECTION_TONES.preferences}
             icon="human-greeting"
             label="Visitors"
             value={
@@ -196,14 +231,15 @@ export function PropertyProfile({
         </View>
       </ProfileSection>
 
-      <ProfileSection title="Room types">
+      <ProfileSection tagline="Pick your corner." title="Room types" tone={SECTION_TONES.rooms}>
         <RoomTypeShowcase roomTypes={property.roomTypes ?? []} />
       </ProfileSection>
 
-      <ProfileSection title="Contacts">
+      <ProfileSection tagline="Real people, one call away." title="Contacts" tone={SECTION_TONES.contacts}>
         <View style={{ gap: spacing.sm }}>
           {ownerContact?.phone ? (
             <ContactCard
+              tone={SECTION_TONES.contacts}
               name={ownerContact.name || "Property owner"}
               phone={ownerContact.phone}
               role="Owner"
@@ -213,6 +249,7 @@ export function PropertyProfile({
           )}
           {managerContacts.map((contact) => (
             <ContactCard
+              tone={SECTION_TONES.contacts}
               key={contact.userId}
               name={contact.name || "Property manager"}
               phone={contact.phone ?? ""}
@@ -227,14 +264,43 @@ export function PropertyProfile({
   );
 }
 
-function ProfileSection({ children, title, trailing }: { children: ReactNode; title: string; trailing?: ReactNode }) {
+/**
+ * A section of the profile (user, 2026-11-14): bold lines in the section's
+ * colour before the title (two for Next steps), a short tagline under it.
+ */
+export function ProfileSection({
+  children,
+  lines = 1,
+  tagline,
+  title,
+  tone,
+  trailing,
+}: {
+  children: ReactNode;
+  lines?: 1 | 2;
+  tagline?: string;
+  title: string;
+  tone: string;
+  trailing?: ReactNode;
+}) {
   const { colors, fonts } = useTheme();
   return (
     <View style={{ gap: spacing.md }}>
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={{ color: colors.text, flexShrink: 1, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.45 }}>
-          {title}
-        </Text>
+        <View style={{ alignItems: "flex-start", flex: 1, flexDirection: "row", gap: 10 }}>
+          <View style={{ flexDirection: "row", gap: 4, marginTop: 5 }}>
+            <View style={{ backgroundColor: tone, borderCurve: "continuous", borderRadius: 3, height: 24, width: 6 }} />
+            {lines === 2 ? <View style={{ backgroundColor: tone, borderCurve: "continuous", borderRadius: 3, height: 24, opacity: 0.45, width: 6 }} /> : null}
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text accessibilityRole="header" style={{ color: colors.text, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.45 }}>
+              {title}
+            </Text>
+            {tagline ? (
+              <Text style={{ color: colors.muted, fontFamily: fonts.fancyItalic, fontSize: 14, lineHeight: 19 }}>{tagline}</Text>
+            ) : null}
+          </View>
+        </View>
         {trailing}
       </View>
       {children}
@@ -246,9 +312,24 @@ function ProfileSection({ children, title, trailing }: { children: ReactNode; ti
 export function ProfileTopActions({ property }: { property: PropertyDiscoveryDetail }) {
   const { colors, fonts } = useTheme();
   const toast = useToast();
+  // Saving (user, 2026-11-14): the bookmark fills blue when saved, and tapping it again removes it.
+  const saved = (useListSavedPropertyIdsQuery().data ?? []).includes(property.propertyId);
+  const [setSaved, setSavedState] = useSetPropertySavedMutation();
+  const [refusal, setRefusal] = useState<string | null>(null);
 
   function showDummyAction(label: string) {
     toast.warning(`${label} is not available yet.`);
+  }
+
+  async function toggleSaved() {
+    if (setSavedState.isLoading) return;
+    const next = !saved;
+    try {
+      await setSaved({ propertyId: property.propertyId, saved: next }).unwrap();
+      toast.success(next ? "Property saved" : "Removed from saved.");
+    } catch (caught) {
+      setRefusal(errorMessage(caught));
+    }
   }
 
   return (
@@ -271,20 +352,26 @@ export function ProfileTopActions({ property }: { property: PropertyDiscoveryDet
           </Text>
         </View>
         <RoundIconButton
-          icon="bookmark-outline"
-          label="Save property"
-          onPress={() => showDummyAction("Save")}
+          active={saved}
+          icon={saved ? "bookmark" : "bookmark-outline"}
+          label={saved ? "Remove from saved" : "Save property"}
+          onPress={() => void toggleSaved()}
         />
         <RoundIconButton
           icon="share-variant-outline"
           label="Share property"
           onPress={() => showDummyAction("Share")}
         />
+        {refusal ? <AlertModal message={refusal} onClose={() => setRefusal(null)} /> : null}
       </View>
   );
 }
 
-function RoundIconButton({ icon, label, onPress }: { icon: MaterialIconName; label: string; onPress: () => void }) {
+/**
+ * @param active saved (user, 2026-11-14): the button keeps its normal border, and the
+ *               bookmark is filled blue with a black outline round its shape.
+ */
+function RoundIconButton({ active = false, icon, label, onPress }: { active?: boolean; icon: MaterialIconName; label: string; onPress: () => void }) {
   const { colors } = useTheme();
   return (
     <AnimatedPressable
@@ -303,7 +390,11 @@ function RoundIconButton({ icon, label, onPress }: { icon: MaterialIconName; lab
         width: 42,
       }}
     >
-      <MaterialCommunityIcons color={colors.inkSoft} name={icon} size={21} />
+      {active ? (
+        <SavedBookmarkIcon size={21} />
+      ) : (
+        <MaterialCommunityIcons color={colors.inkSoft} name={icon} size={21} />
+      )}
     </AnimatedPressable>
   );
 }
@@ -316,7 +407,7 @@ const BAN_RING = 34;
  * @param banned  the prohibition sign: the glyph inside a ring with a strike
  *                across it (user, 2026-10-02, for electricity not included).
  */
-function QuickHighlight({ banned, crossed, icon, label }: { banned?: boolean; crossed?: boolean; icon: MaterialIconName; label: string }) {
+function QuickHighlight({ banned, crossed, icon, label, rating }: { banned?: boolean; crossed?: boolean; icon: MaterialIconName; label: string; rating?: number | null }) {
   const { colors, fonts } = useTheme();
   return (
     <View
@@ -332,7 +423,7 @@ function QuickHighlight({ banned, crossed, icon, label }: { banned?: boolean; cr
         minHeight: 78,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
         width: "48%",
       }}
     >
@@ -373,14 +464,22 @@ function QuickHighlight({ banned, crossed, icon, label }: { banned?: boolean; cr
           />
         ) : null}
       </View>
-      <Text style={{ color: colors.text, flex: 1, fontFamily: fonts.sansBold, fontSize: 13, lineHeight: 18 }}>
-        {label}
-      </Text>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 13, lineHeight: 18 }}>
+          {label}
+        </Text>
+        {rating != null ? (
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 3 }}>
+            <MaterialCommunityIcons color={ratingColor(rating, colors)} name="star" size={12} />
+            <Text style={{ color: ratingColor(rating, colors), fontFamily: fonts.sansBold, fontSize: 11.5 }}>{`${rating.toFixed(1)}/5`}</Text>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
 
-function DetailCard({ icon, label, value }: { icon: MaterialIconName; label: string; value: string }) {
+function DetailCard({ icon, label, tone, value }: { icon: MaterialIconName; label: string; tone: string; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
     <View
@@ -396,10 +495,10 @@ function DetailCard({ icon, label, value }: { icon: MaterialIconName; label: str
         minHeight: 92,
         padding: spacing.sm,
         width: "48%",
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
-      <PropertyDetailIcon color={colors.inkSoft} icon={icon} size={25} />
+      <PropertyDetailIcon color={tone} icon={icon} size={25} />
       <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
         <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
         <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 15, lineHeight: 20 }}>
@@ -432,7 +531,7 @@ function PropertyDetailIcon({ color, icon, size }: { color: string; icon: Materi
   return <MaterialCommunityIcons color={color} name={icon} size={size} />;
 }
 
-function FacilitiesGrid({ facilities }: { facilities: string[] }) {
+function FacilitiesGrid({ facilities, tone }: { facilities: string[]; tone: string }) {
   const { colors, fonts, type } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const canExpand = facilities.length > 6;
@@ -452,7 +551,7 @@ function FacilitiesGrid({ facilities }: { facilities: string[] }) {
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.sm,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -474,14 +573,14 @@ function FacilitiesGrid({ facilities }: { facilities: string[] }) {
               width: "31%",
             }}
           >
-            <PropertyDetailIcon color={colors.inkSoft} icon={iconForFacility(facility)} size={28} />
+            <PropertyDetailIcon color={tone} icon={iconForFacility(facility)} size={28} />
             <FitText
               numberOfLines={2}
               style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 12, lineHeight: 16, textAlign: "center" }}
             >
               {humanizeToken(facility)}
             </FitText>
-            <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>Available</Text>
+            <Text style={[type.caption, { color: tone, fontFamily: fonts.sansBold, fontSize: 11 }]}>Available</Text>
           </View>
         ))}
       </View>
@@ -513,7 +612,7 @@ function FacilitiesGrid({ facilities }: { facilities: string[] }) {
   );
 }
 
-function PreferenceCard({ icon, label, value }: { icon: MaterialIconName; label: string; value: string }) {
+function PreferenceCard({ icon, label, rating, tone, value }: { icon: MaterialIconName; label: string; rating?: number | null; tone: string; value: string }) {
   const { colors, fonts, type } = useTheme();
   return (
     <View
@@ -527,10 +626,18 @@ function PreferenceCard({ icon, label, value }: { icon: MaterialIconName; label:
         minHeight: 136,
         padding: spacing.sm,
         width: "31%",
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
-      <MaterialCommunityIcons color={colors.inkSoft} name={icon} size={27} />
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+        <MaterialCommunityIcons color={tone} name={icon} size={27} />
+        {rating != null ? (
+          <View style={{ alignItems: "center", flexDirection: "row", gap: 3, marginLeft: spacing.xs }}>
+            <MaterialCommunityIcons color={ratingColor(rating, colors)} name="star" size={12} />
+            <Text style={{ color: ratingColor(rating, colors), fontFamily: fonts.sansBold, fontSize: 11.5 }}>{`${rating.toFixed(1)}/5`}</Text>
+          </View>
+        ) : null}
+      </View>
       <View style={{ gap: 4 }}>
         <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
         <Text style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 13.5, lineHeight: 18 }}>
@@ -546,10 +653,12 @@ function ContactCard({
   name,
   phone,
   role,
+  tone,
 }: {
   name: string;
   phone: string;
   role: "Owner" | "Manager";
+  tone: string;
 }) {
   const { colors, fonts, type } = useTheme();
 
@@ -566,12 +675,12 @@ function ContactCard({
         gap: spacing.md,
         minHeight: 112,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
-      <MaterialCommunityIcons color={colors.kicker} name="account-circle-outline" size={48} />
+      <MaterialCommunityIcons color={tone} name="account-circle-outline" size={48} />
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        <Text style={[type.caption, { color: colors.muted }]}>{role}</Text>
+        <Text style={[type.caption, { color: tone, fontFamily: fonts.sansBold }]}>{role}</Text>
         <FitText numberOfLines={1} style={{ color: colors.text, fontFamily: fonts.sansBold, fontSize: 17 }}>
           {name}
         </FitText>
@@ -580,7 +689,7 @@ function ContactCard({
         </FitText>
       </View>
       <View style={{ flexDirection: "row", gap: spacing.xs }}>
-        <ContactAction icon="phone-outline" label={`Call ${name}`} onPress={() => { trackContactTap("CALL"); openDialer(phone); }} />
+        <ContactAction icon="phone-outline" label={`Call ${name}`} onPress={() => { trackContactTap("CALL"); openDialer(phone); }} tone={tone} />
       </View>
     </View>
   );
@@ -590,10 +699,12 @@ function ContactAction({
   icon,
   label,
   onPress,
+  tone,
 }: {
   icon: MaterialIconName;
   label: string;
   onPress: () => void;
+  tone: string;
 }) {
   const { colors } = useTheme();
   return (
@@ -603,16 +714,16 @@ function ContactAction({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: colors.surfaceRaised,
-        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderColor: tone,
         borderRadius: 22,
-        borderWidth: 1,
+        borderWidth: 1.5,
         height: 44,
         justifyContent: "center",
         width: 44,
       }}
     >
-      <MaterialCommunityIcons color={colors.inkSoft} name={icon} size={21} />
+      <MaterialCommunityIcons color={tone} name={icon} size={21} />
     </AnimatedPressable>
   );
 }
@@ -628,7 +739,7 @@ function UnavailableContact({ message }: { message: string }) {
         borderRadius: radii.card,
         borderWidth: 1,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <Text style={[type.bodyStrong, { color: colors.muted }]}>{message}</Text>

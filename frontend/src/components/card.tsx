@@ -1,7 +1,7 @@
 import { PropsWithChildren } from "react";
 import { View, type ViewStyle } from "react-native";
 
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -38,7 +38,7 @@ export function Card({ children, style, tone = "default" }: CardProps) {
         },
         elevated
           ? {
-              ...softShadow(colors.shadow, 4, 12),
+              ...cardShadow(colors.shadow),
             }
           : null,
         style,

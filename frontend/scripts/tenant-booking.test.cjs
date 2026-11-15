@@ -12,7 +12,7 @@ function load(source, dependencies = {}) {
   const exports = {};
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
   // The services ask whether this is a development build. Here it is not.
-  vm.runInNewContext(outputText, { __DEV__: false, exports, require: (name) => { if (name === "react/jsx-runtime") return { jsx, jsxs: jsx }; if (name in SHARED_TEXT) return SHARED_TEXT[name]; assert.ok(name in dependencies, `Unexpected import ${name}`); return dependencies[name]; } });
+  vm.runInNewContext(outputText, { __DEV__: false, exports, require: (name) => { if (name === "react/jsx-runtime") return { jsx, jsxs: jsx }; if (name in SHARED_TEXT) return SHARED_TEXT[name]; if (name === "@/components/empty-art") return new Proxy({}, { get: (_, key) => String(key) }); assert.ok(name in dependencies, `Unexpected import ${name}`); return dependencies[name]; } });
   return exports;
 }
 const ui = load(read("src/features/booking/booking-ui.ts"));
@@ -80,6 +80,7 @@ function harness(settings = {}) {
     "@/features/account/gender-picker": { GenderPicker: "GenderPicker", GENDER_LABELS: { MALE: "Male", FEMALE: "Female", TRANSGENDER: "Transgender", OTHER: "Others", UNDECLARED: "Undeclared" } },
     "@/features/enquiry/enquiry-tags": { InitialsAvatar: "InitialsAvatar" },
     "@/features/booking/booking-confirm-body": { BookingConfirmBody: "BookingConfirmBody" },
+    "@/features/booking/confirmed-booking-ticket": { ConfirmedBookingTicket: "ConfirmedBookingTicket" },
     // The real formatter, so what a screen shows is what a person will read.
     "@/features/owner/phone-display": load(read("src/features/owner/phone-display.ts")),
     "@/components/artwork-icon": { PropertyArtwork: "PropertyArtwork", PaymentClaimsIcon: "PaymentClaimsIcon" },
@@ -147,7 +148,8 @@ const formProps = { options: options(), identity, authUser: null };
 const decisionProps = (action, booking = record()) => ({ action, booking, onClose() {}, onDone() {} });
 
 test("Account, visited cards and routes all expose the tenant booking flow", () => {
-  assert.match(read("app/(tabs)/account.tsx"), /label="My bookings".*router.push\("\/my-bookings"\)/);
+  // Moved from Account to Tenancy tools (user, 2026-11-13).
+  assert.match(read("src/features/tenancy/tenancy-tools.tsx"), /key: "bookings", route: \{ pathname: "\/my-bookings" \}/);
   assert.match(read("app/my-visits.tsx"), /visited && visit.enquiryId.*BookAStayEntry/);
   assert.match(read("app/my-enquiries.tsx"), /bookingEligibility\?\.eligible.*VISITED.*BookAStayEntry/);
   for (const name of ["my-bookings", "my-booking-detail", "booking-request"]) assert.ok(read("app/_layout.tsx").includes(`name="${name}"`));
@@ -491,17 +493,8 @@ test("rents have an inline /month suffix and token title, vector and amount shar
 test("tenant booking empty state uses the shared 64pt vector, not a generic glyph", () => {
   const h = harness();
   const state = one(h.render(h.listModule.default), "EmptyState");
-  // Both ways on, as one button cut in two (user, 2026-10-10). A visit and an enquiry each offer Book a stay.
-  const pair = state.props.action.props.children;
-  assert.equal(pair.type, "SplitButton");
-  assert.equal(pair.props.left.label, "My visits"); assert.equal(pair.props.right.label, "My enquiries");
-  pair.props.left.onPress(); pair.props.right.onPress();
-  assert.deepEqual(h.routes, ["/my-visits", "/my-enquiries"]);
-  // The pair has a width given to it and a height of its own, so it cannot grow to fill the page.
-  assert.equal(state.props.action.props.style.maxWidth, 320);
-  assert.ok(read("src/components/split-button.tsx").includes("height: 48"));
-  // Every action remains inside a row instead of stretching in the scroll axis.
-  assert.equal(state.props.action.props.children.type, "SplitButton");
+  // No buttons to visits or enquiries in the empty state (user, 2026-11-13).
+  assert.equal(state.props.action, undefined);
   assert.equal(state.props.artworkNode.type, "BookingsIcon");
   assert.equal(state.props.artworkNode.props.size, 64);
   assert.equal(state.props.icon, undefined);
@@ -1266,7 +1259,7 @@ test("Your room shows the room type's photos, and both bed rows whether or not t
 test("secondary lines on the booking screens are set in the app's description type", () => {
   // The tenant property board's own style, one for the whole app (typography.ts). Asked for on the booking screens by the user, 2026-10-11.
   const typography = read("src/theme/typography.ts");
-  assert.match(typography, /description: \{\s+fontFamily: fonts\.sans,\s+fontSize: 12,\s+lineHeight: 16,/);
+  assert.match(typography, /description: \{\s+fontFamily: fonts\.sans,[\s\S]{0,140}fontSize: 13,\s+lineHeight: 18,/);
   for (const file of ["app/booking-request.tsx", "src/features/booking/booking-form-parts.tsx", "app/my-bookings.tsx", "app/my-booking-detail.tsx", "app/owner-booking-detail.tsx", "app/owner-booking-settings.tsx", "src/features/booking/booking-request-list.tsx", "src/features/booking/book-a-stay-entry.tsx", "src/features/booking/booking-access-list.tsx"]) {
     const source = read(file);
     assert.ok(/type\.description\)?, \{ color: colors\.muted/.test(source), file);

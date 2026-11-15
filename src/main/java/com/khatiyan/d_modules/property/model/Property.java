@@ -240,6 +240,18 @@ public class Property extends BaseEntity {
     @Column(name = "damage_level_d3", nullable = false, length = 120)
     private String damageLevelD3 = DEFAULT_DAMAGE_LEVEL_D3;
 
+    /**
+     * Whether damage here is graded by level (user, 2026-11-07). Off, a damage has no
+     * level, a manual amount, and an item stays damaged until it is repaired.
+     */
+    @Column(name = "damage_levels_enabled", nullable = false)
+    // Off for a new property (user, 2026-11-07): levels are opt-in.
+    private boolean damageLevelsEnabled = false;
+
+    public void useDamageLevels(boolean enabled) {
+        this.damageLevelsEnabled = enabled;
+    }
+
     public static final String DEFAULT_DAMAGE_LEVEL_D1 = "Light wear. Cleaning or a small fix";
     public static final String DEFAULT_DAMAGE_LEVEL_D2 = "Damaged. Needs repair";
     public static final String DEFAULT_DAMAGE_LEVEL_D3 = "Broken or missing. Must be replaced";

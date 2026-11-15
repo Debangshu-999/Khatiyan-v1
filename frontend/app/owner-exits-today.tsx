@@ -1,7 +1,8 @@
 import { LogOut } from "lucide-react-native";
+import { EmptyAllCaughtUp } from "@/components/empty-art";
 import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
-import { DigestMoveOutsEmptyIcon } from "@/components/tenancy-line-icons";
+import { DigestMoveOutsBlueIcon } from "@/components/digest-color-icons";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 
@@ -118,7 +119,7 @@ export default function OwnerExitsTodayScreen() {
       {loading ? <OwnerDataListSkeleton actions={1} bodyLines={1} rows={2} /> : null}
 
       {!loading && moveOuts.length === 0 ? (
-        <EmptyState artworkNode={<DigestMoveOutsEmptyIcon size={64} />} title="Nobody moving out today" />
+        <EmptyState artworkNode={<EmptyAllCaughtUp size={120} />} title="Nobody moving out today" />
       ) : null}
 
       {!loading && moveOuts.length > 0 ? <CountPill count={moveOuts.length} noun={["move-out", "move-outs"]} /> : null}

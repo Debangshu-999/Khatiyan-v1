@@ -25,6 +25,7 @@ import com.khatiyan.d_modules.food.api.dto.DelayMealRequest;
 import com.khatiyan.d_modules.food.api.dto.MealScheduleResponse;
 import com.khatiyan.d_modules.food.api.dto.SaveMealTimingsRequest;
 import com.khatiyan.d_modules.food.event.MealDelayedEvent;
+import com.khatiyan.d_modules.food.event.MealTimingsChangedEvent;
 import com.khatiyan.d_modules.food.model.FoodMealDelay;
 import com.khatiyan.d_modules.food.model.FoodMealTiming;
 import com.khatiyan.d_modules.food.model.FoodSubscription;
@@ -112,7 +113,8 @@ public class MealScheduleService {
     @Transactional
     public MealScheduleResponse saveTimings(UUID actorUserId, UUID propertyId, SaveMealTimingsRequest request) {
         accessPolicy.ensureCanManage(actorUserId, propertyId);
-        Set<MealType> served = moduleSettingService.requireUsable(propertyId).includedMeals();
+        PropertyResponse property = moduleSettingService.requireUsable(propertyId);
+        Set<MealType> served = property.includedMeals();
 
         Map<MealType, FoodMealTiming> existing = timingRepository.findByPropertyId(propertyId).stream()
                 .collect(Collectors.toMap(FoodMealTiming::getMealType, Function.identity()));
@@ -138,6 +140,20 @@ public class MealScheduleService {
         }
         MealScheduleRules.validateTimetable(timetable);
 
+        // Only meals whose window really moved are news (P1.5.h.4, 2026-11-08).
+        // A meal never saved before runs on its default, so that is its old time.
+        Map<MealType, MealWindow> changed = new EnumMap<>(MealType.class);
+        for (SaveMealTimingsRequest.Timing timing : request.timings()) {
+            FoodMealTiming saved = existing.get(timing.mealType());
+            MealWindow before = saved != null
+                    ? new MealWindow(saved.getStartTime(), saved.getEndTime())
+                    : MealScheduleRules.DEFAULTS.get(timing.mealType());
+            MealWindow after = new MealWindow(timing.startTime(), timing.endTime());
+            if (!after.equals(before)) {
+                changed.put(timing.mealType(), after);
+            }
+        }
+
         for (SaveMealTimingsRequest.Timing timing : request.timings()) {
             FoodMealTiming row = existing.get(timing.mealType());
             if (row == null) {
@@ -146,6 +162,14 @@ public class MealScheduleService {
             } else {
                 row.update(timing.startTime(), timing.endTime(), actorUserId);
             }
+        }
+        if (!changed.isEmpty()) {
+            // Everyone on a plan today or from tomorrow eats on the new times.
+            List<UUID> tenants = subscriptionRepository.findCurrentOrUpcoming(propertyId, now().toLocalDate()).stream()
+                    .map(FoodSubscription::getTenantUserId)
+                    .distinct()
+                    .toList();
+            eventPublisher.publishEvent(new MealTimingsChangedEvent(propertyId, property.name(), changed, tenants));
         }
         return build(propertyId);
     }

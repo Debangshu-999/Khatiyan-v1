@@ -108,7 +108,9 @@ public record CreatePropertyRequest(
     // the enum has no invalid members, which is why it replaced a raw integer.
     NoticePeriod noticePeriod,
 
-    // Null when the owner skipped it; shown as "Not specified".
+    // Required, yes or no (user, 2026-11-08): it shows on the property profile
+    // and is the visitor logbook's own switch. The screen starts on "Not allowed".
+    @NotNull(message = "Choose whether tenants can have visitors.")
     Boolean visitorsAllowed,
 
     @Size(max = 160)

@@ -20,6 +20,7 @@ import com.khatiyan.d_modules.discovery.service.LocalPlaceTaxonomyService;
 import com.khatiyan.d_modules.discovery.service.NearbyPlacesSearchService;
 import com.khatiyan.d_modules.discovery.service.PropertyDiscoveryService;
 import com.khatiyan.d_modules.discovery.service.PropertyLocalPlaceService;
+import com.khatiyan.d_modules.discovery.service.SavedPropertyService;
 import com.khatiyan.d_modules.property.model.BathroomType;
 import com.khatiyan.d_modules.property.model.MealType;
 import com.khatiyan.d_modules.property.model.PgFor;
@@ -35,18 +36,39 @@ public class DiscoveryModule {
     private final NearbyPlacesSearchService nearbyPlacesSearchService;
     private final LocalPlaceTaxonomyService taxonomyService;
     private final PropertyContactService propertyContactService;
+    private final SavedPropertyService savedPropertyService;
 
     public DiscoveryModule(
             PropertyDiscoveryService propertyDiscoveryService,
             PropertyLocalPlaceService propertyLocalPlaceService,
             NearbyPlacesSearchService nearbyPlacesSearchService,
             LocalPlaceTaxonomyService taxonomyService,
-            PropertyContactService propertyContactService) {
+            PropertyContactService propertyContactService,
+            SavedPropertyService savedPropertyService) {
+        this.savedPropertyService = savedPropertyService;
         this.propertyDiscoveryService = propertyDiscoveryService;
         this.propertyLocalPlaceService = propertyLocalPlaceService;
         this.nearbyPlacesSearchService = nearbyPlacesSearchService;
         this.taxonomyService = taxonomyService;
         this.propertyContactService = propertyContactService;
+    }
+
+    // ---- Saved properties (user, 2026-11-14) ------------------------------
+
+    public void saveProperty(UUID userId, UUID propertyId) {
+        savedPropertyService.save(userId, propertyId);
+    }
+
+    public void removeSavedProperty(UUID userId, UUID propertyId) {
+        savedPropertyService.remove(userId, propertyId);
+    }
+
+    public List<UUID> savedPropertyIds(UUID userId) {
+        return savedPropertyService.savedPropertyIds(userId);
+    }
+
+    public List<PropertyDiscoveryCardResponse> savedProperties(UUID userId, BigDecimal latitude, BigDecimal longitude) {
+        return savedPropertyService.list(userId, latitude, longitude);
     }
 
     // ---- Listing contacts ------------------------------------------------

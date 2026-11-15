@@ -32,7 +32,7 @@ import {
   type MealReviewReading,
 } from "@/store/services/food-api";
 import { useChartPalette } from "@/theme/chart-colors";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -196,7 +196,7 @@ function OverallSection({ change, month, week, year }: { change: number | null; 
   const shownChange = change == null ? null : Math.round(change * 10) / 10 || 0;
   return (
     <Section title="Overall rating" trailing={<GhostPill height={28} width={88}><ChartDropdown accessibilityLabel="Graph shows" onChange={setMode} options={GRAPH_MODES} value={mode} /></GhostPill>}>
-      <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, padding: spacing.md, ...softShadow(colors.shadow, 4, 12) }}>
+      <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, gap: spacing.sm, padding: spacing.md, ...cardShadow(colors.shadow) }}>
         <View style={{ alignItems: "baseline", flexDirection: "row", gap: spacing.sm }}>
           <GhostText ghostWidth={64} style={{ color: trend.rating == null ? colors.muted : ratingColor(trend.rating, colors), fontFamily: fonts.display, fontSize: 22 }}>
             {trend.rating == null ? "No ratings" : `${one(trend.rating)}/5`}
@@ -273,7 +273,7 @@ function PlanCard({ aiMode, columns, mode, plan, reading }: { aiMode: boolean; c
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "baseline", flexDirection: "row", gap: spacing.sm }}>
@@ -402,7 +402,7 @@ function DishGroupCard({ aiMode, dishes, mode, onToggle, open, readings, title }
   const softShadow = useSoftShadow();
   const { colors, fonts } = useTheme();
   return (
-    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, ...softShadow(colors.shadow, 4, 12) }}>
+    <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, ...cardShadow(colors.shadow) }}>
       <AnimatedPressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}

@@ -6,6 +6,7 @@ import { QrCode } from "lucide-react-native";
 import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
+import { HighlightPanel, highlightPalette } from "@/components/highlight-card";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { ActionButton, FormInput } from "@/features/owner/owner-ui";
@@ -58,7 +59,16 @@ export function MarkAttendanceSheet({
 
   return (
     <SheetShell onClose={onClose} title="Mark attendance">
-      <Text style={[type.modalDescription, { color: colors.muted }]}>Scan the visitor pass on {name}'s phone.</Text>
+      <HighlightPanel variant="visit">
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+          <View style={{ flex: 1, gap: 5, minWidth: 0 }}>
+            <Text style={{ color: highlightPalette.visit.muted, fontFamily: fonts.sansSemiBold, fontSize: 11 }}>VISITOR CHECK-IN</Text>
+            <Text style={{ color: highlightPalette.visit.ink, fontFamily: fonts.display, fontSize: 20 }}>{visit.prospectName || "Visitor"}</Text>
+            <Text style={[type.modalDescription, { color: highlightPalette.visit.muted }]}>Scan the visitor pass on {name}'s phone.</Text>
+          </View>
+          <QrCode color={highlightPalette.visit.muted} size={32} strokeWidth={1.6} />
+        </View>
+      </HighlightPanel>
 
       <View
         style={{
@@ -66,6 +76,8 @@ export function MarkAttendanceSheet({
           backgroundColor: colors.surfaceSunken,
           borderCurve: "continuous",
           borderRadius: radii.card,
+          borderColor: highlightPalette.booking.line,
+          borderWidth: 1,
           height: 220,
           justifyContent: "center",
           overflow: "hidden",

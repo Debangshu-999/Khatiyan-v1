@@ -24,7 +24,7 @@ import {
   type MealAttendancePlan,
 } from "@/store/services/food-api";
 import { useChartPalette } from "@/theme/chart-colors";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -140,7 +140,7 @@ function TodaySection({ date, meals, onOpen }: { date: string; meals: MealAttend
           borderWidth: 1,
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.xxs,
-          ...softShadow(colors.shadow, 4, 12),
+          ...cardShadow(colors.shadow),
         }}
       >
         {meals.length === 0 ? (
@@ -172,7 +172,7 @@ function HistoryLink() {
         flexDirection: "row",
         gap: spacing.sm,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <GhostIcon color={colors.ink} icon={History} size={18} strokeWidth={2.2} />
@@ -235,7 +235,7 @@ function PlanCard({ columns, mode, plan }: { columns: { key: string; label: stri
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <GhostText ghostWidth={130} numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>{plan.name}</GhostText>

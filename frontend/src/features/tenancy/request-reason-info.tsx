@@ -16,7 +16,7 @@ import { useTheme } from "@/theme/use-theme";
  * already put them behind an info control; this brings the tenant's into line.
  */
 export function RequestReasonInfo({ label, value }: { label: string; value: string }) {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const [open, setOpen] = useState(false);
 
   return (
@@ -27,13 +27,20 @@ export function RequestReasonInfo({ label, value }: { label: string; value: stri
         onPress={() => setOpen(true)}
         style={{
           alignItems: "center",
+          borderColor: colors.primary,
+          borderRadius: 999,
+          borderWidth: 1,
           flexDirection: "row",
-          gap: spacing.xs,
-          paddingVertical: 2,
+          gap: 5,
+          paddingLeft: spacing.sm,
+          paddingRight: 6,
+          paddingVertical: 5,
         }}
       >
-        <CircleHelp color={colors.muted} size={14} strokeWidth={2.2} />
-        <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
+        {/* A bordered pill with a chevron, so it reads as something to open (user, 2026-11-11). */}
+        <MessageSquareText color={colors.primary} size={14} strokeWidth={2.2} />
+        <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 12 }}>{label}</Text>
+        <ChevronRight color={colors.primary} size={14} strokeWidth={2.4} />
       </AnimatedPressable>
 
       {open ? (
@@ -44,4 +51,4 @@ export function RequestReasonInfo({ label, value }: { label: string; value: stri
     </>
   );
 }
-import { CircleHelp } from "lucide-react-native";
+import { ChevronRight, MessageSquareText } from "lucide-react-native";

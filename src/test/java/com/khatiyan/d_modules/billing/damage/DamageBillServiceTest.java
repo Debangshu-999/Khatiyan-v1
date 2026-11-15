@@ -57,6 +57,8 @@ class DamageBillServiceTest {
     void seed() {
         fx = new BookingFixtures(jdbc);
         property = fx.property();
+        // Graded by level: these tests are about levels, and a new property starts with them off.
+        jdbc.update("UPDATE property.properties SET damage_levels_enabled = true WHERE id = ?", property);
         owner = fx.ownerAccount(property);
         room = fx.room(property, 2, 2);
         UUID tenant = fx.appUser();
@@ -272,8 +274,12 @@ class DamageBillServiceTest {
         assertThatThrownBy(() -> billing.ensureLatestCyclePaidForExit(owner, leaving)).isInstanceOf(NotFoundException.class);
     }
 
+    private int recorded;
+
+    /** Each its own item: one open damage per item at a time (user, 2026-11-07). */
     private SaveDamageRecordRequest one(long costPaise) {
-        return new SaveDamageRecordRequest(room, "AC", "ROOM", DamageLevel.D2, costPaise, "Grille bent",
+        String item = recorded++ == 0 ? "AC" : "Item " + recorded;
+        return new SaveDamageRecordRequest(room, item, "ROOM", DamageLevel.D2, costPaise, "Grille bent",
                 List.of("ac.jpg"), DamageResponsibility.TENANT, leaving);
     }
 

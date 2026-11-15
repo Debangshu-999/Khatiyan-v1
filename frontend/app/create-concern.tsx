@@ -14,7 +14,9 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
+import { ActionButton, FormInput, RequiredMark } from "@/features/owner/owner-ui";
+import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
 import type { ConcernCategory } from "@/store/services/concern-api";
@@ -23,7 +25,7 @@ import { useCreateConcernMutation } from "@/store/services/concern-api";
 import { useGetMyActiveTenancyQuery } from "@/store/services/tenancy-api";
 import { EmptyState } from "@/components/empty-state";
 import { REQUESTS_NOT_STARTED, tenancyNotStarted } from "@/features/tenancy/starts-soon-bubble";
-import { spacing } from "@/theme/spacing";
+import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 
@@ -71,7 +73,8 @@ export default function CreateConcernScreen() {
   const [createConcern, createState] = useCreateConcernMutation();
   const activeTenancyQuery = useGetMyActiveTenancyQuery();
   const activeTenancy = activeTenancyQuery.data;
-  const [category, setCategory] = useState<ConcernCategory>("MAINTENANCE");
+  // Nothing chosen to begin with (user, 2026-11-11).
+  const [category, setCategory] = useState<ConcernCategory | null>(null);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -81,7 +84,7 @@ export default function CreateConcernScreen() {
   // Uploads run before the mutation, and are the slow half — the button has to
   // cover both or it sits idle while photos are in flight.
   const busy = uploading || createState.isLoading;
-  const form = useFormErrors<"title" | "description">();
+  const form = useFormErrors<"category" | "title" | "description">();
   // Photo/permission problems are not about a field and cannot be corrected in
   // one, so they take the modal alongside server refusals.
   const setError = (value: string | null) => {
@@ -186,10 +189,11 @@ export default function CreateConcernScreen() {
     const trimmedDescription = description.trim();
 
     const problems = {
+      ...(category ? {} : { category: "Select a category." }),
       ...(trimmedTitle ? {} : { title: "Add a short title for the concern." }),
       ...(trimmedDescription ? {} : { description: "Add the concern details before submitting." }),
     };
-    if (!form.validate(problems)) {
+    if (!form.validate(problems) || !category) {
       return;
     }
 
@@ -231,79 +235,60 @@ export default function CreateConcernScreen() {
   }
 
   return (
-    <ScreenScrollView contentContainerStyle={{ paddingBottom: spacing.md }}>
+    <View style={{ backgroundColor: colors.background, flex: 1 }}>
+    <ScreenScrollView bottomPaddingCovered contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE }} safeAreaEdges={["top"]}>
       <ScreenHeader
         italicTail="concern."
         subtitle="Tell the property team what needs attention and add photos if they help."
         title="Raise"
       />
 
-      <Section title="Choose a category">
-        <CategoryPickerField
-          onPress={() => setCategoryPickerOpen(true)}
-          value={category}
-        />
-      </Section>
+      {/* Labels on the fields themselves, no section headers (user, 2026-11-11). */}
+      <View style={{ gap: 6 }}>
+        <Text style={[type.label, { color: colors.muted }]}>
+          Category<RequiredMark required />
+        </Text>
+        <CategoryPickerField error={Boolean(form.errors.category)} onPress={() => setCategoryPickerOpen(true)} value={category} />
+        {form.errors.category ? <Text style={[type.caption, { color: colors.danger }]}>{form.errors.category}</Text> : null}
+      </View>
 
-      <Section title="Describe the concern">
-        <FormField
-          label="Concern title"
-          maxLength={160}
-          onChangeText={(value) => {
-            setTitle(value);
-            form.clearField("title");
-          }}
-          placeholder="Give the issue a short, clear title"
-          value={title}
-        />
-        <FieldError message={form.errors.title} />
-
-        <FormField
-          label="What happened?"
-          maxLength={1000}
-          multiline
-          onChangeText={(value) => {
-            setDescription(value);
-            form.clearField("description");
-          }}
-          placeholder="Describe the issue and include any useful details."
-          value={description}
-        />
-        <FieldError message={form.errors.description} />
-      </Section>
-
-      <Section title="Add photos">
-        <PhotoAttachmentSection
-          onOpenCamera={openCamera}
-          onPickFromDevice={pickFromDevice}
-          onRemovePhoto={(photoId) => setPhotos((current) => current.filter((photo) => photo.id !== photoId))}
-          photos={photos}
-          uploadProgress={uploadProgress}
-        />
-      </Section>
-
-      <AnimatedPressable
-        accessibilityRole="button"
-        disabled={busy || form.blocked}
-        onPress={submitConcern}
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.primary,
-          borderRadius: 14,
-          justifyContent: "center",
-          minHeight: 54,
-          opacity: busy || form.blocked ? 0.75 : 1,
-          padding: spacing.md,
+      <FormInput
+        error={form.errors.title}
+        label="Title"
+        labelAccessory={<Text style={[type.caption, { color: colors.kicker, fontVariant: ["tabular-nums"], marginLeft: "auto" }]}>{title.length}/160</Text>}
+        maxLength={160}
+        onChangeText={(value) => {
+          setTitle(value);
+          form.clearField("title");
         }}
-      >
-        {busy ? (
-          <ActivityIndicator color={colors.onPrimary} />
-        ) : (
-          <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15 }}>
-            Create concern
-          </Text>
-        )}
-      </AnimatedPressable>
+        placeholder="Give the issue a short, clear title"
+        required
+        value={title}
+      />
+
+      <FormInput
+        error={form.errors.description}
+        label="What happened?"
+        labelAccessory={<Text style={[type.caption, { color: colors.kicker, fontVariant: ["tabular-nums"], marginLeft: "auto" }]}>{description.length}/1000</Text>}
+        maxLength={1000}
+        multiline
+        onChangeText={(value) => {
+          setDescription(value);
+          form.clearField("description");
+        }}
+        placeholder="Describe the issue and include any useful details."
+        required
+        value={description}
+      />
+
+      <PhotoAttachmentSection
+        onOpenCamera={openCamera}
+        onPickFromDevice={pickFromDevice}
+        onRemovePhoto={(photoId) => setPhotos((current) => current.filter((photo) => photo.id !== photoId))}
+        photos={photos}
+        uploadProgress={uploadProgress}
+      />
+
 
       {categoryPickerOpen ? (
         <CategoryPickerSheet
@@ -312,6 +297,7 @@ export default function CreateConcernScreen() {
             setCategory(value);
             setCategoryPickerOpen(false);
             setError(null);
+            form.clearField("category");
           }}
           value={category}
         />
@@ -321,6 +307,14 @@ export default function CreateConcernScreen() {
         <AlertModal message={form.serverError} onClose={form.dismissServerError} />
       ) : null}
     </ScreenScrollView>
+
+      {/* Create concern, a fixed footer (user, 2026-11-11). */}
+      <PinnedFooter>
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton disabled={busy || form.blocked} label={busy ? "Creating…" : "Create concern"} onPress={() => void submitConcern()} />
+        </View>
+      </PinnedFooter>
+    </View>
   );
 }
 
@@ -345,23 +339,9 @@ function PhotoAttachmentSection({
         gap: spacing.sm,
       }}
     >
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <Text style={[type.description, { color: colors.muted, flex: 1 }]}>
-          Optional · add up to four photos to help the property team understand the issue.
-        </Text>
-        <View
-          style={{
-            backgroundColor: colors.surfaceSunken,
-            borderRadius: 999,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 5,
-          }}
-        >
-          <Text style={[type.caption, { color: colors.ink, fontFamily: fonts.sansBold }]}>
-            {photos.length}/{MAX_LOCAL_PHOTOS}
-          </Text>
-        </View>
-      </View>
+      <Text style={[type.label, { color: colors.muted }]}>
+        Add photos ({photos.length}/{MAX_LOCAL_PHOTOS})
+      </Text>
 
       <View
         style={{
@@ -397,16 +377,17 @@ function PhotoAttachmentSection({
             <View
               key={photo.id}
               style={{
+                backgroundColor: colors.surface,
                 borderColor: colors.border,
-                borderRadius: 14,
+                borderRadius: radii.card,
                 borderWidth: 1,
-                overflow: "hidden",
                 width: 92,
+                ...cardShadow(colors.shadow),
               }}
             >
               <Image
                 source={{ uri: photo.uri }}
-                style={{ backgroundColor: colors.neutralSoft, height: 72, width: "100%" }}
+                style={{ backgroundColor: colors.neutralSoft, borderTopLeftRadius: radii.card - 1, borderTopRightRadius: radii.card - 1, height: 72, width: "100%" }}
               />
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", padding: 6 }}>
                 <FitText numberOfLines={1} style={[type.body, { color: colors.muted, flex: 1, fontSize: 10 }]}>
@@ -477,15 +458,17 @@ function PhotoActionButton({
 }
 
 function CategoryPickerField({
+  error = false,
   onPress,
   value,
 }: {
+  error?: boolean;
   onPress: () => void;
-  value: ConcernCategory;
+  value: ConcernCategory | null;
 }) {
   const { colors, fonts, type } = useTheme();
   const selected = CONCERN_CATEGORY_OPTIONS.find((option) => option.value === value)
-    ?? CONCERN_CATEGORY_OPTIONS[0];
+    ?? { label: "Select category", subtitle: "Pick the closest match", value: null };
 
   return (
     <AnimatedPressable
@@ -495,20 +478,22 @@ function CategoryPickerField({
       style={{
         alignItems: "center",
         backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
+        borderColor: error ? colors.danger : colors.borderStrong,
         borderCurve: "continuous",
-        borderRadius: 16,
+        borderRadius: radii.card,
         borderWidth: 1,
         flexDirection: "row",
         gap: spacing.md,
         minHeight: 72,
         padding: spacing.md,
+        ...cardShadow(colors.shadow),
       }}
     >
       <View
         style={{
           alignItems: "center",
-          backgroundColor: colors.primarySoft,
+          borderColor: colors.borderStrong,
+          borderWidth: 1,
           borderRadius: 999,
           height: 42,
           justifyContent: "center",
@@ -518,7 +503,6 @@ function CategoryPickerField({
         <MessageSquareWarning color={colors.ink} size={20} strokeWidth={2.1} />
       </View>
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-        <Text style={[type.caption, { color: colors.muted }]}>Selected category</Text>
         <FitText
           numberOfLines={1}
           style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}
@@ -552,28 +536,26 @@ function CategoryPickerSheet({
 }: {
   onClose: () => void;
   onSelect: (value: ConcernCategory) => void;
-  value: ConcernCategory;
+  value: ConcernCategory | null;
 }) {
   const { colors, type } = useTheme();
 
   return (
-    <SheetShell animated onClose={onClose} title="Choose a category">
-      <Text style={[type.modalDescription, { color: colors.muted }]}>
-        Select the closest match. You can explain the full issue in the details section.
-      </Text>
-      <View
-        style={{
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: 16,
-          borderWidth: 1,
-          overflow: "hidden",
-          paddingHorizontal: spacing.sm,
-        }}
-      >
-        {CONCERN_CATEGORY_OPTIONS.map((option, index) => (
+    // The list straight under the title (user, 2026-11-11), like the floor picker.
+    <SheetShell
+      animated
+      belowRule={(
+        <Text style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 17 }]}>
+          Select the closest match. You can explain the full issue in the details section.
+        </Text>
+      )}
+      onClose={onClose}
+      size="content"
+      title="Select category"
+    >
+      <View>
+        {CONCERN_CATEGORY_OPTIONS.map((option) => (
           <PickerOptionRow
-            first={index === 0}
             key={option.value}
             label={option.label}
             onPress={() => onSelect(option.value)}
@@ -586,53 +568,3 @@ function CategoryPickerSheet({
   );
 }
 
-function FormField({
-  label,
-  maxLength,
-  multiline = false,
-  onChangeText,
-  placeholder,
-  value,
-}: {
-  label: string;
-  maxLength: number;
-  multiline?: boolean;
-  onChangeText: (value: string) => void;
-  placeholder: string;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
-
-  return (
-    <View style={{ gap: spacing.xs }}>
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>
-          {label}
-        </Text>
-        <Text style={[type.caption, { color: colors.kicker, fontVariant: ["tabular-nums"] }]}>
-          {value.length}/{maxLength}
-        </Text>
-      </View>
-      <AppTextInput
-        maxLength={maxLength}
-        multiline={multiline}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.kicker}
-        style={{
-          backgroundColor: colors.surface,
-          borderColor: colors.borderStrong,
-          borderRadius: 16,
-          borderWidth: 1,
-          color: colors.ink,
-          fontFamily: fonts.sansMedium,
-          fontSize: 15,
-          minHeight: multiline ? 120 : 52,
-          padding: spacing.md,
-          textAlignVertical: multiline ? "top" : "center",
-        }}
-        value={value}
-      />
-    </View>
-  );
-}

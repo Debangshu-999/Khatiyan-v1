@@ -78,6 +78,34 @@ class RefreshTokenIntegrationTest {
     }
 
     @Test
+    void theSameDeviceSigningInAgainReplacesItsOldSession() {
+        UUID other = UUID.randomUUID();
+        sessions.open(userId, other, "Web browser", "web", Instant.now());
+        UUID again = UUID.randomUUID();
+
+        sessions.open(userId, again, "Pixel 8", "phone", Instant.now());
+
+        assertThat(revoked(jti)).isTrue();
+        assertThat(cache.lookup(userId, jti).session().revoked()).isTrue();
+        assertThat(revoked(other)).isFalse();
+        assertThat(revoked(again)).isFalse();
+        assertThat(auth.refresh(refreshToken)).isEmpty();
+    }
+
+    @Test
+    void aBlankNameOrAnotherPlatformIsNotTheSameDevice() {
+        sessions.replaceSameDevice(userId, " ", "phone", Instant.now());
+        sessions.replaceSameDevice(userId, "Pixel 8", "web", Instant.now());
+
+        assertThat(revoked(jti)).isFalse();
+    }
+
+    private boolean revoked(UUID sessionJti) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT revoked_at IS NOT NULL FROM auth.user_sessions WHERE jti = ?", Boolean.class, sessionJti));
+    }
+
+    @Test
     void aSignedOutDeviceCannotRenew() {
         sessions.revokeOwn(userId, jti, Instant.now());
 

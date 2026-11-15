@@ -1,4 +1,5 @@
 import { ModalTitleRule } from "@/components/modal-title-rule";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,6 +8,7 @@ import QRCode from "react-native-qrcode-svg";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
+import { HighlightPanel, highlightPalette } from "@/components/highlight-card";
 import { GhostBlock, SkeletonBoundary } from "@/components/skeletons/boundary";
 import { formatSlotRange, formatVisitDay } from "@/features/enquiry/visit-time";
 import { errorMessage } from "@/features/forms/server-error";
@@ -43,13 +45,14 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => (
         <View style={{ flex: 1, justifyContent: "flex-end", paddingTop: insets.top + spacing.md }}>
-          <View
+          <SheetCloseButton onClose={() => dismiss()} />
+          <HighlightPanel variant="visit"
             style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.borderStrong,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
-              borderWidth: 1,
+              borderBottomLeftRadius: 0,
+              borderBottomRightRadius: 0,
+              padding: 0,
               // Bounded by what is left under the close button, so a short
               // phone scrolls the pass instead of pushing the button off.
               flexShrink: 1,
@@ -79,7 +82,7 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
                 <View style={{ alignItems: "center", gap: spacing.md }}>
                   <ModalTitle
                     style={{
-                      color: colors.ink,
+                      color: highlightPalette.visit.ink,
                       fontFamily: fonts.display,
                       fontSize: 22,
                       lineHeight: 28,
@@ -92,7 +95,7 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
                   <View
                     style={{
                       alignItems: "center",
-                      backgroundColor: colors.neutralSoft,
+                      backgroundColor: "rgba(255,255,255,0.1)",
                       borderCurve: "continuous",
                       borderRadius: radii.card,
                       gap: 2,
@@ -101,10 +104,10 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
                       paddingVertical: spacing.sm,
                     }}
                   >
-                    <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+                    <Text style={{ color: highlightPalette.visit.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
                       {formatVisitDay(pass.data.date)}
                     </Text>
-                    <Text style={{ color: colors.neutralText, fontFamily: fonts.sansMedium, fontSize: 14 }}>
+                    <Text style={{ color: highlightPalette.visit.muted, fontFamily: fonts.sansMedium, fontSize: 14 }}>
                       {formatSlotRange(pass.data.slotStart, pass.data.slotEnd)}
                     </Text>
                   </View>
@@ -122,22 +125,22 @@ export function VisitorPassSheet({ onClose, visitId }: { onClose: () => void; vi
                   </View>
                   <Text
                     accessibilityLabel={`Pass code ${pass.data.code.split("").join(" ")}`}
-                    style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 28, letterSpacing: 4 }}
+                    style={{ color: highlightPalette.visit.ink, fontFamily: fonts.sansBold, fontSize: 28, letterSpacing: 4 }}
                   >
                     {formatPassCode(pass.data.code)}
                   </Text>
-                  <Text style={[type.description, { color: colors.muted, textAlign: "center" }]}>
+                  <Text style={[type.description, { color: highlightPalette.visit.muted, textAlign: "center" }]}>
                     Show this at the property to check in. If it cannot be scanned, read out the code.
                   </Text>
-                  <Text style={[type.caption, { color: colors.kicker }]}>{pass.data.referenceCode}</Text>
+                  <Text style={[type.caption, { color: highlightPalette.visit.muted }]}>{pass.data.referenceCode}</Text>
                 </View>
               ) : (
-                <Text style={[type.modalDescription, { color: colors.muted, textAlign: "center" }]}>
+                <Text style={[type.modalDescription, { color: highlightPalette.visit.muted, textAlign: "center" }]}>
                   {pass.error ? errorMessage(pass.error) : "Your pass could not be read. Try again."}
                 </Text>
               )}
             </ScrollView>
-          </View>
+          </HighlightPanel>
         </View>
       )}
     </BottomSheetModal>

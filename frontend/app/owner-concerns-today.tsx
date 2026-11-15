@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { EmptyAllCaughtUp } from "@/components/empty-art";
 import { View } from "react-native";
 
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { EmptyState } from "@/components/empty-state";
-import { DigestConcernsEmptyIcon } from "@/components/tenancy-line-icons";
+import { DigestConcernsBlueIcon } from "@/components/digest-color-icons";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
@@ -17,6 +18,9 @@ import { useListMyPropertiesQuery } from "@/store/services/property-api";
 import { spacing } from "@/theme/spacing";
 
 import { ConcernCard } from "./owner-concerns";
+
+/** A little more room between a concern empty state's picture and its words (user, 2026-11-14). */
+const CONCERN_EMPTY_GAP = spacing.lg + spacing.xs;
 
 /**
  * Concerns today: the concerns raised today, whatever their status now (user,
@@ -71,8 +75,8 @@ export default function OwnerConcernsTodayScreen() {
         {concernsQuery.isLoading ? <OwnerConcernQueueSkeleton /> : null}
 
         {!concernsQuery.isLoading && concerns.length === 0 ? (
-          <EmptyState
-            artworkNode={<DigestConcernsEmptyIcon size={64} />}
+          <EmptyState artworkTextGap={CONCERN_EMPTY_GAP}
+            artworkNode={<EmptyAllCaughtUp size={120} />}
             title="No concerns raised today"
           />
         ) : null}

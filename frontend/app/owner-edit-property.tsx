@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, CalendarDays, CircleHelp } from "lucide-react-native";
+import { ArrowLeft, CircleHelp } from "lucide-react-native";
 import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { Card } from "@/components/card";
 import { ChoiceCard, ChoiceGrid, ChoiceSection } from "@/components/choice-section";
-import { SectionHeading } from "@/components/section-heading";
 import { EmptyState } from "@/components/empty-state";
 import { FieldHint } from "@/components/field-hint";
 import { OptionPicker, SingleOptionPicker } from "@/components/option-picker";
@@ -17,6 +18,8 @@ import { Skeleton } from "@/components/skeletons";
 import { OwnerSettingsFormSkeleton } from "@/components/skeletons/owner";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
+import { matchIndianState } from "@/features/property/indian-states";
+import { StateDropdown } from "@/features/property/state-dropdown";
 import { useToast } from "@/components/toast";
 import { LocationPinCard, addressSummaryLine } from "@/features/geo/location-pin-card";
 import { MapLocationPickerModal, type PickedLocation } from "@/features/geo/map-location-picker";
@@ -83,6 +86,7 @@ export default function OwnerEditPropertyScreen() {
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const propertiesQuery = useListMyPropertiesQuery();
   const properties = propertiesQuery.data ?? [];
+  const [reloads, setReloads] = useState(0);
   const property = selectedPropertyId
     ? properties.find((candidate) => candidate.id === selectedPropertyId) ?? null
     : properties.length === 1
@@ -103,17 +107,17 @@ export default function OwnerEditPropertyScreen() {
             borderBottomColor: colors.borderStrong,
             borderBottomWidth: 2,
             flexDirection: "row",
-            paddingBottom: spacing.md,
+            paddingBottom: spacing.sm,
             paddingHorizontal: spacing.lg,
-            paddingTop: insets.top + spacing.md,
+            paddingTop: insets.top + spacing.sm,
           }}
         >
-          <IconButton accessibilityLabel="Back" icon={ArrowLeft} onPress={() => router.back()} />
+          <BackCircle onPress={() => router.back()} />
           <View style={{ flex: 1, gap: 4, paddingLeft: spacing.sm }}>
-            <Skeleton height={10} width={92} />
-            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.3 }}>
+            <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, letterSpacing: -0.3 }}>
               Edit property
             </Text>
+            <Skeleton height={10} width={92} />
           </View>
         </View>
         <View style={{ paddingHorizontal: spacing.lg }}>
@@ -144,9 +148,18 @@ export default function OwnerEditPropertyScreen() {
     );
   }
 
-  // Keyed so the form re-seeds from scratch when the active property changes;
-  // the state below is initialised from props exactly once.
-  return <EditPropertyForm key={property.id} property={property} />;
+  // Keyed so the form re-seeds from scratch when the active property changes, or after a
+  // pull-to-refresh with nothing unsaved (user, 2026-11-07); its state starts from props once.
+  return (
+    <EditPropertyForm
+      key={`${property.id}-${reloads}`}
+      onRefresh={async (dirty) => {
+        await propertiesQuery.refetch();
+        if (!dirty) setReloads((count) => count + 1);
+      }}
+      property={property}
+    />
+  );
 }
 
 /** Every field the save check can point at. */
@@ -163,18 +176,23 @@ type EditField =
   | "pincode"
   | "state";
 
-function EditPropertyForm({ property }: { property: OwnerProperty }) {
+function EditPropertyForm({ onRefresh, property }: {
+  /** Pull-to-refresh: refetches, then reloads the form when nothing is unsaved. */
+  onRefresh: (dirty: boolean) => Promise<void>;
+  property: OwnerProperty;
+}) {
   const router = useGuardedRouter();
   const insets = useSafeAreaInsets();
   const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const keyboardInset = useKeyboardInset({ early: false });
   const onClose = () => router.back();
   const [name, setName] = useState(property.name);
   const [roomTypesHelp, setRoomTypesHelp] = useState(false);
   const [address, setAddress] = useState(property.address);
   const [area, setArea] = useState(property.area);
   const [city, setCity] = useState(property.city);
-  const [state, setState] = useState(property.state ?? "");
+  // The list's spelling of what was saved, blank when it is not a state on it (2026-11-08).
+  const [state, setState] = useState<string>(matchIndianState(property.state) ?? "");
   const [pincode, setPincode] = useState(property.pincode);
   const [latitude, setLatitude] = useState<number | null>(property.latitude);
   const [longitude, setLongitude] = useState<number | null>(property.longitude);
@@ -183,7 +201,8 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const [preferredFor, setPreferredFor] = useState<PreferredTenantType>(property.preferredFor ?? "ANYONE");
   const [includedMeals, setIncludedMeals] = useState<MealType[]>(property.includedMeals ?? []);
   const [electricityIncluded, setElectricityIncluded] = useState(Boolean(property.electricityIncluded));
-  const [visitorsAllowed, setVisitorsAllowed] = useState<boolean | null>(property.visitorsAllowed ?? null);
+  // A property saved before it was required shows "Not allowed" (user, 2026-11-08).
+  const [visitorsAllowed, setVisitorsAllowed] = useState<boolean>(property.visitorsAllowed ?? false);
   const [bathroomType, setBathroomType] = useState<BathroomType>(property.bathroomType ?? "COMMON");
   const [availableSharingTypes, setAvailableSharingTypes] = useState<RoomType[]>(property.availableSharingTypes ?? []);
   const [tab, setTab] = useState<EditTab>("basics");
@@ -250,8 +269,10 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
     if (picked.city) {
       setCity(picked.city);
     }
-    if (picked.state) {
-      setState(picked.state);
+    // Only a state on the list: the dropdown cannot show anything else (2026-11-08).
+    const pickedState = matchIndianState(picked.state);
+    if (pickedState) {
+      setState(pickedState);
     }
     if (picked.pincode) {
       setPincode(picked.pincode);
@@ -269,13 +290,13 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
     address !== property.address ||
     area !== property.area ||
     city !== property.city ||
-    state !== (property.state ?? "") ||
+    state !== (matchIndianState(property.state) ?? "") ||
     pincode !== property.pincode ||
     propertyType !== property.type ||
     pgFor !== (property.pgFor ?? "ANYONE") ||
     preferredFor !== (property.preferredFor ?? "ANYONE") ||
     electricityIncluded !== Boolean(property.electricityIncluded) ||
-    visitorsAllowed !== (property.visitorsAllowed ?? null) ||
+    visitorsAllowed !== (property.visitorsAllowed ?? false) ||
     bathroomType !== (property.bathroomType ?? "COMMON") ||
     includedMeals.join() !== (property.includedMeals ?? []).join() ||
     availableSharingTypes.join() !== (property.availableSharingTypes ?? []).join() ||
@@ -295,6 +316,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
   const [photosTouched, setPhotosTouched] = useState(false);
 
   const unsaved = useUnsavedChanges(dirty);
+  const [refreshing, setRefreshing] = useState(false);
 
   /**
    * Turning daily stays back on restores the rates rather than clearing them.
@@ -353,7 +375,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
       ...(address.trim() ? {} : { address: "Enter address line 1." }),
       ...(area.trim() ? {} : { area: "Enter the area or locality." }),
       ...(city.trim() ? {} : { city: "Enter the city." }),
-      ...(state.trim() ? {} : { state: "Enter the state." }),
+      ...(matchIndianState(state) ? {} : { state: "Choose the state." }),
       ...(pincode.trim() ? {} : { pincode: "Enter the pincode." }),
       ...(depositPaise == null ? { deposit: "Enter a valid standard deposit." } : {}),
       ...(noticePeriod ? {} : { noticePeriod: "Choose a notice period." }),
@@ -413,7 +435,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
       rentGraceDays: grace,
       rentLateFeePerDayPaise: rupeesToPaise(lateFee),
       standardDepositPaise: depositPaise,
-      state: state.trim(),
+      state: matchIndianState(state) ?? state.trim(),
       type: propertyType,
     };
     try {
@@ -449,20 +471,29 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                 borderBottomWidth: 2,
                 flexDirection: "row",
                 justifyContent: "space-between",
-                paddingBottom: spacing.md,
+                paddingBottom: spacing.sm,
                 paddingHorizontal: spacing.lg,
-                paddingTop: insets.top + spacing.md,
+                paddingTop: insets.top + spacing.sm,
               }}
             >
-              <IconButton accessibilityLabel="Back" icon={ArrowLeft} onPress={onClose} />
-              <View style={{ flex: 1, gap: 2, paddingLeft: spacing.sm }}>
+              <BackCircle onPress={onClose} />
+              {/* The title first and the property's code under it, in a tighter header (user, 2026-11-07). */}
+              <View style={{ flex: 1, gap: 1, paddingLeft: spacing.sm }}>
+                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, letterSpacing: -0.3 }}>
+                  Edit property
+                </Text>
                 <Text style={[type.eyebrow, { color: colors.accent }]}>
                   {property.referenceCode}
                 </Text>
-                <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, letterSpacing: -0.3 }}>
-                  Edit property
-                </Text>
               </View>
+              {/* A tab's own help sits here, now that the tabs have no headings (user, 2026-11-07). */}
+              {tab === "types" ? (
+                <View style={{ marginTop: spacing.xs }}>
+                  <IconButton accessibilityLabel="How room types work" icon={CircleHelp} onPress={() => setRoomTypesHelp(true)} />
+                </View>
+              ) : tab === "photos" ? (
+                <UploadRulesInfo max={MAX_PROPERTY_IMAGES} />
+              ) : null}
             </View>
 
             {/* Flush under the header, with no gap of its own. The selected
@@ -485,17 +516,32 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                 paddingTop: spacing.sm,
               }}
               keyboardShouldPersistTaps="handled"
+              refreshControl={(
+                <RefreshControl
+                  colors={[colors.primary]}
+                  onRefresh={() => {
+                    setRefreshing(true);
+                    void onRefresh(dirty).finally(() => setRefreshing(false));
+                  }}
+                  refreshing={refreshing}
+                  tintColor={colors.primary}
+                />
+              )}
               showsVerticalScrollIndicator={false}
               style={{ flexShrink: 1 }}
             >
               {tab === "basics" ? (
-              <ModalSection title="Name & location">
+              <View style={{ gap: spacing.md }}>
+                <Card>
                 <FormInput autoCapitalize="words" label="Property name" error={form.errors.name} onChangeText={(next) => { setName(next); form.clearField("name"); }} placeholder="Property name" value={name} required />
+                </Card>
                 <LocationPinCard
                   addressSummary={addressSummaryLine(area, city, pincode)}
                   coords={latitude != null && longitude != null ? { latitude, longitude } : null}
                   onPress={() => setPickerOpen(true)}
+                  raised
                 />
+                <Card>
                 <FormInput label="Address line 1" multiline error={form.errors.address} onChangeText={(next) => { setAddress(next); form.clearField("address"); }} placeholder="Building, street, landmark" value={address} required />
                 <FormInput autoCapitalize="words" label="Address line 2 / Area" error={form.errors.area} onChangeText={(next) => { setArea(next); form.clearField("area"); }} placeholder="Area or locality" value={area} required />
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -503,15 +549,16 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                     <FormInput autoCapitalize="words" label="City" error={form.errors.city} onChangeText={(next) => { setCity(next); form.clearField("city"); }} placeholder="City" value={city} required />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <FormInput autoCapitalize="words" label="State" error={form.errors.state} onChangeText={(next) => { setState(next); form.clearField("state"); }} placeholder="State" value={state} required />
+                    <StateDropdown error={form.errors.state} onChange={(next) => { setState(next); form.clearField("state"); }} value={matchIndianState(state)} />
                   </View>
                 </View>
                 <FormInput keyboardType="number-pad" label="Pincode" maxLength={6} error={form.errors.pincode} onChangeText={(next) => { setPincode(next); form.clearField("pincode"); }} placeholder="Pincode" value={pincode} required />
-              </ModalSection>
+                </Card>
+              </View>
               ) : null}
 
               {tab === "rooms" ? (
-              <ModalSection title="Rooms & inclusions">
+              <ModalSection>
                 {/* What the property is and what it offers, together: the two
                     answers that decide every room type under the next tab. */}
                 <ChoiceCard style={{ gap: spacing.md }}>
@@ -534,6 +581,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                 </ChoiceCard>
 
                 <StayChoiceSections
+                  plain
                   bathroomType={bathroomType}
                   electricityIncluded={electricityIncluded}
                   includedMeals={includedMeals}
@@ -559,11 +607,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
               ) : null}
 
               {tab === "types" ? (
-              <ModalSection
-                title="Room types"
-                // The two rules behind the ?, in the bottom-up How it works sheet, and no box (user, 2026-10-29).
-                trailing={<IconButton accessibilityLabel="How room types work" icon={CircleHelp} onPress={() => setRoomTypesHelp(true)} />}
-              >
+              <ModalSection>
                 <View style={{ gap: spacing.md }}>
 
                   {/* Saves as it goes, like the images below it — a room type is
@@ -592,7 +636,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
               ) : null}
 
               {tab === "pricing" ? (
-              <ModalSection title="Pricing & policy">
+              <ModalSection>
                 <ChoiceCard style={{ gap: spacing.md }}>
                 <View style={{ flexDirection: "row", gap: spacing.sm }}>
                   <View style={{ flex: 1 }}>
@@ -658,8 +702,9 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                     </View>
                   </View>
                   ) : null}
+                  contentStyle={{ marginLeft: 0 }}
                   description="Can guests book short stays by the day?"
-                  icon={CalendarDays}
+                  softSelection
                   title="Offers daily stays"
                 >
                   <ChoiceGrid
@@ -676,7 +721,7 @@ function EditPropertyForm({ property }: { property: OwnerProperty }) {
                   exists, so an image has somewhere to belong the moment it
                   uploads — there is nothing to batch it into. */}
               {tab === "photos" ? (
-              <ModalSection title="Listing images" trailing={<UploadRulesInfo max={MAX_PROPERTY_IMAGES} />}>
+              <ModalSection>
                 <PropertyImagesSection onChanged={() => setPhotosTouched(true)} propertyId={property.id} />
               </ModalSection>
               ) : null}
@@ -766,15 +811,22 @@ const EDIT_TABS: { label: string; value: EditTab }[] = [
  * its own on top of the scroll view's, which the fields inside then gave up
  * again, leaving the inputs narrower than the button under them.
  */
-function ModalSection({ children, title, trailing }: { children: ReactNode; title: string; trailing?: ReactNode }) {
+/** The back button every other screen's header has: a bordered circle with a black arrow. */
+function BackCircle({ onPress }: { onPress: () => void }) {
+  const { colors, isDark } = useTheme();
   return (
-    <View style={{ gap: spacing.md }}>
-      {/* No eyebrow. It named the section — "Basics", "Money" — which is the
-          job the tab above it now does, and two labels for one section left the
-          reader deciding which was the heading. The title takes the weight the
-          pair used to carry between them. */}
-      <SectionHeading title={title} trailing={trailing} />
-      <View style={{ gap: spacing.md }}>{children}</View>
-    </View>
+    <AnimatedPressable
+      accessibilityLabel="Back"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{ alignItems: "center", borderColor: colors.border, borderRadius: 999, borderWidth: 1, height: 36, justifyContent: "center", width: 36 }}
+    >
+      <ArrowLeft color={isDark ? colors.ink : "#000000"} size={21} strokeWidth={2.75} />
+    </AnimatedPressable>
   );
+}
+
+/** A tab's content. No heading: the tab above already names it (user, 2026-11-07). */
+function ModalSection({ children }: { children: ReactNode }) {
+  return <View style={{ gap: spacing.md }}>{children}</View>;
 }

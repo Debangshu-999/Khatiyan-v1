@@ -1,4 +1,7 @@
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+// The six count tiles as coloured vector icons (user, 2026-11-14).
+import { EscalatedConcernArt, InProgressConcernArt, InReviewConcernArt, OpenConcernArt, ReopenedConcernArt, ResolvedConcernArt } from "@/components/control-art";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
 import { ModalTitle } from "@/components/modal-title";
@@ -9,7 +12,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useFocusEffect } from "expo-router";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { Activity, ArrowUp, CheckCircle2, Clock3, Cog, Eye, FileText, Image as ImageIcon, Lock, RefreshCw, UserRound, X } from "lucide-react-native";
+import { Activity, ChevronRight, Clock3, Eye, Image as ImageIcon, Lock, UserRound, X } from "lucide-react-native";
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { cardShadow } from "@/theme/shadows";
 
 import { Image, type ImageSourcePropType } from "react-native";
 
@@ -18,7 +23,9 @@ import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { PaginationBar } from "@/components/pagination-bar";
-import { FilteredQueue } from "@/components/filtered-queue";
+import { FilteredSearch } from "@/components/filtered-queue";
+import { SearchField } from "@/components/search-field";
+import { filterByConcernCode } from "@/features/concerns/concern-search";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { Section } from "@/components/section";
@@ -40,6 +47,9 @@ import { usePropertyPermissions } from "@/features/owner/use-property-permission
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
+
+/** A little more room between a concern empty state's picture and its words (user, 2026-11-14). */
+const CONCERN_EMPTY_GAP = spacing.lg + spacing.xs;
 
 type PropertyTab = "all" | "available" | "escalated";
 type MyTab = "all" | "review" | "progress" | "reopened" | "resolved" | "history";
@@ -162,7 +172,11 @@ export default function OwnerConcernsScreen() {
     [myInProgress, myInReview, myReopened, myResolved],
   );
 
-  const propertyConcerns = propertyTab === "all" ? propertyAll : propertyTab === "available" ? propertyAvailable : propertyEscalated;
+  const [concernSearch, setConcernSearch] = useState("");
+  const propertyConcerns = filterByConcernCode(
+    propertyTab === "all" ? propertyAll : propertyTab === "available" ? propertyAvailable : propertyEscalated,
+    concernSearch,
+  );
   const availableLoading = availableQuery.isFetching && !availableQuery.data;
   const escalatedLoading = escalatedQuery.isFetching && !escalatedQuery.data;
   const propertyLoading = propertyTab === "all"
@@ -175,7 +189,7 @@ export default function OwnerConcernsScreen() {
       : myTab === "reopened" ? myReopened
       : myTab === "resolved" ? myResolved
       : myHistoryRaw;
-  const myVisibleConcerns = sortLatest(myRawConcerns);
+  const myVisibleConcerns = filterByConcernCode(sortLatest(myRawConcerns), concernSearch);
   const undertakenLoading = undertakenQuery.isFetching && !undertakenQuery.data;
   const historyLoading = historyQuery.isFetching && !historyQuery.data;
   const myLoading = myTab === "all"
@@ -195,8 +209,8 @@ export default function OwnerConcernsScreen() {
 
   // Switching tab has to reset the page, or moving from a long queue to a short
   // one lands on a page that no longer exists and looks empty.
-  useEffect(() => setPropertyPage(0), [propertyTab]);
-  useEffect(() => setMyPage(0), [myTab]);
+  useEffect(() => setPropertyPage(0), [propertyTab, concernSearch]);
+  useEffect(() => setMyPage(0), [myTab, concernSearch]);
 
   const propertyPaged = pageOf(propertyConcerns, propertyPage);
   const myPaged = pageOf(myVisibleConcerns, myPage);
@@ -227,7 +241,7 @@ export default function OwnerConcernsScreen() {
       />
 
       {!selectedProperty && !propertiesQuery.isFetching ? (
-        <EmptyState icon={PropertyIcon} title="No property selected" description="Concerns are scoped to the active owner property." />
+        <EmptyState artworkTextGap={CONCERN_EMPTY_GAP} icon={PropertyIcon} title="No property selected" description="Concerns are scoped to the active owner property." />
       ) : null}
 
       {selectedProperty ? (
@@ -243,58 +257,45 @@ export default function OwnerConcernsScreen() {
                 and lift. */}
             {overviewLoading ? <OwnerConcernMetricsSkeleton /> : <View style={{ gap: spacing.sm }}>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <MetricTile icon={FileText} iconPlacement="side" label="Open" value={String(propertyAvailableRaw.length)} hint="Unassigned" tone={propertyAvailableRaw.length > 0 ? "primary" : "default"} />
-                <MetricTile icon={Clock3} iconPlacement="side" label="In review" value={String(myInReview.length)} hint="Assigned to me" tone={myInReview.length > 0 ? "primary" : "default"} />
+                <MetricTile icon={OpenConcernArt} iconPlacement="side" iconTone="ink" label="Open" value={String(propertyAvailableRaw.length)} hint="Unassigned" tone={propertyAvailableRaw.length > 0 ? "primary" : "default"} />
+                <MetricTile icon={InReviewConcernArt} iconPlacement="side" iconTone="ink" label="In review" value={String(myInReview.length)} hint="Assigned to me" tone={myInReview.length > 0 ? "primary" : "default"} />
               </View>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <MetricTile icon={Cog} iconPlacement="side" label="In progress" value={String(myInProgress.length)} hint="Being handled" />
-                <MetricTile icon={ArrowUp} iconPlacement="side" label="Escalated" value={String(propertyEscalatedRaw.length)} hint="Needs owner" tone={propertyEscalatedRaw.length > 0 ? "danger" : "default"} />
+                <MetricTile icon={InProgressConcernArt} iconPlacement="side" iconTone="ink" label="In progress" value={String(myInProgress.length)} hint="Being handled" />
+                <MetricTile icon={EscalatedConcernArt} iconPlacement="side" iconTone="ink" label="Escalated" value={String(propertyEscalatedRaw.length)} hint="Needs owner" tone={propertyEscalatedRaw.length > 0 ? "danger" : "default"} />
               </View>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <MetricTile icon={CheckCircle2} iconPlacement="side" label="Resolved" value={String(resolvedThisWeek)} hint="This week" />
-                <MetricTile icon={RefreshCw} iconPlacement="side" label="Reopened" value={String(myReopened.length)} hint="Needs re-handling" tone={myReopened.length > 0 ? "primary" : "default"} />
+                <MetricTile icon={ResolvedConcernArt} iconPlacement="side" iconTone="ink" label="Resolved" value={String(resolvedThisWeek)} hint="This week" />
+                <MetricTile icon={ReopenedConcernArt} iconPlacement="side" iconTone="ink" label="Reopened" value={String(myReopened.length)} hint="Needs re-handling" tone={myReopened.length > 0 ? "primary" : "default"} />
               </View>
             </View>}
           </View>
 
-          {/* Two cards, one under the other, not one card with a rule down the
-              middle of it. They lead to different screens and read as different
-              offers — sharing a surface made the second look like a footnote to
-              the first. Stacked rather than side by side: at half a phone's
-              width the title wraps to three lines and the artwork has nowhere
-              to sit. */}
+          {/* Monitor and history side by side (user, 2026-11-14), history a screen of its own. */}
           {activeAccount === "owner" ? (
-            <>
-              <ConcernRouteCard
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <ConcernRouteTile
                 artwork={CONCERN_MONITOR_ILLUSTRATION}
-                buttonIcon={Activity}
-                buttonLabel="Open monitor"
-                description="Under review, in progress, reopened, and resolved-window concerns only."
-                eyebrow="Concern monitor"
+                line="Active progress"
                 onPress={() => router.push({ pathname: "/owner-concern-monitor", params: { propertyId: selectedProperty.id } })}
-                title="Track active concern progress"
+                title="Concern monitor"
               />
-
-              <ConcernRouteCard
+              <ConcernRouteTile
                 artwork={CONCERN_HISTORY_ILLUSTRATION}
-                buttonIcon={Clock3}
-                buttonLabel={historyQuery.data ? `${historyQuery.data.totalElements} history items` : "View history"}
-                description="Resolved and closed concerns for this property, regardless of who handled them."
-                eyebrow="Concern history"
-                onPress={() => setPropertyHistoryOpen(true)}
-                title="View past concerns"
+                line={historyQuery.data ? `${historyQuery.data.totalElements} past concerns` : "Past concerns"}
+                onPress={() => router.push({ pathname: "/owner-concern-history", params: { propertyId: selectedProperty.id } })}
+                title="Concern history"
               />
-            </>
+            </View>
           ) : null}
 
-          <Section title="Concern queues">
+          <View style={{ gap: spacing.md }}>
             <ConcernQueueTabs onChange={setQueueTab} tab={queueTab} />
             {queueTab === "property" ? (
-              <FilteredQueue
-                blink={propertyEscalatedRaw.length > 0}
-                count={propertyLoading ? undefined : propertyConcerns.length}
-                heading={propertyTab === "all" ? "All concerns" : propertyTab === "available" ? "Available concerns" : "Escalated concerns"}
+              <FilteredSearch
                 onChange={setPropertyTab}
+                purpose="Concerns"
+                search={<SearchField autoCapitalize="characters" onChangeText={setConcernSearch} placeholder="Search by concern ID" value={concernSearch} />}
                 options={[
                   { count: availableQuery.data && escalatedQuery.data ? propertyAll.length : undefined, label: "All", value: "all" },
                   { count: availableQuery.data ? propertyAvailableRaw.length : undefined, label: "Available", value: "available" },
@@ -302,13 +303,14 @@ export default function OwnerConcernsScreen() {
                 ]}
                 value={propertyTab}
               >
+                <ConcernCountPill count={propertyLoading ? undefined : propertyConcerns.length} />
                 <QueueWindow loading={propertyLoading}>
                   {propertyConcerns.length > 0 ? (
                     propertyPaged.items.map((concern) => (
                       <ConcernCard actionLabel="Review" concern={concern} key={concern.id} onPress={() => openConcern(concern, "property")} />
                     ))
                   ) : (
-                    <EmptyState artwork={CONCERN_EMPTY_ILLUSTRATION} title="No property concerns" description="Available and escalated tenant concerns will appear here." />
+                    <EmptyState artworkTextGap={CONCERN_EMPTY_GAP} artwork={CONCERN_EMPTY_ILLUSTRATION} title="No property concerns" description="Available and escalated tenant concerns will appear here." />
                   )}
                   {propertyConcerns.length > 0 ? (
                     <PaginationBar
@@ -322,22 +324,22 @@ export default function OwnerConcernsScreen() {
                     />
                   ) : null}
                 </QueueWindow>
-              </FilteredQueue>
+              </FilteredSearch>
             ) : !canWorkConcerns ? (
               // The tab still opens — hiding it would read as a bug. What it
               // shows is why it is empty, since a view-only manager can never
               // take a concern up and so can never have a personal queue.
-              <EmptyState
+              <EmptyState artworkTextGap={CONCERN_EMPTY_GAP}
                 icon={Lock}
 
                 title="You cannot take up concerns"
                 description="Your access to concerns is view-only, so nothing can be assigned to you here. Ask the property owner if you need to work on them."
               />
             ) : (
-              <FilteredQueue
-                count={myLoading ? undefined : myVisibleConcerns.length}
-                heading={myTabHeadingText(myTab)}
+              <FilteredSearch
                 onChange={setMyTab}
+                purpose="Concerns"
+                search={<SearchField autoCapitalize="characters" onChangeText={setConcernSearch} placeholder="Search by concern ID" value={concernSearch} />}
                 options={[
                   { count: undertakenQuery.data && historyQuery.data ? myActive.length : undefined, label: "All", value: "all" },
                   { count: undertakenQuery.data ? myInReview.length : undefined, label: "In review", value: "review" },
@@ -348,6 +350,7 @@ export default function OwnerConcernsScreen() {
                 ]}
                 value={myTab}
               >
+                <ConcernCountPill count={myLoading ? undefined : myVisibleConcerns.length} />
                 <QueueWindow loading={myLoading}>
                   {myVisibleConcerns.length > 0 ? (
                     myPaged.items.map((concern) => (
@@ -359,7 +362,7 @@ export default function OwnerConcernsScreen() {
                       />
                     ))
                   ) : (
-                    <EmptyState artwork={CONCERN_EMPTY_ILLUSTRATION} title="No concerns in this queue" description="Concerns you take up will appear here." />
+                    <EmptyState artworkTextGap={CONCERN_EMPTY_GAP} artwork={CONCERN_EMPTY_ILLUSTRATION} title="No concerns in this queue" description="Concerns you take up will appear here." />
                   )}
                   {myVisibleConcerns.length > 0 ? (
                     <PaginationBar
@@ -373,29 +376,13 @@ export default function OwnerConcernsScreen() {
                     />
                   ) : null}
                 </QueueWindow>
-              </FilteredQueue>
+              </FilteredSearch>
             )}
-          </Section>
+          </View>
 
         </>
       ) : null}
 
-      {propertyHistoryOpen && selectedProperty ? (
-        <HistoryModal
-          page={propertyHistoryPage}
-          onPageChange={setPropertyHistoryPage}
-          onClose={() => setPropertyHistoryOpen(false)}
-          onOpen={(concern) => {
-            // dismiss(afterClose) animates the sheet out but delegates closing
-            // to this callback. Unmount it so its native Modal cannot keep
-            // intercepting touches behind the detail screen or after Back.
-            setPropertyHistoryOpen(false);
-            returnToHistoryProperty.current = selectedProperty.id;
-            openConcern(concern, "history");
-          }}
-          propertyId={selectedProperty.id}
-        />
-      ) : null}
     </ScreenScrollView>
   );
 }
@@ -410,6 +397,49 @@ function ConcernQueueTabs({ onChange, tab }: { onChange: (tab: QueueTab) => void
         { icon: UserRound, label: "My concerns", value: "mine" },
       ]}
     />
+  );
+}
+
+/** A half-width way into the monitor or the history (user, 2026-11-14): drawing, name, one line, arrow. */
+function ConcernRouteTile({ artwork, line, onPress, title }: { artwork: ImageSourcePropType; line: string; onPress: () => void; title: string }) {
+  const { colors, fonts, type } = useTheme();
+  return (
+    <AnimatedPressable
+      accessibilityLabel={`${title}, ${line}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        flex: 1,
+        gap: spacing.sm,
+        padding: spacing.md,
+        ...cardShadow(colors.shadow),
+      }}
+    >
+      <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
+        <Image accessibilityIgnoresInvertColors resizeMode="contain" source={artwork} style={{ height: 48, width: 48 }} />
+        <ChevronRight color={colors.muted} size={18} strokeWidth={2.3} />
+      </View>
+      <View style={{ gap: 2 }}>
+        <Text numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15.5 }}>{title}</Text>
+        <Text numberOfLines={1} style={[type.caption, { color: colors.muted }]}>{line}</Text>
+      </View>
+    </AnimatedPressable>
+  );
+}
+
+/** "12 concerns", a grey pill under the search row, as on Billing (user, 2026-11-14). */
+function ConcernCountPill({ count }: { count: number | undefined }) {
+  const { colors, fonts } = useTheme();
+  if (count == null) return null;
+  return (
+    <View style={{ alignSelf: "flex-start", backgroundColor: colors.surfaceSunken, borderRadius: 999, marginBottom: -4, marginTop: -6, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
+      <Text style={{ color: colors.inkSoft, fontFamily: fonts.sansBold, fontSize: 11 }}>{`${count} concern${count === 1 ? "" : "s"}`}</Text>
+    </View>
   );
 }
 
@@ -453,10 +483,12 @@ function ConcernRouteCard({
       {/* Artwork beside the words, not above them. Above, it pushed the title
           into the middle of the card and left the eyebrow floating at the top
           on its own. */}
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+      {/* The description under its title, beside the artwork (user, 2026-11-07). Under
+          the artwork it sat a long way from the title it explains. */}
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
         <View style={{ flex: 1, gap: spacing.xs }}>
-          <Text style={[type.eyebrow, { color: colors.kicker }]}>{eyebrow}</Text>
           <Text style={[type.display, { color: colors.ink, fontSize: 20, lineHeight: 25 }]}>{title}</Text>
+          <Text style={[type.description, { color: colors.muted }]}>{description}</Text>
         </View>
         <Image
           accessibilityIgnoresInvertColors
@@ -465,8 +497,6 @@ function ConcernRouteCard({
           style={{ height: 76, width: 76 }}
         />
       </View>
-
-      <Text style={[type.description, { color: colors.muted }]}>{description}</Text>
 
       <ActionButton icon={buttonIcon} label={buttonLabel} onPress={onPress} variant="secondary" />
     </Card>
@@ -526,6 +556,7 @@ function HistoryModal({
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <SheetCloseButton onClose={() => dismiss()} />
         <View
           style={{
             backgroundColor: colors.surface,
@@ -534,7 +565,7 @@ function HistoryModal({
             borderTopRightRadius: 22,
             borderWidth: 1,
             gap: spacing.md,
-            maxHeight: "88%",
+            maxHeight: "100%",
             padding: spacing.lg,
             // The modal now draws under the navigation bar, so the sheet has to
             // clear it itself — every other sheet gets this from SheetShell.
@@ -543,7 +574,6 @@ function HistoryModal({
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>Property history</Text>
               <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Resolved concerns</ModalTitle>
             </View>
           </View>
@@ -553,7 +583,7 @@ function HistoryModal({
           ) : (
             <ScrollView contentContainerStyle={{ gap: spacing.md, opacity: query.isFetching ? 0.6 : 1 }} showsVerticalScrollIndicator={false}>
               {sorted.length > 0 ? sorted.map((concern) => <ConcernCard actionLabel="View" concern={concern} key={concern.id} onPress={() => dismiss(() => onOpen(concern))} />) : null}
-              {sorted.length === 0 ? <EmptyState artwork={CONCERN_EMPTY_ILLUSTRATION} title="No history yet" description="Resolved and closed concerns will appear here." /> : null}
+              {sorted.length === 0 ? <EmptyState artworkTextGap={CONCERN_EMPTY_GAP} artwork={CONCERN_EMPTY_ILLUSTRATION} title="No history yet" description="Resolved and closed concerns will appear here." /> : null}
             </ScrollView>
           )}
           {pageData && pageData.totalElements > 0 ? (

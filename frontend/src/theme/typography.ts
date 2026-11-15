@@ -35,24 +35,33 @@ const monoFamily =
     default: "monospace",
   }) ?? "monospace";
 
+// Google Sans for every face the app draws (user, 2026-11-07), the Play Store's own
+// typeface, open-licensed on Google Fonts. It replaced Plus Jakarta Sans (display)
+// and Inter (sans). The names below stay, so every call site keeps its meaning.
 export const fonts = {
-  /** Plus Jakarta Sans ExtraBold — cards, tiles, metric values. */
-  display: "PlusJakartaSans_800ExtraBold",
-  /** Plus Jakarta Sans Bold — a step down from display, for card subtitles. */
-  displaySoft: "PlusJakartaSans_700Bold",
-  /** Inter — body, labels, captions, data. */
-  sans: "Inter_400Regular",
-  sansMedium: "Inter_500Medium",
+  /** Google Sans Bold — cards, tiles, metric values, headings. */
+  display: "GoogleSans_700Bold",
+  /** Google Sans SemiBold — a step down from display, for card subtitles. */
+  displaySoft: "GoogleSans_600SemiBold",
+  /** Google Sans — body, labels, captions, data. */
+  sans: "GoogleSans_400Regular",
+  sansMedium: "GoogleSans_500Medium",
   /**
    * A true italic cut. Android does not slant a custom face for
    * `fontStyle: "italic"`, so italics need the italic file itself.
    */
-  sansMediumItalic: "Inter_500Medium_Italic",
-  /** Inter SemiBold — the weight all-caps labels are set in. See `type.eyebrow`. */
-  sansSemiBold: "Inter_600SemiBold",
-  sansBold: "Inter_700Bold",
+  sansMediumItalic: "GoogleSans_500Medium_Italic",
+  /** Google Sans SemiBold — the weight all-caps labels are set in. See `type.eyebrow`. */
+  sansSemiBold: "GoogleSans_600SemiBold",
+  sansBold: "GoogleSans_700Bold",
   /** The serif. Screen headers and brand moments only. */
   brand: brandFamily,
+  /**
+   * Playfair Display, the fancy display face: the property's name on the owner's Home
+   * card (user, 2026-11-14). A name, never a sentence.
+   */
+  fancy: "PlayfairDisplay_700Bold",
+  fancyItalic: "PlayfairDisplay_700Bold_Italic",
   mono: monoFamily,
 };
 
@@ -136,8 +145,9 @@ export const type = {
    */
   description: {
     fontFamily: fonts.sans,
-    fontSize: 12,
-    lineHeight: 16,
+    // 13 under a 22 heading, as on the Play Store's subscriptions page (user, 2026-11-07).
+    fontSize: 13,
+    lineHeight: 18,
   } satisfies TextStyle,
   /** Modal and bottom-sheet explanations with roomier line spacing. */
   modalDescription: {

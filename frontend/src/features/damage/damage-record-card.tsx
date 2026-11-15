@@ -1,4 +1,5 @@
 import { Text, View } from "react-native";
+import { ChevronRight } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { FitText } from "@/components/fit-text";
@@ -11,7 +12,7 @@ import { useAppSelector } from "@/store/hooks";
 import type { DamageRecord } from "@/store/services/damage-api";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 
 /** Where a record's money stands, in a tint and a caps label, no dot. */
 export function damageBillState(record: DamageRecord): { label: string; tone: "muted" | "warning" | "success" } {
@@ -21,6 +22,15 @@ export function damageBillState(record: DamageRecord): { label: string; tone: "m
   if (record.shares.every((share) => !share.billId && (share.waived || share.depositPaise > 0))) return { label: "From deposit", tone: "success" };
   if (record.shares.every((share) => share.billStatus === "PAID")) return { label: "Billed · paid", tone: "success" };
   return { label: "Billed · unpaid", tone: "warning" };
+}
+
+/** Where the tenant's own share stands. */
+export function tenantShareState(mine: DamageRecord["shares"][number] | undefined): { label: string; tone: "muted" | "warning" | "success" } {
+  if (!mine) return { label: "No charge", tone: "muted" };
+  if (mine.waived) return { label: "Waived", tone: "muted" };
+  if (mine.amountPaise > 0 && mine.depositPaise >= mine.amountPaise) return { label: "From deposit", tone: "success" };
+  if (!mine.billCode || mine.billStatus === "CANCELLED") return { label: "Not billed", tone: "muted" };
+  return mine.billStatus === "PAID" ? { label: "Billed · paid", tone: "success" } : { label: "Billed · unpaid", tone: "warning" };
 }
 
 /** The item, and which split of the damage this is if it was split. */
@@ -55,10 +65,26 @@ export function StatePill({ label, tone }: { label: string; tone: "muted" | "war
  * where the money stands. Tapping it opens its bills and actions. Its repair
  * buttons sit under it, as {@code children}.
  */
-export function DamageRecordCard({ children, onPress, record }: { children?: React.ReactNode; onPress?: () => void; record: DamageRecord }) {
+export function DamageRecordCard({
+  children,
+  onPress,
+  record,
+  viewerTenancyId,
+}: {
+  children?: React.ReactNode;
+  onPress?: () => void;
+  record: DamageRecord;
+  /**
+   * The tenant reading it (user, 2026-11-10: the tenant's cards look like the
+   * owner's). Their share and its bill replace the whole cost, and "You" the name.
+   */
+  viewerTenancyId?: string;
+}) {
   const { colors, fonts, type } = useTheme();
   const softShadow = useSoftShadow();
-  const state = damageBillState(record);
+  const mine = viewerTenancyId ? record.shares.find((share) => share.tenancyId === viewerTenancyId) : undefined;
+  const state = viewerTenancyId ? tenantShareState(mine) : damageBillState(record);
+  const others = viewerTenancyId ? record.shares.filter((share) => share.tenancyId !== viewerTenancyId).length : 0;
 
   return (
     <View
@@ -70,7 +96,7 @@ export function DamageRecordCard({ children, onPress, record }: { children?: Rea
         borderWidth: 1,
         gap: spacing.md,
         padding: spacing.lg,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
     <AnimatedPressable
@@ -87,7 +113,14 @@ export function DamageRecordCard({ children, onPress, record }: { children?: Rea
           <FitText style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 16, transform: [{ translateY: -2 }] }}>{damageRecordName(record)}</FitText>
           <Text style={[type.caption, { color: colors.muted }]}>{record.code}</Text>
         </View>
-        <DamageLevelPill level={record.damageLevel} />
+        {/* No pill for a damage recorded without a level (2026-11-07). */}
+        {record.damageLevel ? <DamageLevelPill level={record.damageLevel} /> : null}
+        {/* A small arrow pill right of the level, saying the card opens (user, 2026-11-14), only where it does. */}
+        {onPress ? (
+          <View style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderRadius: 999, height: 20, justifyContent: "center", width: 26 }}>
+            <ChevronRight color={colors.inkSoft} size={14} strokeWidth={2.6} />
+          </View>
+        ) : null}
       </View>
       {/* The tenancy card's labelled, divided metric row, not one compressed sentence. */}
       <View style={{ gap: spacing.sm, marginTop: spacing.xs }}>
@@ -95,8 +128,8 @@ export function DamageRecordCard({ children, onPress, record }: { children?: Rea
           <DamageRecordMetric flex={0.75} label="Room" value={record.roomLabel ?? "Unavailable"} />
           <DamageRecordMetricDivider />
           <DamageRecordMetric flex={1.6}
-            label={record.responsibility === "NONE" ? "Responsibility" : "Tenant"}
-            value={damageResponsible(record)} />
+            label={record.responsibility === "NONE" ? "Responsibility" : viewerTenancyId ? "Charged to" : "Tenant"}
+            value={record.responsibility !== "NONE" && viewerTenancyId ? (others > 0 ? `You and ${others} more` : "You") : damageResponsible(record)} />
           <DamageRecordMetricDivider />
           <DamageRecordMetric flex={1} label="Recorded" value={dayMonth(record.createdAt)} />
         </View>
@@ -105,10 +138,10 @@ export function DamageRecordCard({ children, onPress, record }: { children?: Rea
       {record.responsibility === "NONE" ? null : (
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md, paddingHorizontal: spacing.xs, paddingTop: spacing.xs }}>
           <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-            <Text style={[type.caption, { color: colors.muted, fontSize: 10 }]}>Amount</Text>
+            <Text style={[type.caption, { color: colors.muted, fontSize: 10 }]}>{viewerTenancyId ? "Your share" : "Amount"}</Text>
             <FitText numberOfLines={1} minimumFontScale={0.8}
               style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 20, lineHeight: 26, fontVariant: ["tabular-nums"] }}>
-              {formatMoneyPaise(record.costPaise)}
+              {formatMoneyPaise(viewerTenancyId ? mine?.amountPaise ?? 0 : record.costPaise)}
             </FitText>
           </View>
           <StatePill label={state.label} tone={state.tone} />

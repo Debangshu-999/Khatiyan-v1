@@ -185,13 +185,28 @@ class MealRatingIntegrationTest {
         assertThat(ratings.myPrompt(second)).isNotNull();
     }
 
+    /** Home's card shows how the meal went down so far (user, 2026-11-09): every rating's average, or none. */
+    @Test
+    void theOfferCarriesTheMealsAverageSoFar() {
+        assertThat(ratings.myPrompt(second).averageRating()).isNull();
+
+        // One person's meal is the average of their dishes: (4 + 2) / 2.
+        ratings.submit(first, lunch(entry(rice, 4, null), entry(paneer, 2, null)));
+
+        assertThat(ratings.myPrompt(second).averageRating()).isEqualTo(3.0);
+    }
+
     // ---- Submitting --------------------------------------------------------
 
     @Test
-    void oneRatedDishIsEnoughAndTheOfferThenGoesAway() {
+    void oneRatedDishIsEnoughAndTheOfferStaysWithTheirOwnRating() {
         ratings.submit(first, lunch(entry(rice, 4, "  Nice and hot  ")));
 
-        assertThat(ratings.myPrompt(first)).isNull();
+        // Rated, the meal stays on offer, carrying what they gave it (user, 2026-11-14).
+        MealRatingPromptResponse prompt = ratings.myPrompt(first);
+        assertThat(prompt).isNotNull();
+        assertThat(prompt.mine()).containsExactly(new MealRatingPromptResponse.MyRating(rice, 4, "Nice and hot"));
+        assertThat(ratings.myPrompt(second).mine()).isEmpty();
         assertThat(jdbc.queryForObject("SELECT review FROM food.food_meal_ratings WHERE user_id = ?", String.class, first))
                 .isEqualTo("Nice and hot");
         assertThat(jdbc.queryForObject("SELECT profile_id FROM food.food_meal_ratings WHERE user_id = ?", UUID.class, first))
@@ -199,11 +214,19 @@ class MealRatingIntegrationTest {
     }
 
     @Test
-    void aMealCanBeRatedOnce() {
-        ratings.submit(first, lunch(entry(rice, 4, null)));
+    void aRatingCanBeChangedWhileTheMealIsOnOffer() {
+        ratings.submit(first, lunch(entry(rice, 4, "Good")));
 
-        assertThatThrownBy(() -> ratings.submit(first, lunch(entry(paneer, 5, null))))
-                .isInstanceOf(ValidationException.class);
+        // A second submit replaces the first: changed, added and dropped dishes alike.
+        ratings.submit(first, lunch(entry(rice, 2, null), entry(paneer, 5, "Lovely")));
+        assertThat(ratings.myPrompt(first).mine()).containsExactlyInAnyOrder(
+                new MealRatingPromptResponse.MyRating(rice, 2, null),
+                new MealRatingPromptResponse.MyRating(paneer, 5, "Lovely"));
+
+        ratings.submit(first, lunch(entry(paneer, 3, null)));
+        assertThat(ratings.myPrompt(first).mine()).containsExactly(new MealRatingPromptResponse.MyRating(paneer, 3, null));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM food.food_meal_ratings WHERE user_id = ?", Long.class, first))
+                .isEqualTo(1L);
     }
 
     @Test

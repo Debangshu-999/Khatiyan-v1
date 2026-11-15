@@ -86,7 +86,8 @@ public class DamageRecordService {
     public DamageRecordResponse create(UUID actorUserId, UUID propertyId, SaveDamageRecordRequest request) {
         propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.TENANCY_RULES);
         requireRoom(propertyId, request.roomId());
-        requireDamageLevel(request.damageLevel());
+        requireOptionalLevel(request.damageLevel());
+        requireNoOpenDamage(propertyId, request, null);
         List<DamageRecordShare> shares = sharesFor(propertyId, request);
         String code = referenceCodeGenerator.nextCode("DMG");
 
@@ -103,8 +104,6 @@ public class DamageRecordService {
         // Whatever save returns is the managed record: charging below must work on it.
         created.replaceAll(records::save);
         DamageRecord first = created.get(0);
-        propertyModule.raiseCondition(first.getRoomId(), actorUserId, first.getItemName(), first.getSection(),
-                first.getDamageLevel(), first.getPhotoUrls());
 
         log.info("Damage recorded code={} propertyId={} roomId={} item={} level={} costPaise={} records={}",
                 code, propertyId, first.getRoomId(), first.getItemName(), first.getDamageLevel(),
@@ -130,7 +129,11 @@ public class DamageRecordService {
         VersionGuard.claim(record);
         requireEditable(record);
         requireRoom(propertyId, request.roomId());
-        requireDamageLevel(request.damageLevel());
+        requireOptionalLevel(request.damageLevel());
+        if (!Objects.equals(record.getRoomId(), request.roomId())
+                || !record.getItemName().equalsIgnoreCase(request.itemName().trim())) {
+            requireNoOpenDamage(propertyId, request, record.getCode());
+        }
         if (record.getSplitNumber() != null) {
             return updateSplit(actorUserId, propertyId, record, request);
         }
@@ -165,8 +168,6 @@ public class DamageRecordService {
         }
         records.save(record);
         addedSplits.replaceAll(records::save);
-        propertyModule.raiseCondition(record.getRoomId(), actorUserId, record.getItemName(), record.getSection(),
-                record.getDamageLevel(), record.getPhotoUrls());
 
         log.info("Damage record changed code={} moneyMoved={} addedSplits={}", record.getCode(), moneyMoved, addedSplits.size());
         publish(record, DamageRecordChangedEvent.Kind.UPDATED);
@@ -260,10 +261,8 @@ public class DamageRecordService {
         propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.TENANCY_RULES);
         DamageRecord record = find(propertyId, recordId);
         VersionGuard.claim(record);
-        if (request.level() == null || request.level().ordinal() >= record.getDamageLevel().ordinal()) {
-            throw new ValidationException("Pick a level below " + record.getDamageLevel() + ".");
-        }
-        return fixed(actorUserId, propertyId, record, DamageRecordStatus.REPAIRED, request.level(), request);
+        // The fix is recorded, no level asked (user, 2026-11-07: levels are only price tiers).
+        return fixed(actorUserId, propertyId, record, DamageRecordStatus.REPAIRED, null, request);
     }
 
     @Transactional
@@ -271,7 +270,7 @@ public class DamageRecordService {
         propertyModule.ensureCanManage(actorUserId, propertyId, ManagerResource.TENANCY_RULES);
         DamageRecord record = find(propertyId, recordId);
         VersionGuard.claim(record);
-        return fixed(actorUserId, propertyId, record, DamageRecordStatus.REPLACED, DamageLevel.NA, request);
+        return fixed(actorUserId, propertyId, record, DamageRecordStatus.REPLACED, null, request);
     }
 
     /** Open damages, or the repaired and replaced ones, newest first. */
@@ -288,12 +287,27 @@ public class DamageRecordService {
     /** A bounded database page; the legacy list and tenant contracts remain unchanged. */
     @Transactional(readOnly = true)
     public DamageRecordPageResponse page(UUID actorUserId, UUID propertyId, boolean history, int page, int size) {
+        return page(actorUserId, propertyId, history, null, null, page, size);
+    }
+
+    /**
+     * The page narrowed by a search on the damage code or item name and by one damage
+     * level (user, 2026-11-14: the owner's sticky search and level dropdown). Either may
+     * be null for all. The counters still describe the whole property.
+     */
+    @Transactional(readOnly = true)
+    public DamageRecordPageResponse page(UUID actorUserId, UUID propertyId, boolean history, String search,
+            DamageLevel level, int page, int size) {
         propertyModule.ensureCanViewAny(actorUserId, propertyId,
                 ManagerResource.TENANCY_RULES, ManagerResource.TENANCIES, ManagerResource.DEPOSITS);
         Collection<DamageRecordStatus> statuses = history
                 ? EnumSet.of(DamageRecordStatus.REPAIRED, DamageRecordStatus.REPLACED)
                 : EnumSet.of(DamageRecordStatus.OPEN);
-        var ids = records.findPageIds(propertyId, statuses, PageRequest.of(Math.max(0, page), Math.max(1, Math.min(50, size))));
+        Collection<DamageLevel> levels = level == null ? EnumSet.allOf(DamageLevel.class) : EnumSet.of(level);
+        String needle = search == null ? "" : search.strip().toLowerCase(java.util.Locale.ROOT)
+                .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        var ids = records.findPageIds(propertyId, statuses, levels, needle.isEmpty() ? "%" : "%" + needle + "%",
+                PageRequest.of(Math.max(0, page), Math.max(1, Math.min(50, size))));
         List<DamageRecord> ordered = List.of();
         if (!ids.isEmpty()) {
             Map<UUID, DamageRecord> byId = records.findPageRecords(ids.getContent()).stream()
@@ -351,9 +365,7 @@ public class DamageRecordService {
                 }
             }
         }
-        // The fix's photos replace the item's, so the next tenant never sees the damage (2026-10-29).
-        propertyModule.resetCondition(record.getRoomId(), actorUserId, record.getItemName(), record.getSection(),
-                level, request.photoUrls());
+        // No room condition to reset: each move-in records its own (user, 2026-11-07).
         log.info("Damage {} code={} level={}", outcome, record.getCode(), level);
         return toResponses(propertyId, List.of(record)).get(0);
     }
@@ -435,6 +447,32 @@ public class DamageRecordService {
         propertyModule.findRoomForDisplay(propertyId, roomId).orElseThrow(() -> new NotFoundException("Room", roomId));
     }
 
+    /**
+     * One open damage per item at a time (user, 2026-11-07): a new one waits until the open
+     * one is repaired or replaced. {@code ownCode} is the record being edited, which does
+     * not count against itself.
+     */
+    private void requireNoOpenDamage(UUID propertyId, SaveDamageRecordRequest request, String ownCode) {
+        String item = request.itemName() == null ? "" : request.itemName().trim();
+        records.findByPropertyIdAndStatusInOrderByCodeDescSplitNumberAsc(propertyId, EnumSet.of(DamageRecordStatus.OPEN))
+                .stream()
+                .filter(other -> Objects.equals(other.getRoomId(), request.roomId())
+                        && other.getItemName().trim().equalsIgnoreCase(item)
+                        && !other.getCode().equals(ownCode))
+                .findFirst()
+                .ifPresent(other -> {
+                    throw new ValidationException(other.getCode() + " is still open for " + item
+                            + ". Mark it repaired or replaced before recording a new damage.");
+                });
+    }
+
+    /** A level, when given, is a price tier D1 to D3 (user, 2026-11-07). None is fine. */
+    private static void requireOptionalLevel(DamageLevel level) {
+        if (level == DamageLevel.NA) {
+            throw new ValidationException("Pick a damage level from D1 to D3.");
+        }
+    }
+
     private static void requireDamageLevel(DamageLevel level) {
         if (level == null || level == DamageLevel.NA) {
             throw new ValidationException("Pick a damage level from D1 to D3.");
@@ -451,7 +489,8 @@ public class DamageRecordService {
     }
 
     static String billReason(DamageRecord record) {
-        String reason = "Damage " + record.getCode() + ": " + record.getItemName() + " (" + record.getDamageLevel() + ")"
+        String reason = "Damage " + record.getCode() + ": " + record.getItemName()
+                + (record.getDamageLevel() == null ? "" : " (" + record.getDamageLevel() + ")")
                 + (record.getSplitNumber() == null ? "" : ", split " + record.getSplitNumber());
         return reason.length() > 120 ? reason.substring(0, 120) : reason;
     }
@@ -485,7 +524,7 @@ public class DamageRecordService {
             return;
         }
         events.publishEvent(new DamageRecordChangedEvent(record.getId(), record.getCode(), record.getPropertyId(),
-                record.getItemName(), record.getDamageLevel().name(), kind, recipients));
+                record.getItemName(), record.getDamageLevel() == null ? null : record.getDamageLevel().name(), kind, recipients));
     }
 
     /** One query each for bills, rooms and people, however many records. */

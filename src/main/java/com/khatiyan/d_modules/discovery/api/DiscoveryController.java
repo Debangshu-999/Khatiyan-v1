@@ -5,7 +5,11 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -98,6 +102,33 @@ public class DiscoveryController {
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude) {
         return discoveryModule.getVisibleProperty(propertyId, latitude, longitude);
+    }
+
+    /** The signed-in person's saved properties, newest first, as listing cards (user, 2026-11-14). */
+    @GetMapping("/me/saved-properties")
+    public List<PropertyDiscoveryCardResponse> savedProperties(
+            @AuthenticationPrincipal UserPrincipal user,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude) {
+        return discoveryModule.savedProperties(user.userId(), latitude, longitude);
+    }
+
+    /** Which properties are saved, for the bookmark on a profile. */
+    @GetMapping("/me/saved-properties/ids")
+    public List<UUID> savedPropertyIds(@AuthenticationPrincipal UserPrincipal user) {
+        return discoveryModule.savedPropertyIds(user.userId());
+    }
+
+    @PutMapping("/me/saved-properties/{propertyId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void saveProperty(@AuthenticationPrincipal UserPrincipal user, @PathVariable UUID propertyId) {
+        discoveryModule.saveProperty(user.userId(), propertyId);
+    }
+
+    @DeleteMapping("/me/saved-properties/{propertyId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeSavedProperty(@AuthenticationPrincipal UserPrincipal user, @PathVariable UUID propertyId) {
+        discoveryModule.removeSavedProperty(user.userId(), propertyId);
     }
 
     @GetMapping("/locations/suggest")

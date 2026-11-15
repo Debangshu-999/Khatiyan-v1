@@ -1,9 +1,10 @@
 import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components/card-name-row";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { type ComponentType, useMemo, useState } from "react";
-import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { AlertModal } from "@/components/alert-modal";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { AppTextInput } from "@/components/app-text-input";
@@ -47,12 +48,12 @@ import {
   useRevertRoomChangeApprovalMutation,
   type TenancyRoomChangeRequest,
 } from "@/store/services/tenancy-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { metricFontSize } from "@/theme/metric-size";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { SearchField } from "@/components/search-field";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom, useRevealInputScroll } from "@/components/use-keyboard-inset";
 
 const ROOM_CHANGE_ARTWORK = require("../assets/images/workspace/room-change.png");
 
@@ -89,7 +90,6 @@ export default function OwnerRoomChangeRequestsScreen() {
   const [revertTarget, setRevertTarget] = useState<TenancyRoomChangeRequest | null>(null);
   const [revertError, setRevertError] = useState<string | null>(null);
   const [revertRoomChangeApproval, revertState] = useRevertRoomChangeApprovalMutation();
-  const [pastOpen, setPastOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activePage, setActivePage] = useState(0);
   /**
@@ -207,7 +207,7 @@ export default function OwnerRoomChangeRequestsScreen() {
               <ActionButton
                 icon={FileClock}
                 label={`${expiredRequests.length} past request${expiredRequests.length === 1 ? "" : "s"}`}
-                onPress={() => setPastOpen(true)}
+                onPress={() => router.push("/owner-room-change-history")}
                 variant="outline"
               />
             </View>
@@ -302,14 +302,6 @@ export default function OwnerRoomChangeRequestsScreen() {
         />
       ) : null}
       {revertError ? <AlertModal message={revertError} onClose={() => setRevertError(null)} /> : null}
-      {pastOpen ? (
-        <PastRoomChangeRequestsModal
-          chains={chainByHeadId}
-          onClose={() => setPastOpen(false)}
-          requests={expiredRequests}
-          roomLabels={roomLabels}
-        />
-      ) : null}
     </ScreenScrollView>
   );
 }
@@ -332,81 +324,71 @@ function paginateArray<T>(items: T[], page: number, size: number) {
   };
 }
 
-// Reviewed (non-pending) room-change requests, paginated in a modal like concern history.
-function PastRoomChangeRequestsModal({
-  chains,
-  onClose,
-  requests,
-  roomLabels,
-}: {
-  chains: Map<string, RoomChangeRequestChain>;
-  onClose: () => void;
-  requests: TenancyRoomChangeRequest[];
-  roomLabels: Record<string, string>;
-}) {
-  const { colors, fonts, type } = useTheme();
-  // Infinite scroll (user, 2026-10-28): the list is loaded whole, so it shows
-  // a page more each time the reader nears the end, and says when it is over.
+/**
+ * Reviewed room changes, on a screen of their own (user, 2026-11-07). It was a sheet,
+ * and a request's timeline opened a second sheet on top of it.
+ */
+export function RoomChangeHistoryScreen() {
+  const { colors } = useTheme();
+  const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
+  const propertiesQuery = useListMyPropertiesQuery();
+  const selectedProperty = resolveSelectedProperty(propertiesQuery.data ?? [], selectedPropertyId);
+  const requestsQuery = useListPropertyRoomChangeRequestsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
+  const roomLabels = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const room of roomsQuery.data ?? []) {
+      map[room.id] = `Room ${room.roomNumber}`;
+    }
+    return map;
+  }, [roomsQuery.data]);
+  // Infinite scroll (user, 2026-10-28): the list is loaded whole, so it shows a page
+  // more each time the reader nears the end, and says when it is over.
   const [shown, setShown] = useState(PAST_PAGE_SIZE);
-  const visible = requests.slice(0, shown);
-  const more = shown < requests.length;
+
+  const chains = useMemo(() => buildRoomChangeRequestChains(requestsQuery.data ?? []), [requestsQuery.data]);
+  const chainByHeadId = useMemo(() => new Map(chains.map((chain) => [chain.head.id, chain])), [chains]);
+  const { history } = splitByActivity(chains.map((chain) => chain.head).sort(byPendingFirst));
+  const visible = history.slice(0, shown);
+  const more = shown < history.length;
+
+  const loadFailed = loadFailure(propertiesQuery, requestsQuery);
+  if (loadFailed) {
+    return <LoadFailedScreen failure={loadFailed} />;
+  }
 
   return (
-    <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
-      {(dismiss) => (
-      <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        {/* Full width, matching the exit history. These cards carry a timeline
-            button and a rail behind it; an inset sheet squeezed both. */}
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderTopLeftRadius: 22,
-            borderTopRightRadius: 22,
-            gap: spacing.md,
-            maxHeight: "92%",
-            padding: spacing.lg,
-          }}
-        >
-          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>Past requests</Text>
-              <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 23, }}>Reviewed moves</ModalTitle>
-            </View>
-          </View>
-          <ModalTitleRule />
-          {requests.length === 0 ? (
-            <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Reviewed room-change requests will appear here once you approve or reject them." />
-          ) : (
-            <>
-              <ScrollView
-                contentContainerStyle={{ gap: spacing.sm }}
-                onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-                  if (more && contentOffset.y + layoutMeasurement.height >= contentSize.height - 240) {
-                    setShown((current) => current + PAST_PAGE_SIZE);
-                  }
-                }}
-                scrollEventThrottle={64}
-                showsVerticalScrollIndicator={false}
-              >
-                {visible.map((request) => (
-                  <RoomChangeCard
-                    chain={chains.get(request.id)}
-                    key={request.id}
-                    currentRoomLabel={roomLabels[request.currentRoomId]}
-                    onApprove={() => {}}
-                    onReject={() => {}}
-                    request={request}
-                    targetRoomLabel={roomLabels[request.targetRoomId]}
-                  />
-                ))}
-                {more ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />}
-              </ScrollView>
-            </>
-          )}
-        </View>
-      </View>
+    <ScreenScrollView
+      onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+        if (more && contentOffset.y + layoutMeasurement.height >= contentSize.height - 240) {
+          setShown((current) => current + PAST_PAGE_SIZE);
+        }
+      }}
+      safeAreaEdges={["top", "bottom"]}
+      scrollEventThrottle={64}
+    >
+      <ScreenHeader italicTail="history." title="Room change" />
+      {requestsQuery.isLoading ? (
+        <ActivityIndicator color={colors.muted} style={{ padding: spacing.lg }} />
+      ) : history.length === 0 ? (
+        <EmptyState artwork={REQUEST_EMPTY_ILLUSTRATION} title="No past requests" description="Reviewed room-change requests appear here once you approve or reject them." />
+      ) : (
+        <>
+          {visible.map((request) => (
+            <RoomChangeCard
+              chain={chainByHeadId.get(request.id)}
+              key={request.id}
+              currentRoomLabel={roomLabels[request.currentRoomId]}
+              onApprove={() => {}}
+              onReject={() => {}}
+              request={request}
+              targetRoomLabel={roomLabels[request.targetRoomId]}
+            />
+          ))}
+          {more ? <ActivityIndicator color={colors.muted} style={{ padding: spacing.sm }} /> : <ListEnd />}
+        </>
       )}
-    </BottomSheetModal>
+    </ScreenScrollView>
   );
 }
 
@@ -582,7 +564,9 @@ function RoomChangeReviewModal({
   request: TenancyRoomChangeRequest;
 }) {
   const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom();
+  // The list scrolls to the focused input with the keyboard up (user, 2026-11-08).
+  const revealInput = useRevealInputScroll();
   const insets = useSafeAreaInsets();
   const [notes, setNotes] = useState("");
   // No required field on this sheet — the note is optional — so every failure
@@ -637,23 +621,21 @@ function RoomChangeReviewModal({
       {(dismiss) => (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          <View
+          <SheetCloseButton onClose={() => dismiss()} />
+          <Animated.View
             style={{
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
-              marginBottom: keyboardInset,
-              maxHeight: "90%",
+              paddingBottom: keyboardRoom,
+              maxHeight: "100%",
               paddingTop: spacing.lg,
             }}
           >
             <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing.lg }}>
               <View style={{ flex: 1 }}>
-                <Text style={[type.eyebrow, { color: colors.kicker }]}>
-                  Room change
-                </Text>
                 <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, }}>
                   {title}
                 </ModalTitle>
@@ -661,7 +643,7 @@ function RoomChangeReviewModal({
             </View>
             <ModalTitleRule inset={0} />
 
-            <ScrollView
+            <ScrollView {...revealInput}
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
@@ -694,7 +676,7 @@ function RoomChangeReviewModal({
             {/* The gesture bar sits under the sheet on edge-to-edge Android and
                 on iOS, so without this the button is half-covered. */}
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
       )}
@@ -740,13 +722,12 @@ function SummaryTile({
         borderCurve: "continuous",
         borderRadius: radii.card,
         borderWidth: 1,
-        elevation: 2,
         flex: 1,
         gap: spacing.xs,
         // Centred, because tiles in a row stretch to the tallest of them.
         justifyContent: "center",
         padding: spacing.md,
-        ...softShadow(colors.shadow, 2, 6),
+        ...cardShadow(colors.shadow),
       }}
     >
       {/* The app's one metric card: a 38pt ink glyph in a 44-wide rail with the

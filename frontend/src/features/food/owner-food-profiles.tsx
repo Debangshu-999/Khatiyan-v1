@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Text, View } from "react-native";
 
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { AlertModal } from "@/components/alert-modal";
+import { WrapTitle } from "@/components/wrap-title";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
 import { SheetShell } from "@/components/sheet-shell";
@@ -178,16 +179,16 @@ function ProfileCard({
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
         <FoodProfileMark category={profile.category} name={profile.name} size={48} />
         <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
-            <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
+            <WrapTitle style={[type.bodyStrong, { color: colors.ink, flex: 1 }]}>
               {profile.name}
-            </FitText>
+            </WrapTitle>
             <FoodStatusChip icon="check-circle" label="Active" tone="success" />
           </View>
           {profile.description ? (

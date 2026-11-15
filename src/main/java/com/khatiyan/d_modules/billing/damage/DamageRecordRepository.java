@@ -12,15 +12,28 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import com.khatiyan.d_modules.property.model.DamageLevel;
+
 @Repository
 public interface DamageRecordRepository extends JpaRepository<DamageRecord, UUID> {
 
     List<DamageRecord> findByPropertyIdAndStatusInOrderByCodeDescSplitNumberAsc(UUID propertyId, Collection<DamageRecordStatus> statuses);
 
     // Page scalar IDs first: a collection fetch join must never paginate in memory.
-    @Query("SELECT r.id FROM DamageRecord r WHERE r.propertyId = :propertyId AND r.status IN :statuses ORDER BY r.code DESC, COALESCE(r.splitNumber, 0) ASC")
+    // Narrowed by damage level and a search on the code or item name (2026-11-14):
+    // every level and "%" when the owner has not chosen any, never a null parameter.
+    @Query("""
+            SELECT r.id FROM DamageRecord r
+            WHERE r.propertyId = :propertyId AND r.status IN :statuses
+              AND r.damageLevel IN :levels
+              AND (LOWER(r.code) LIKE :pattern OR LOWER(r.itemName) LIKE :pattern)
+            ORDER BY r.code DESC, COALESCE(r.splitNumber, 0) ASC
+            """)
     Page<UUID> findPageIds(@Param("propertyId") UUID propertyId,
-            @Param("statuses") Collection<DamageRecordStatus> statuses, Pageable pageable);
+            @Param("statuses") Collection<DamageRecordStatus> statuses,
+            @Param("levels") Collection<DamageLevel> levels,
+            @Param("pattern") String pattern,
+            Pageable pageable);
 
     @Query("SELECT DISTINCT r FROM DamageRecord r LEFT JOIN FETCH r.shares WHERE r.id IN :ids")
     List<DamageRecord> findPageRecords(@Param("ids") Collection<UUID> ids);

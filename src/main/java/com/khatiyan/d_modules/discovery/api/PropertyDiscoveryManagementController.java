@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khatiyan.c_shared.identity.UserPrincipal;
+import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryDetailResponse;
 import com.khatiyan.d_modules.discovery.api.dto.PropertyDiscoveryProfileResponse;
 import com.khatiyan.d_modules.discovery.api.dto.UpdatePropertyDiscoveryProfileRequest;
 import com.khatiyan.d_modules.discovery.service.PropertyDiscoveryService;
@@ -34,6 +35,13 @@ public class PropertyDiscoveryManagementController {
             @AuthenticationPrincipal UserPrincipal user,
             @PathVariable UUID propertyId) {
         return propertyDiscoveryService.getManagedProfile(user.userId(), propertyId);
+    }
+
+    @GetMapping("/preview")
+    public PropertyDiscoveryDetailResponse previewProfile(
+            @AuthenticationPrincipal UserPrincipal user,
+            @PathVariable UUID propertyId) {
+        return propertyDiscoveryService.previewManagedProperty(user.userId(), propertyId);
     }
 
     @PatchMapping

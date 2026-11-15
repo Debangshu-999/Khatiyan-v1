@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { EmptyPerson } from "@/components/empty-art";
 import { View } from "react-native";
 
 import { EmptyState } from "@/components/empty-state";
@@ -12,7 +13,7 @@ import { ActionButton } from "@/features/owner/owner-ui";
 import { indiaDate } from "@/features/visits/visit-clock";
 import { useAppSelector } from "@/store/hooks";
 import { useGetMealAttendanceHistoryQuery, type MealAttendanceDayMeal } from "@/store/services/food-api";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -78,7 +79,7 @@ export default function OwnerMealAttendanceHistoryScreen() {
           </SkeletonBoundary>
         ) : !hasHistory ? (
           // The picture account notifications used (user, 2026-11-01).
-          <EmptyState artworkNode={<PersonArt size={96} />} title="No meal attendance recorded yet" />
+          <EmptyState artworkNode={<EmptyPerson size={120} />} title="No meal attendance recorded yet" />
         ) : (
           <View style={{ gap: spacing.sm }}>
             {Array.from({ length: pages }, (_, page) => (
@@ -152,7 +153,7 @@ function DayCard({ day, onOpen }: { day: HistoryDay; onOpen: (open: OpenMeal) =>
         paddingHorizontal: spacing.md,
         paddingTop: spacing.sm,
         paddingBottom: spacing.xxs,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingBottom: spacing.xs }}>

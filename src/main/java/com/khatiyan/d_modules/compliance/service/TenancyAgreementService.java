@@ -597,10 +597,9 @@ public class TenancyAgreementService {
             throw new ValidationException("Record the move-in checklist before onboarding.");
         }
         if (request.moveInChecklist() != null) {
+            // The checklist is this tenancy's own record (user, 2026-11-07): it no longer sets the
+            // room's item levels or opens damage records.
             tenancyModule.recordMoveInChecklist(tenancy.id(), actorUserId, request.moveInChecklist());
-            if (tenancy.roomId() != null) {
-                applyToRoomCondition(actorUserId, tenancy, request.moveInChecklist());
-            }
         }
         if (request.moveOutChecklist() != null) {
             tenancyModule.setMoveOutChecklist(tenancy.id(), request.moveOutChecklist());

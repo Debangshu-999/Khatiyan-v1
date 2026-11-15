@@ -3,6 +3,7 @@ import { Modal, Pressable, Text, useWindowDimensions, View } from "react-native"
 import { ChevronDown, Info } from "lucide-react-native";
 
 import { LoadFailedCard } from "@/components/load-failed";
+import { useModalOrigin } from "@/components/anchored-dropdown";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { InfoModal } from "@/components/info-modal";
 import { GhostText, useIsSkeleton } from "@/components/skeleton-boundary";
@@ -215,6 +216,7 @@ export function ChartDropdown<T extends string>({
   const trigger = useRef<View>(null);
   const [anchor, setAnchor] = useState<{ left?: number; right?: number; top: number } | null>(null);
   const chosen = options.find((option) => option.key === value) ?? options[0];
+  const modalOrigin = useModalOrigin();
   const close = () => setAnchor(null);
   const open = () =>
     trigger.current?.measureInWindow((x, y, width, height) => {
@@ -239,6 +241,8 @@ export function ChartDropdown<T extends string>({
       </View>
       {anchor ? (
         <Modal animationType="fade" navigationBarTranslucent onRequestClose={close} statusBarTranslucent transparent visible>
+          {/* Measured from this window's own start, which Android may place differently (2026-11-07). */}
+          <View {...modalOrigin.rootProps}>
           {/* A sibling behind the menu, never its parent: see InfoModal. */}
           <Pressable onPress={close} style={{ bottom: 0, left: 0, position: "absolute", right: 0, top: 0 }} />
           <View
@@ -258,7 +262,8 @@ export function ChartDropdown<T extends string>({
               shadowOffset: { height: 6, width: 0 },
               shadowOpacity: 0.14,
               shadowRadius: 14,
-              top: anchor.top,
+              opacity: modalOrigin.ready ? 1 : 0,
+                top: anchor.top - modalOrigin.originY,
             }}
           >
             {options.map((option) => {
@@ -278,6 +283,7 @@ export function ChartDropdown<T extends string>({
                 </AnimatedPressable>
               );
             })}
+          </View>
           </View>
         </Modal>
       ) : null}

@@ -1,4 +1,5 @@
 import { SheetShell } from "@/components/sheet-shell";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
@@ -131,6 +132,7 @@ export function PaymentDetailsSheet({
     <>
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <SheetCloseButton onClose={() => dismiss()} />
         <View
           style={{
             backgroundColor: colors.surface,
@@ -139,7 +141,7 @@ export function PaymentDetailsSheet({
             borderTopRightRadius: 22,
             borderWidth: 1,
             gap: spacing.md,
-            maxHeight: "88%",
+            maxHeight: "100%",
             paddingBottom: insets.bottom + spacing.lg,
             paddingHorizontal: spacing.lg,
             paddingTop: spacing.lg,

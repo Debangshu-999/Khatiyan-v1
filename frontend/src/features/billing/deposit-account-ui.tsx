@@ -1,18 +1,19 @@
 import { useState } from "react";
-import { Text, View } from "react-native";
-import { ArrowDownToLine, ArrowUpFromLine, CheckCircle2, ChevronDown, ChevronRight, Clock3, Landmark, Minus, Plus, UserRound } from "lucide-react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Clock3, Landmark, Minus, Plus, UserRound } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Ellipse, Path, Rect } from "react-native-svg";
 
 import { CARD_STATUS_ROW, NAME_UNDER_STATUS, cardText, smallerCardText } from "@/components/card-name-row";
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { PickerOptionRow } from "@/components/picker-option-row";
+import { DepositMovementIcon } from "@/components/deposit-movement-icons";
 import { ScreenHeader } from "@/components/screen-header";
-import { SheetShell } from "@/components/sheet-shell";
 import { BillingStatusBadge } from "@/features/owner/bill-views";
+import { TenantAvatar } from "@/features/owner/tenancy-list";
 import { ActionButton, NoticeBar, ViewOnlyChip, formatMoneyPaise, humanizeToken } from "@/features/owner/owner-ui";
 import { isDepositCredit, type DepositAccount, type DepositMovement } from "@/store/services/billing-api";
 import { tenancyStatusLabel, type TenancySummary } from "@/store/services/tenancy-api";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
@@ -68,20 +69,19 @@ export function DepositAccountHeader({
   );
 }
 
-export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => void; tenancy: TenancySummary }) {
+/**
+ * Whose deposit this is: their photo or initials, name and tenancy code, and the
+ * tenancy's state on the right (user, 2026-11-07). Not a button: going back to the
+ * list is the header's back arrow.
+ */
+export function DepositAccountTenantCard({ tenancy }: { tenancy: TenancySummary }) {
   const { colors, fonts, type } = useTheme();
   const active = tenancy.status === "ACTIVE";
   const onNotice = tenancy.status === "ON_NOTICE" || tenancy.status === "ON_PREMATURE_NOTICE" || tenancy.status === "PENDING_EXIT";
   const statusColor = active ? colors.jade : onNotice ? colors.warningText : colors.muted;
   return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityLabel={"Choose another tenancy. Current tenant: " + (tenancy.tenantName ?? "Unnamed tenant") + ", " + tenancyStatusLabel(tenancy.status)}
-      onPress={onPress}
+    <View
       style={{
-        // The picker card's design exactly, so choosing a tenancy and having
-        // chosen one are the same object in two states rather than two
-        // differently-coloured cards.
         alignItems: "center",
         backgroundColor: colors.surface,
         borderColor: colors.border,
@@ -89,62 +89,36 @@ export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => 
         borderWidth: 1,
         elevation: 1,
         flexDirection: "row",
-        gap: spacing.md,
-        // Shorter than the picker's 126. That card carries a two-line
-        // instruction; this one is a name, a code and a pill, and at 126 it
-        // was mostly empty space above the balance it introduces.
-        minHeight: 96,
+        gap: spacing.sm,
+        // Compact (user, 2026-11-07): as tall as the avatar and two lines need.
         overflow: "hidden",
-        padding: spacing.md,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
         shadowColor: colors.primaryDeep,
         shadowOffset: { height: 4, width: 0 },
         shadowOpacity: 0.05,
         shadowRadius: 12,
       }}
     >
-      <Svg accessible={false} pointerEvents="none" width={190} height={65} viewBox="0 0 190 65" style={{ bottom: 0, position: "absolute", right: 0 }}>
+      <Svg accessible={false} pointerEvents="none" width={150} height={46} viewBox="0 0 190 65" preserveAspectRatio="none" style={{ bottom: 0, position: "absolute", right: 0 }}>
         <Path d="M0 65 C58 18 83 53 125 30 C151 16 170 5 190 0 V65 Z" fill={colors.primarySoft} />
         <Path d="M62 65 C111 43 150 53 190 29 V65 Z" fill={colors.primary} opacity={0.08} />
       </Svg>
-      <View style={{ alignItems: "center", backgroundColor: "#E0ECFF", borderRadius: 26, height: 48, justifyContent: "center", width: 48 }}>
-        <UserRound color={colors.primary} size={27} strokeWidth={1.9} />
-      </View>
-      {/* Name over reference, and nothing else in the column — so the pill can
-          leave it entirely. */}
-      <View style={{ flex: 1, gap: spacing.xxs, minWidth: 0 }}>
-        {NAME_UNDER_STATUS ? <View style={CARD_STATUS_ROW}><BillingStatusBadge
-          background={active ? colors.successSoft : onNotice ? colors.warningSoft : colors.neutralSoft}
-          color={statusColor}
-          icon={active ? Landmark : onNotice ? Clock3 : CheckCircle2}
-          // "On notice" for both notice kinds. "On Premature Notice" was long
-          // enough to push the name and tenancy code out of the card.
-          label={tenancyStatusLabel(tenancy.status)}
-        /></View> : null}
+      <TenantAvatar name={tenancy.tenantName} photoUrl={tenancy.tenantPhotoUrl} />
+      <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
         <FitText
           numberOfLines={1}
-          style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: cardText(18), lineHeight: 25 }}
+          style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: cardText(16), lineHeight: 21 }}
         >
           {cardName(tenancy.tenantName ?? "Unnamed tenant")}
         </FitText>
-        <Text selectable style={[smallerCardText(type.caption), { color: colors.muted, fontSize: cardText(12), lineHeight: 18 }]}>
+        <Text selectable style={[smallerCardText(type.caption), { color: colors.muted, fontSize: cardText(12), lineHeight: 16 }]}>
           {tenancy.referenceCode}
         </Text>
       </View>
-
-      {/* The billing chip, exactly as the deposit history rows use it — glyph,
-          soft tint, sentence case. A bare colour dot said the same thing in a
-          different vocabulary, so the same tenancy looked like two kinds of
-          state depending on which deposit screen you reached it from.
-
-          A sibling of the column, not a passenger in its first line: the card
-          centres its children, so the chip and the chevron sit on one axis
-          rather than the chip riding the name's baseline. */}
-      {/* Wrapped, because the badge sets alignSelf:"flex-start" on itself —
-          which it needs inside a column, and which overrode this row's
-          alignItems:"center" and pinned the chip to the top of the card. The
-          wrapper is what the row centres; the badge then aligns within a box
-          only as tall as itself. */}
-      {NAME_UNDER_STATUS ? null : <View style={{ flexShrink: 0 }}>
+      {/* Where the chevron was, centred on the row. Wrapped, because the badge sets
+          alignSelf:"flex-start" on itself, which would pin it to the card's top. */}
+      <View style={{ flexShrink: 0 }}>
         <BillingStatusBadge
           background={active ? colors.successSoft : onNotice ? colors.warningSoft : colors.neutralSoft}
           color={statusColor}
@@ -153,9 +127,8 @@ export function DepositAccountTenantCard({ onPress, tenancy }: { onPress: () => 
           // enough to push the name and tenancy code out of the card.
           label={tenancyStatusLabel(tenancy.status)}
         />
-      </View>}
-      <ChevronRight color={colors.muted} size={20} strokeWidth={2} />
-    </AnimatedPressable>
+      </View>
+    </View>
   );
 }
 
@@ -182,7 +155,11 @@ export function DepositAccountDetail({
 }) {
   const { colors, fonts, type } = useTheme();
   const [filter, setFilter] = useState<DepositMovementFilter>("ALL");
+  // A dropdown floating under its pill over the list, not a bottom sheet (user, 2026-11-14).
+  // Placed from the pill row's own layout inside this view: window measurements put it over
+  // the pill on a phone.
   const [filterOpen, setFilterOpen] = useState(false);
+  const [filterRowBottom, setFilterRowBottom] = useState(0);
   const pending = deposit.status === "PENDING_SETTLEMENT";
   const settled = deposit.status === "SETTLED";
   const payable = deposit.payableAtExit;
@@ -190,7 +167,8 @@ export function DepositAccountDetail({
   const filterLabel = MOVEMENT_FILTERS.find((option) => option.value === filter)?.label ?? "All";
 
   return (
-    <View style={{ gap: spacing.md }}>
+    // Grows into the screen's spare height, where the screen lets it, so the end note centres in it.
+    <View style={{ flexGrow: 1, gap: spacing.md }}>
       {pending ? (
         <NoticeBar
           message={payable == null
@@ -266,51 +244,82 @@ export function DepositAccountDetail({
         </View>
       ) : null}
 
-      <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, justifyContent: "space-between", marginTop: spacing.md }}>
+      <View
+        onLayout={(event) => setFilterRowBottom(event.nativeEvent.layout.y + event.nativeEvent.layout.height)}
+        style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, justifyContent: "space-between", marginTop: spacing.md }}
+      >
         <Text style={{ color: colors.ink, flexGrow: 1, fontFamily: fonts.display, fontSize: 17, letterSpacing: -0.3, lineHeight: 24 }}>
           Transaction history
         </Text>
-        <AnimatedPressable
-          accessibilityRole="button"
-          accessibilityLabel={"Filter transactions: " + filterLabel}
-          accessibilityState={{ expanded: filterOpen }}
-          onPress={() => setFilterOpen(true)}
-          style={{ alignItems: "center", backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: radii.pill, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 38, paddingHorizontal: 13, paddingVertical: 7 }}
-        >
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 12 }}>{filterLabel}</Text>
-          <ChevronDown color={colors.muted} size={16} strokeWidth={2} />
-        </AnimatedPressable>
+        {/* The request desk's grey pill and its dropdown (user, 2026-11-14). */}
+        <View>
+          <AnimatedPressable
+            accessibilityRole="button"
+            accessibilityLabel={"Filter transactions: " + filterLabel}
+            accessibilityState={{ expanded: filterOpen }}
+            onPress={() => setFilterOpen((open) => !open)}
+            style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: `${colors.ink}40`, borderRadius: 999, borderWidth: 1, flexDirection: "row", gap: 4, height: 36, paddingLeft: spacing.md, paddingRight: spacing.sm }}
+          >
+            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 12.5 }}>{filterLabel}</Text>
+            {filterOpen ? <ChevronUp color={colors.ink} size={15} strokeWidth={2.4} /> : <ChevronDown color={colors.ink} size={15} strokeWidth={2.4} />}
+          </AnimatedPressable>
+        </View>
       </View>
+
+      {filterOpen ? (
+        // Any tap outside the list closes it.
+        <Pressable accessibilityLabel="Close filter" onPress={() => setFilterOpen(false)} style={[StyleSheet.absoluteFill, { zIndex: 9 }]} />
+      ) : null}
+      {filterOpen ? (
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.borderStrong,
+            borderCurve: "continuous",
+            borderRadius: radii.card,
+            borderWidth: 1,
+            elevation: 10,
+            overflow: "hidden",
+            position: "absolute",
+            right: 0,
+            top: filterRowBottom + spacing.xs,
+            width: 180,
+            zIndex: 10,
+            ...softShadow(colors.shadow, 6, 14),
+          }}
+        >
+          {MOVEMENT_FILTERS.map((option) => (
+            <AnimatedPressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: option.value === filter }}
+              key={option.value}
+              onPress={() => {
+                setFilter(option.value);
+                setFilterOpen(false);
+              }}
+              style={{ backgroundColor: option.value === filter ? colors.surfaceSunken : colors.surface, padding: spacing.md }}
+            >
+              <Text style={{ color: colors.ink, fontFamily: option.value === filter ? fonts.sansBold : fonts.sansMedium, fontSize: 14 }}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+      ) : null}
 
       <View style={{ gap: spacing.sm }}>
         {movements.map((movement) => <DepositMovementRow key={movement.id} movement={movement} />)}
       </View>
 
-      <View style={{ alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.xl, paddingBottom: spacing.lg }}>
+      {/* Centred in the space under the list (user, 2026-11-14). */}
+      <View style={{ alignItems: "center", flexGrow: 1, gap: spacing.sm, justifyContent: "center", paddingHorizontal: spacing.md, paddingVertical: spacing.lg }}>
         <DepositHistoryArtwork size={82} />
         <Text style={{ color: colors.ink, fontFamily: fonts.displaySoft, fontSize: 16, lineHeight: 23, textAlign: "center" }}>
           {movements.length > 0 ? "No more transactions" : filter === "ALL" ? "No transactions yet" : "No matching transactions"}
         </Text>
       </View>
 
-      {filterOpen ? (
-        <SheetShell size="short" onClose={() => setFilterOpen(false)} title="Transaction type">
-          <View>
-            {MOVEMENT_FILTERS.map((option, index) => (
-              <PickerOptionRow
-                first={index === 0}
-                key={option.value}
-                label={option.label}
-                selected={filter === option.value}
-                onPress={() => {
-                  setFilter(option.value);
-                  setFilterOpen(false);
-                }}
-              />
-            ))}
-          </View>
-        </SheetShell>
-      ) : null}
+
     </View>
   );
 }
@@ -339,13 +348,12 @@ function DepositAmountButton({ disabled, mode, onPress }: { disabled: boolean; m
 export function DepositMovementRow({ movement }: { movement: DepositMovement }) {
   const { colors, fonts, type } = useTheme();
   const credit = isDepositCredit(movement.type);
-  const Icon = credit ? ArrowUpFromLine : ArrowDownToLine;
   const color = credit ? colors.jade : colors.danger;
   return (
-    <View style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 74, padding: spacing.md }}>
-      <View style={{ alignItems: "center", backgroundColor: credit ? colors.successSoft : colors.dangerSoft, borderRadius: 21, height: 38, justifyContent: "center", width: 38 }}>
-        <Icon color={color} size={22} strokeWidth={2} />
-      </View>
+    // The cards' 3D edge and corner (user, 2026-11-14).
+    <View style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 74, padding: spacing.md, ...cardShadow(colors.shadow) }}>
+      {/* Money in with a plus, out with a minus, a settlement as a ticked slip (user, 2026-11-14). */}
+      <DepositMovementIcon kind={movement.type} size={42} />
       <View style={{ alignItems: "center", columnGap: spacing.sm, flex: 1, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", minWidth: 0, rowGap: spacing.xs }}>
         <View style={{ flexBasis: 120, flexGrow: 1, gap: 3, minWidth: 0 }}>
           <Text selectable style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 13, lineHeight: 19 }}>

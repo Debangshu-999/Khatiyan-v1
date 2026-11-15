@@ -34,7 +34,7 @@ import {
 import { useGetMetroSystemsQuery } from "@/store/services/metro-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 
 import { humanizeToken } from "../discovery-format";
 import { MetroLineScreen } from "../metro/metro-line-screen";
@@ -147,7 +147,7 @@ export function PropertyFilterModal({
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   // Direct, not useSoftShadow: this opens from a tab, whose shadow phones do not draw.
-  const raisedCard = softShadow(colors.shadow, 4, 12);
+  const raisedCard = cardShadow(colors.shadow);
 
   // The sheet's skeleton holds while it slides up (user, 2026-10-02): the
   // eight sections of chips are the heaviest thing on the frame, and laying
@@ -771,7 +771,7 @@ function RentSlider({
           borderWidth: 2,
           height: 26,
           width: 26,
-          ...softShadow(colors.shadow, 2, 6),
+          ...cardShadow(colors.shadow),
         }}
       />
     </View>

@@ -62,8 +62,9 @@ test("moving Bookings preserves its owner and ready-permissions gate", () => {
 test("Facilities heading centers its own 80-percent slot in the modal", () => {
   const title = find((node) => ts.isJsxElement(node) && node.openingElement.tagName.getText(source) === "ModalTitle" && node.children.some((child) => ts.isJsxText(child) && child.text === "Facilities"));
   const { render } = load(`exports.render = () => (${title.getText(source)});`, {}, { ModalTitle: "ModalTitle", type: { display: {} }, colors: { ink: "black" } });
-  assert.equal(render().props.style[1].alignSelf, "center");
+  // Centred by a wrapper that keeps it from shrinking (2026-11-07: it was cut in half).
   assert.equal(render().props.style[1].textAlign, "center");
+  assert.match(read("app/owner-property.tsx"), /<View style=\{\{ alignItems: "center", flexShrink: 0 \}\}>\s*<ModalTitle/);
 });
 
 test("View facilities uses the new services vector and still opens the sheet", () => {
@@ -86,8 +87,8 @@ const { FacilityOverviewGrid } = load(read("src/features/property/facility-overv
   "expo-blur": { BlurView: "BlurView" }, "@expo/vector-icons/MaterialCommunityIcons": { __esModule: true, default: "MaterialIcon" },
   "lucide-react-native": { AirVent: "AirVent" },
   "@/features/owner/owner-ui": { humanizeToken: (value) => value.toLowerCase().replaceAll("_", " ") },
-  "@/theme/shadows": { useSoftShadow: () => () => ({}) }, "@/theme/spacing": { spacing: { sm: 8, md: 12 } },
-  "@/theme/use-theme": { useTheme: () => theme }, "@/components/fit-text": { FitText: "FitText" },
+  "@/theme/shadows": { useSoftShadow: () => () => ({}), cardShadow: () => ({}) }, "@/theme/spacing": { spacing: { sm: 8, md: 12 } },
+  "@/theme/use-theme": { useTheme: () => theme }, "@/components/fit-text": { FitText: "FitText" }, "@/components/wrap-title": { WrapTitle: "WrapTitle" },
 });
 
 test("modal facility labels fit their text slot without changing the grid's inline layout", () => {
@@ -105,12 +106,11 @@ test("modal facility labels fit their text slot without changing the grid's inli
       const icon = cell.props.children[0];
       assert.equal(icon.props.size, variant === "cards" ? 30 : 25);
       assert.equal(icon.props.style.flexShrink, 0);
-      const labels = nodes(cell, "FitText");
-      const label = labels[0];
-      assert.equal(label.props.numberOfLines, variant === "cards" ? 1 : 2);
-      assert.equal(label.props.minimumFontScale, 0.7);
+      // The whole name, wrapping at full size (user, 2026-11-07), then "Available".
+      const label = nodes(cell, "WrapTitle")[0];
+      assert.equal(label.props.numberOfLines, undefined);
       assert.equal(label.props.style.width, "100%");
-      assert.equal(labels[1].props.children, "Available");
+      assert.equal(nodes(cell, "FitText")[0].props.children, "Available");
     }
   }
 });

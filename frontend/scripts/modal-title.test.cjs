@@ -22,9 +22,14 @@ function load(file, dependencies, globals = {}) {
 const flatten = (style) => Object.assign({}, ...[].concat(style));
 const sizing = load("src/components/modal-title-size.ts", {});
 
-test("native modal titles reserve 80 percent, shrink to fit and retain accessibility", () => {
+test("native modal titles reserve 80 percent, wrap with hyphens, and only a name shrinks to one line", () => {
   const { ModalTitle } = load("src/components/modal-title.tsx", { "react-native": { Text: "Text" } });
-  const tree = ModalTitle({ children: "Communication permissions", accessibilityLabel: "Permission choices", style: { fontSize: 22, flex: 1 } });
+  // A title too long for the width wraps at full size, a word hyphenated when it must break (user, 2026-11-07).
+  const wrapped = ModalTitle({ children: "Melted Cheese Quesadilla - Chipotle Chicken", style: { fontSize: 22 } });
+  assert.equal(wrapped.props.adjustsFontSizeToFit, undefined);
+  assert.equal(wrapped.props.numberOfLines, undefined);
+  assert.equal(wrapped.props.android_hyphenationFrequency, "normal");
+  const tree = ModalTitle({ children: "Debangshu Das", personName: true, accessibilityLabel: "Permission choices", style: { fontSize: 22, flex: 1 } });
   assert.equal(tree.type, "Text");
   assert.equal(tree.props.adjustsFontSizeToFit, true);
   assert.equal(tree.props.minimumFontScale, 0.65);

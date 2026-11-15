@@ -5,6 +5,7 @@ import type { LucideProps } from "lucide-react-native";
 import { softShadow } from "@/theme/shadows";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
+import { HighlightCard, HighlightPanel, highlightPalette } from "@/components/highlight-card";
 import { IconSwitch } from "@/components/icon-switch";
 import { MetricTile } from "@/components/metric-tile";
 import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
@@ -54,23 +55,16 @@ export function ManageFoodCard({
 }) {
   const { colors, fonts } = useTheme();
   return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: radii.card,
-        borderWidth: 1,
-        ...softShadow(colors.shadow, 4, 12),
-      }}
-    >
-      <View style={{ gap: spacing.md, padding: spacing.lg }}>
+    // The warm highlight card the food screens use, as other screens' headline cards are
+    // highlight cards (user, 2026-11-07).
+    // No bowl on this one (user, 2026-11-07).
+    <HighlightCard motif={false} variant="warm" style={{ padding: spacing.lg }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-          <View style={{ alignItems: "center", backgroundColor: colors.neutralSoft, borderRadius: radii.pill, height: 42, justifyContent: "center", width: 42 }}>
-            <MaterialCommunityIcons color={colors.ink} name="chef-hat" size={24} />
+          <View style={{ alignItems: "center", backgroundColor: "rgba(255, 255, 255, 0.7)", borderRadius: radii.pill, height: 42, justifyContent: "center", width: 42 }}>
+            <MaterialCommunityIcons color={highlightPalette.warm.ink} name="chef-hat" size={24} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15.5, lineHeight: 20 }}>
+            <Text style={{ color: highlightPalette.warm.ink, fontFamily: fonts.sansBold, fontSize: 15.5, lineHeight: 20 }}>
               Manage Meals
             </Text>
           </View>
@@ -86,8 +80,8 @@ export function ManageFoodCard({
         </View>
 
         {meals && meals.length > 0 ? (
-          <View style={{ backgroundColor: colors.neutralSoft, borderCurve: "continuous", borderRadius: radii.card, gap: spacing.sm, padding: spacing.md }}>
-            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
+          <View style={{ backgroundColor: "rgba(255, 255, 255, 0.6)", borderCurve: "continuous", borderRadius: radii.card, gap: spacing.sm, padding: spacing.md }}>
+            <Text style={{ color: highlightPalette.warm.ink, fontFamily: fonts.sansBold, fontSize: 13.5 }}>
               Meals offered by this property
             </Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
@@ -97,8 +91,7 @@ export function ManageFoodCard({
             </View>
           </View>
         ) : null}
-      </View>
-    </View>
+    </HighlightCard>
   );
 }
 
@@ -317,41 +310,41 @@ export function CookingPreview({
   const { colors, fonts, type } = useTheme();
   const items = forecast?.consolidatedItems ?? [];
   const mealType = slot.mealType;
+  const palette = highlightPalette.warm;
 
   return (
-    <Card>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minWidth: 0 }}>
-          <MealGlyph color={colors.ink} meal={mealType} size={22} />
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 20 }}>{MEAL_LABEL[mealType]}</Text>
+    <Card style={{ padding: 0, gap: 0 }}>
+      <HighlightPanel variant="warm" style={{ borderWidth: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg }}>
+        <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ flex: 1, gap: 4, minWidth: 0 }}>
+            <Text style={{ color: palette.ink, fontFamily: fonts.display, fontSize: 22, lineHeight: 28 }}>
+              {MEAL_LABEL[mealType]}, {slot.status === "SERVING" ? "serving now" : slot.status === "DONE" ? "finished" : "up next"}
+            </Text>
+          </View>
+          <View style={{ alignItems: "center", backgroundColor: "#FFF9EE", borderColor: palette.line, borderRadius: 999, borderWidth: 1, height: 48, justifyContent: "center", width: 48 }}>
+            <MealGlyph color={palette.ink} meal={mealType} size={26} />
+          </View>
         </View>
-        {slot.status === "SERVING" ? (
-          <FoodStatusChip icon="silverware-fork-knife" label="Serving now" tone="success" />
-        ) : (
-          <FoodStatusChip icon="clock-outline" label="Up next" tone="warning" />
-        )}
-      </View>
-      <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-        {/* The meal's time on a grey pill (user, 2026-09-28). */}
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: colors.neutralSoft,
-            borderRadius: radii.pill,
-            flexDirection: "row",
-            gap: spacing.xxs + 1,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 4,
-          }}
-        >
-          <MaterialCommunityIcons color={colors.inkSoft} name="clock-outline" size={14} />
-          <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
+        <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
+          <MaterialCommunityIcons color={palette.muted} name="clock-outline" size={15} />
+          <Text style={{ color: palette.muted, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>
             {formatMealWindow(slot.startTime, slot.endTime)}
           </Text>
+          {slot.delayMinutes > 0 ? <DelayedChip minutes={slot.delayMinutes} /> : null}
         </View>
-        {slot.delayMinutes > 0 ? <DelayedChip minutes={slot.delayMinutes} /> : null}
-      </View>
+        {!loading && forecast ? <View style={{ borderTopColor: palette.line, borderTopWidth: 1, flexDirection: "row", gap: spacing.lg, paddingTop: spacing.sm }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ color: palette.ink, fontFamily: fonts.display, fontSize: 24 }}>{forecast.totalSubscribers}</Text>
+            <Text style={{ color: palette.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>{forecast.totalSubscribers === 1 ? "Person eating" : "People eating"}</Text>
+          </View>
+          <View style={{ borderLeftColor: palette.line, borderLeftWidth: 1, flex: 1, gap: 2, paddingLeft: spacing.lg }}>
+            <Text style={{ color: palette.ink, fontFamily: fonts.display, fontSize: 24 }}>{items.length}</Text>
+            <Text style={{ color: palette.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>{items.length === 1 ? "Dish to prepare" : "Dishes to prepare"}</Text>
+          </View>
+        </View> : null}
+      </HighlightPanel>
 
+      <View style={{ gap: spacing.md, padding: spacing.lg }}>
       {loading ? (
         <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12.5 }}>
           Working out quantities…
@@ -361,29 +354,26 @@ export function CookingPreview({
           Nothing to cook for this meal. Either no profile has a menu for it, or nobody has subscribed.
         </Text>
       ) : (
-        <View style={{ gap: spacing.xs }}>
-          <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5 }}>
-            {forecast?.totalSubscribers === 1 ? "1 person eating" : `${forecast?.totalSubscribers} people eating`}
-          </Text>
-          {items.slice(0, 4).map((item) => (
+        <View>
+          {items.slice(0, 4).map((item, index) => (
             <View
               key={item.itemId}
-              style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}
+              style={{ alignItems: "center", borderTopColor: colors.border, borderTopWidth: index === 0 ? 0 : 1, flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", minHeight: 38, paddingVertical: spacing.xs }}
             >
               <FitText
                 numberOfLines={1}
-                style={{ color: colors.inkSoft, flex: 1, fontFamily: fonts.sans, fontSize: 13 }}
+                style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansSemiBold, fontSize: 13 }}
               >
                 {item.itemName}
               </FitText>
-              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 13 }}>
+              <Text style={{ color: palette.ink, backgroundColor: "#FFF5E6", borderRadius: 6, fontFamily: fonts.sansBold, fontSize: 13, paddingHorizontal: 8, paddingVertical: 4 }}>
                 {formatBulkQuantity(item.targetQuantity, item.quantityUnit)}
               </Text>
             </View>
           ))}
           {items.length > 4 ? (
-            <Text style={{ color: colors.kicker, fontFamily: fonts.sans, fontSize: 11.5 }}>
-              and {items.length - 4} more
+            <Text style={{ color: colors.muted, fontFamily: fonts.sansMedium, fontSize: 12, paddingTop: spacing.xs }}>
+              +{items.length - 4} more in the full forecast
             </Text>
           ) : null}
         </View>
@@ -396,6 +386,7 @@ export function CookingPreview({
         {onDelay ? (
           <ActionButton icon={foodIcon("clock-plus-outline")} label="Delay" onPress={onDelay} variant="secondary" />
         ) : null}
+      </View>
       </View>
     </Card>
   );

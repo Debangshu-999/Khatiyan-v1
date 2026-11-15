@@ -1,4 +1,5 @@
 import { CenterModal } from "@/components/center-modal";
+import { WrapTitle } from "@/components/wrap-title";
 import { Modal, Text, View } from "react-native";
 import { Globe, Laptop, Monitor, Smartphone, Tablet, type LucideProps } from "lucide-react-native";
 import type { ComponentType } from "react";
@@ -8,7 +9,6 @@ import { StatusIcon } from "@/components/status-icon";
 import type { UserSession } from "@/store/services/auth-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
-import { FitText } from "@/components/fit-text";
 
 /**
  * Shown when a sign-in would exceed the device cap: the devices already signed
@@ -27,6 +27,7 @@ export function SessionLimitModal({
   message,
   onCancel,
   onSignOut,
+  onSignOutAll,
   sessions,
 }: {
   busy: boolean;
@@ -34,6 +35,8 @@ export function SessionLimitModal({
   onCancel: () => void;
   /** Ends that device, then completes the sign-in that was interrupted. */
   onSignOut: (session: UserSession) => void;
+  /** Ends every one of them, then completes the sign-in. */
+  onSignOutAll: () => void;
   sessions: UserSession[];
 }) {
   const { colors, fonts, type } = useTheme();
@@ -80,24 +83,45 @@ export function SessionLimitModal({
             ))}
           </View>
 
-          <AnimatedPressable
-            accessibilityRole="button"
-            onPress={onCancel}
-            style={{
-              alignItems: "center",
-              alignSelf: "stretch",
-              borderColor: colors.borderStrong,
-              borderCurve: "continuous",
-              borderRadius: 14,
-              borderWidth: 1,
-              marginTop: spacing.xs,
-              paddingVertical: spacing.md,
-            }}
-          >
-            <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
-              Not now
-            </Text>
-          </AnimatedPressable>
+          <View style={{ alignSelf: "stretch", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
+            <AnimatedPressable
+              accessibilityRole="button"
+              onPress={onCancel}
+              style={{
+                alignItems: "center",
+                borderColor: colors.borderStrong,
+                borderCurve: "continuous",
+                borderRadius: 14,
+                borderWidth: 1,
+                flex: 1,
+                paddingVertical: spacing.md,
+              }}
+            >
+              <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 15 }}>
+                Not now
+              </Text>
+            </AnimatedPressable>
+            {/* Every device listed above, then this sign-in goes ahead (user, 2026-11-07). */}
+            <AnimatedPressable
+              accessibilityLabel="Sign out all devices"
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={onSignOutAll}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.danger,
+                borderCurve: "continuous",
+                borderRadius: 14,
+                flex: 1,
+                opacity: busy ? 0.5 : 1,
+                paddingVertical: spacing.md,
+              }}
+            >
+              <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 15 }}>
+                Sign out all
+              </Text>
+            </AnimatedPressable>
+          </View>
         </View>
       </View>
     </CenterModal>
@@ -138,9 +162,9 @@ function DeviceChoice({
     >
       <Icon color={colors.ink} size={18} strokeWidth={2.2} />
       <View style={{ flex: 1, gap: 1 }}>
-        <FitText numberOfLines={1} style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]}>
+        <WrapTitle style={[type.bodyStrong, { color: colors.ink, fontSize: 14 }]}>
           {session.deviceLabel ?? "Unknown device"}
-        </FitText>
+        </WrapTitle>
         <Text style={[type.caption, { color: colors.muted, fontSize: 11 }]}>
           Signed in {formatSignedIn(session.createdAt)}
         </Text>

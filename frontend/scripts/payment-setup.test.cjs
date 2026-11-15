@@ -58,6 +58,7 @@ function harness(options = {}) {
       clearField: (field) => { const next = { ...form.errors }; delete next[field]; form.errors = next; },
       failFromServer: (message) => { form.serverError = message; }, dismissServerError: () => { form.serverError = null; },
     }) },
+    "@/components/how-it-works-sheet": { HowItWorksSheet: "HowItWorksSheet" },
     "@/features/owner/owner-ui": { ActionButton: "ActionButton", FormInput: "FormInput", NoticeBar: "NoticeBar", RequiredMark: "RequiredMark" },
     "@/features/billing/upi-qr-field": { UpiQrField: "UpiQrField" },
     "@/features/billing/payment-method-toggle": { PaymentMethodToggle: "PaymentMethodToggle", PaymentMethodIcon: "PaymentMethodIcon", PaymentMethodBand: "PaymentMethodBand" },
@@ -293,4 +294,13 @@ test("every payment setup and pay sheet file parses: one the bundler would refus
     const { diagnostics } = ts.transpileModule(read(file), { fileName: file, reportDiagnostics: true, compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
     assert.deepEqual(diagnostics.map((found) => ts.flattenDiagnosticMessageText(found.messageText, " ")), [], file);
   }
+});
+
+test("each payment method explains itself behind a ? beside its name, with its checkbox at the right", () => {
+  const screen = read("app/owner-payment-details.tsx");
+  assert.doesNotMatch(screen, /NoticeBar/);
+  assert.match(screen, /<HowItWorksSheet/);
+  const toggle = read("src/features/billing/payment-method-toggle.tsx");
+  assert.ok(toggle.indexOf("CircleHelp color") < toggle.indexOf('accessibilityRole="checkbox"'));
+  assert.ok(toggle.indexOf("SETUP_LABEL[method]}</Text>") < toggle.indexOf('accessibilityRole="checkbox"'));
 });

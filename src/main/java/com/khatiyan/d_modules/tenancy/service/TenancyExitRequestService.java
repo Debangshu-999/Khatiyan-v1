@@ -1,5 +1,7 @@
 package com.khatiyan.d_modules.tenancy.service;
 
+import com.khatiyan.d_modules.property.api.dto.RoomResponse;
+import java.util.HashMap;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -132,10 +134,22 @@ public class TenancyExitRequestService {
         BillingCycleResponse cycle = billingModule.getCurrentMyRentCycle(tenantUserId, today);
 
         TenancyExitRequest reRaised = findReRaisableRequest(tenancy.getId(), today, cycle);
-        LocalDate anchor = reRaised != null ? reRaised.getNoticeAnchorDate() : today;
         NoticePeriod noticePeriod = propertyModule.getActiveProperty(tenancy.getPropertyId()).noticePeriod();
+        LocalDate nextWindowOpensOn = cycle.periodEndDate().plusDays(1);
 
-        return checkoutWindow(tenancy, cycle, noticePeriod, anchor, reRaised != null);
+        // Past this rent window, with no re-raise or fresh start to let them in,
+        // a request can only be raised when the next one opens. So the dates are
+        // the ones a request raised then would get, a cycle later (2026-11-11),
+        // not ones that can no longer be asked for.
+        boolean windowClosed = reRaised == null
+                && !startsOverAfterSilence(tenancy.getId(), cycle)
+                && (today.isBefore(cycle.periodStartDate()) || today.isAfter(cycle.rentDueDate()));
+        int cycleOffset = windowClosed ? 1 : 0;
+        LocalDate anchor = reRaised != null ? reRaised.getNoticeAnchorDate() : windowClosed ? nextWindowOpensOn : today;
+
+        // When a request can be raised: this bill's first day to its due date, then the next bill's (2026-11-11).
+        return checkoutWindow(tenancy, cycle, noticePeriod, anchor, reRaised != null, cycleOffset)
+                .withRequestWindow(cycle.periodStartDate(), cycle.rentDueDate(), nextWindowOpensOn);
     }
 
     /**
@@ -186,7 +200,7 @@ public class TenancyExitRequestService {
         // an owner who let a request lapse cannot shorten the notice served.
         LocalDate anchor = reRaised != null ? reRaised.getNoticeAnchorDate() : today;
         NoticePeriod noticePeriod = propertyModule.getActiveProperty(tenancy.getPropertyId()).noticePeriod();
-        ExitCheckoutWindowResponse window = checkoutWindow(tenancy, cycle, noticePeriod, anchor, reRaised != null);
+        ExitCheckoutWindowResponse window = checkoutWindow(tenancy, cycle, noticePeriod, anchor, reRaised != null, 0);
 
         LocalDate checkoutDate = chosenCheckoutDate != null ? chosenCheckoutDate : window.earliestCheckoutDate();
         ensureInsideCheckoutWindow(checkoutDate, window);
@@ -579,7 +593,7 @@ public class TenancyExitRequestService {
 
     @Transactional(readOnly = true)
     public List<TenancyExitRequestResponse> listMine(UUID tenantUserId) {
-        return withNames(exitRequestRepository.findByTenantUserId(tenantUserId));
+        return withPlaces(withNames(exitRequestRepository.findByTenantUserId(tenantUserId)));
     }
 
     @Transactional(readOnly = true)
@@ -748,9 +762,14 @@ public class TenancyExitRequestService {
             BillingCycleResponse cycle,
             NoticePeriod noticePeriod,
             LocalDate anchor,
-            boolean reRaise) {
-        LocalDate earliestPossible = minimumCheckoutDate(LocalDate.now(EXIT_ZONE));
-        boolean prematureAllowed = earlyExitAllowed(tenancy.getAgreementValidityMonths(), tenancy.tenureStart(), cycle.cycleNumber(), LocalDate.now(EXIT_ZONE));
+            boolean reRaise,
+            int cycleOffset) {
+        // cycleOffset 1 reads the window as if raised when the next rent window
+        // opens: everything a cycle later, counted from that day.
+        LocalDate raisedOn = cycleOffset > 0 ? anchor : LocalDate.now(EXIT_ZONE);
+        Integer cycleNumber = cycle.cycleNumber() == null ? null : cycle.cycleNumber() + cycleOffset;
+        LocalDate earliestPossible = minimumCheckoutDate(raisedOn);
+        boolean prematureAllowed = earlyExitAllowed(tenancy.getAgreementValidityMonths(), tenancy.tenureStart(), cycleNumber, raisedOn);
         String restrictionMessage = prematureAllowed
                 ? null
                 : earlyExitRestriction(tenancy.getAgreementValidityMonths());
@@ -776,7 +795,7 @@ public class TenancyExitRequestService {
         }
 
         if (noticePeriod.isWholeMonths()) {
-            int extraCycles = noticePeriod.extraCyclesBeyondCurrent();
+            int extraCycles = noticePeriod.extraCyclesBeyondCurrent() + cycleOffset;
             LocalDate checkout = billingModule.periodEndAfterCycles(
                     tenancy.getId(), cycle.periodStartDate(), extraCycles);
             // Rolled forward, not refused. Inside the last ten days of the notice
@@ -784,7 +803,7 @@ public class TenancyExitRequestService {
             // first one the lead time allows. The window used to throw instead, so
             // a tenant giving notice late in a cycle saw an error and no date.
             while (earliestPossible.isAfter(checkout)
-                    && extraCycles < noticePeriod.extraCyclesBeyondCurrent() + MAX_ROLL_FORWARD_CYCLES) {
+                    && extraCycles < noticePeriod.extraCyclesBeyondCurrent() + cycleOffset + MAX_ROLL_FORWARD_CYCLES) {
                 extraCycles = extraCycles + 1;
                 checkout = billingModule.periodEndAfterCycles(
                         tenancy.getId(), cycle.periodStartDate(), extraCycles);
@@ -796,7 +815,9 @@ public class TenancyExitRequestService {
         }
 
         LocalDate earliest = anchor.plusDays(noticePeriod.days());
-        LocalDate latest = cycle.periodEndDate();
+        LocalDate latest = cycleOffset > 0
+                ? billingModule.periodEndAfterCycles(tenancy.getId(), cycle.periodStartDate(), cycleOffset)
+                : cycle.periodEndDate();
         if (earliest.isAfter(latest)) {
             latest = earliest;
         }
@@ -805,7 +826,7 @@ public class TenancyExitRequestService {
         // The same roll-forward for a sub-month notice. When the lead time lands
         // past this cycle's end, the window reaches into the next cycle instead of
         // closing. Leaving then means that cycle is owed, as it always would be.
-        for (int extraCycles = 1; effectiveFloor.isAfter(latest) && extraCycles <= MAX_ROLL_FORWARD_CYCLES;
+        for (int extraCycles = cycleOffset + 1; effectiveFloor.isAfter(latest) && extraCycles <= cycleOffset + MAX_ROLL_FORWARD_CYCLES;
                 extraCycles++) {
             latest = billingModule.periodEndAfterCycles(tenancy.getId(), cycle.periodStartDate(), extraCycles);
         }
@@ -983,6 +1004,14 @@ public class TenancyExitRequestService {
      * @return true when this is that fresh start, which also excuses the payment
      *         window
      */
+    /** The read-only side of the fresh start: an expired request in this cycle lets the tenant in outside the window. */
+    private boolean startsOverAfterSilence(UUID tenancyId, BillingCycleResponse cycle) {
+        return exitRequestRepository.findLatestByTenancyId(tenancyId)
+                .filter(latest -> isInsideCycle(latest.getNoticeAnchorDate(), cycle))
+                .map(latest -> latest.getStatus() == TenancyExitRequestStatus.EXPIRED)
+                .orElse(false);
+    }
+
     private boolean ensureCycleHasRoomForANewRequest(UUID tenancyId, BillingCycleResponse cycle) {
         TenancyExitRequest latest = exitRequestRepository.findLatestByTenancyId(tenancyId).orElse(null);
         if (latest == null || !isInsideCycle(latest.getNoticeAnchorDate(), cycle)) {
@@ -1058,4 +1087,31 @@ public class TenancyExitRequestService {
                         request, today, names, superseded.contains(request.getId()), roles))
                 .toList();
     }
+
+    /**
+     * The property and room names on the tenant's own list (2026-11-11), so a
+     * card can say where it was raised. One lookup per property, not per request.
+     */
+    private List<TenancyExitRequestResponse> withPlaces(List<TenancyExitRequestResponse> responses) {
+        Set<UUID> propertyIds = new HashSet<>();
+        responses.forEach(response -> propertyIds.add(response.propertyId()));
+        Map<UUID, String> propertyNames = new HashMap<>();
+        propertyModule.findActiveProperties(propertyIds).forEach(property -> propertyNames.put(property.id(), property.name()));
+        Map<UUID, Map<UUID, RoomResponse>> rooms = new HashMap<>();
+        for (UUID propertyId : propertyIds) {
+            Set<UUID> roomIds = new HashSet<>();
+            responses.stream().filter(response -> response.propertyId().equals(propertyId)).forEach(response -> roomIds.add(response.roomId()));
+            rooms.put(propertyId, propertyModule.findRoomsForDisplay(propertyId, roomIds));
+        }
+        return responses.stream().map(response -> {
+            Map<UUID, RoomResponse> here = rooms.getOrDefault(response.propertyId(), Map.of());
+            return response.withPlace(propertyNames.get(response.propertyId()), roomNumber(here, response.roomId()));
+        }).toList();
+    }
+
+    private static String roomNumber(Map<UUID, RoomResponse> rooms, UUID roomId) {
+        RoomResponse room = roomId == null ? null : rooms.get(roomId);
+        return room == null ? null : room.roomNumber();
+    }
+
 }

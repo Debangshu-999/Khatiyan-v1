@@ -43,8 +43,23 @@ public record ExitCheckoutWindowResponse(
     /** True when there is only one possible date, so clients show text not a picker. */
     boolean fixed,
     /** True when this window belongs to a re-raise of a lapsed request. */
-    boolean reRaise
+    boolean reRaise,
+    /**
+     * The current bill's request window (2026-11-11): an exit request may be
+     * raised from the bill's first day to its due date. Null where not known.
+     */
+    LocalDate requestWindowOpensOn,
+    LocalDate requestWindowClosesOn,
+    /** The first day of the next bill, when the window opens again. */
+    LocalDate nextRequestWindowOpensOn
 ) {
+    /** The same window, with the dates an exit request may be raised in. */
+    public ExitCheckoutWindowResponse withRequestWindow(LocalDate opensOn, LocalDate closesOn, LocalDate nextOpensOn) {
+        return new ExitCheckoutWindowResponse(noticePeriod, noticeAnchorDate, earliestCheckoutDate, latestCheckoutDate,
+                earliestPossibleDate, prematureExitAllowed, minimumLeadDays, restrictionMessage, fixed, reRaise,
+                opensOn, closesOn, nextOpensOn);
+    }
+
     public static ExitCheckoutWindowResponse of(
             NoticePeriod noticePeriod,
             LocalDate noticeAnchorDate,
@@ -65,7 +80,10 @@ public record ExitCheckoutWindowResponse(
                 minimumLeadDays,
                 restrictionMessage,
                 earliest.equals(latest),
-                reRaise);
+                reRaise,
+                null,
+                null,
+                null);
     }
 
     /** Whether leaving on this date would mean not having served the notice. */

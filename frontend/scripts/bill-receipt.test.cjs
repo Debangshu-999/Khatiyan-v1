@@ -17,11 +17,12 @@ const dependencies = {
   "@/components/modal-title-rule": { ModalTitleRule: "Rule" },
   "@/components/modal-title": { ModalTitle: "Title" },
   "@/components/bottom-sheet-modal": { BottomSheetModal: "Sheet" },
+  "@/components/help-modal-header": { SheetCloseButton: "SheetCloseButton" },
   "@/components/fit-text": { FitText: "FitText" },
   "@/features/owner/bill-views": { formatDate: () => "29 Oct" },
   "@/features/owner/owner-ui": { humanizeToken: (text) => text, ActionButton: "Button" },
   "@/features/owner/phone-display": { formatIndianPhone: (text) => text },
-  "@/store/services/billing-api": { billTitle: (cycle) => cycle.cycleNumber != null ? `Cycle ${cycle.cycleNumber}` : cycle.lineItems[0]?.label ?? "One-off bill", bookingTokenPaise: () => 0 },
+  "@/store/services/billing-api": { billTitle: (cycle) => cycle.cycleNumber != null ? `Rent cycle #${cycle.cycleNumber}` : cycle.lineItems[0]?.label ?? "One-off bill", bookingTokenPaise: () => 0 },
   "@/theme/spacing": { spacing },
   "@/theme/use-theme": { useTheme: () => theme },
   "../../../assets/icons/brand/logo-light-no-tagline.png": "logo",
@@ -67,7 +68,10 @@ test("damage charges show the item and level above a smaller reference line", ()
 test("only canonical damage labels are split; punctuation and ordinary charges stay intact", () => {
   const format = exportsForTest.chargeLabel;
   assert.equal(format("Damage DMG-2026-000123: AC (split), <large> & fan (D3)").label, "Damage: AC (split), <large> & fan - D3");
-  for (const label of ["Cleaning fee", "Damage assessment", "Damage DMG-2026-000123: AC (unknown)"]) {
+  // A damage recorded with levels off has no level and is still split (2026-11-07).
+  assert.equal(format("Damage DMG-2026-000124: Kettle").label, "Damage: Kettle");
+  assert.equal(format("Damage DMG-2026-000124: Kettle").reference, "(DMG-2026-000124)");
+  for (const label of ["Cleaning fee", "Damage assessment", "Damage for the AC"]) {
     assert.equal(format(label).label, label);
     assert.equal(format(label).reference, undefined);
   }
@@ -101,7 +105,7 @@ test("bill details stack above Bill To, with Bill name for one-offs and Bill Cyc
   assert.equal(details[1].value, "Damage bill");
   const rent = document({ ...base, category: "RENT_CYCLE", cycleNumber: 2 });
   assert.equal(rent.props.children[2].props.children[0].props.rows[1].label, "Bill Cycle");
-  assert.equal(rent.props.children[2].props.children[0].props.rows[1].value, "Cycle 2");
+  assert.equal(rent.props.children[2].props.children[0].props.rows[1].value, "Rent cycle #2");
 });
 
 test("waived charges stay off the receipt but deposit-settled zero lines remain", () => {

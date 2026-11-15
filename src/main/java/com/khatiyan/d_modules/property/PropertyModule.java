@@ -168,6 +168,11 @@ public class PropertyModule {
         return roomService.findLowestActiveRoomRentPaise(propertyId);
     }
 
+    /** Each property's lowest active rent in one read, for a list of listings. */
+    public Map<UUID, Long> findLowestActiveRoomRentsPaise(Collection<UUID> propertyIds) {
+        return roomService.findLowestActiveRoomRentsPaise(propertyIds);
+    }
+
     /** The room types a property offers, for its public listing. */
     public List<RoomMoldResponse> listPublicRoomTypes(UUID propertyId) {
         return roomMoldService.listPublicTypes(propertyId);

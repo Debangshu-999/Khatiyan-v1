@@ -14,7 +14,7 @@ function load(file, dependencies) {
   const { outputText } = ts.transpileModule(read(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
   vm.runInNewContext(outputText, { exports: exported, require: (name) => {
     if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
-    if (name in SHARED_TEXT) return SHARED_TEXT[name]; assert.ok(name in dependencies, `Unexpected import ${name}`);
+    if (name in SHARED_TEXT) return SHARED_TEXT[name]; if (name === "@/components/empty-art") return new Proxy({}, { get: (_, key) => String(key) }); assert.ok(name in dependencies, `Unexpected import ${name}`);
     return dependencies[name];
   } });
   return exported;
@@ -36,6 +36,10 @@ const icons = load("src/components/tenancy-line-icons.tsx", {
   "lucide-react-native": { ArrowLeftRight: "ArrowLeftRight" },
   "react-native-svg": { __esModule: true, default: "Svg", ClipPath: "ClipPath", Defs: "Defs", Path: "Path" },
   "./tenancy-vector-data.json": JSON.parse(read("src/components/tenancy-vector-data.json")),
+});
+// Home's filled colour tiles, and their all-blue twins for the empty states (user, 2026-11-09).
+const colorIcons = load("src/components/digest-color-icons.tsx", {
+  "react-native-svg": { __esModule: true, default: "Svg", Circle: "Circle", Path: "Path" },
 });
 const screens = [
   ["owner-payments-today", "DigestPayments", "No payments today"],
@@ -113,9 +117,9 @@ test("the Home Move-outs card says Ending today (user, 2026-10-18)", () => {
 });
 
 for (const [screen, iconName, title] of screens) {
-  test(`${screen} reuses its Home card's exact vector geometry in blue`, () => {
-    const home = expand(icons[`${iconName}Icon`]({ size: 64 }));
-    const empty = expand(icons[`${iconName}EmptyIcon`]({ size: 64 }));
+  test(`${screen} reuses its Home tile's filled icon, all in blue`, () => {
+    const home = expand(colorIcons[`${iconName}ColorIcon`]({ size: 64 }));
+    const empty = expand(colorIcons[`${iconName}BlueIcon`]({ size: 64 }));
     assert.equal(empty.type, "Svg");
     assert.equal(empty.props.width, 64);
     assert.equal(empty.props.height, 64);
@@ -123,11 +127,16 @@ for (const [screen, iconName, title] of screens) {
     const homePaths = nodes(home, "Path"), bluePaths = nodes(empty, "Path");
     assert.ok(bluePaths.length > 0);
     assert.deepEqual(bluePaths.map((node) => node.props.d), homePaths.map((node) => node.props.d));
-    assert.ok(homePaths.some((node) => node.props.fill === "#000000"));
-    assert.ok(bluePaths.some((node) => node.props.fill === "#3F6ED8"));
-    assert.ok(bluePaths.every((node) => node.props.fill !== "#000000" && node.props.stroke !== "#000000"));
+    // Only blues and white: no green, amber or red left over from the tile.
+    const blues = new Set(["#DBEAFE", "#2563EB", "#3B82F6", "#FFFFFF", "none"]);
+    for (const node of [...bluePaths, ...nodes(empty, "Circle")]) {
+      for (const paint of [node.props.fill, node.props.stroke]) {
+        if (paint != null) assert.ok(blues.has(paint), `${paint} is not one of the blues`);
+      }
+    }
     assert.equal(nodes(empty, "Image").length, 0);
-    assert.ok(read("app/(tabs)/index.tsx").includes(`icon={${iconName}Icon}`));
+    // Home's tiles now wear filled colour icons (user, 2026-11-09); the empty state keeps the line geometry.
+    assert.ok(read("app/(tabs)/index.tsx").includes(`icon={${iconName}ColorIcon}`));
   });
 
   test(`${screen} renders the centered title-only artwork only after an empty result`, () => {
@@ -139,6 +148,7 @@ for (const [screen, iconName, title] of screens) {
         "react-native": { Text: "Text", View: "View" },
         "lucide-react-native": { DoorOpen: "DoorOpen", LogOut: "LogOut" },
         "@/components/tenancy-line-icons": icons,
+        "@/components/digest-color-icons": colorIcons,
         "@/components/artwork-icon": { ExitTenancyIcon: "ExitTenancyIcon" },
         "@/components/card": { Card: "Card" },
         "@/components/empty-state": { EmptyState: "EmptyState" },
@@ -165,7 +175,7 @@ for (const [screen, iconName, title] of screens) {
     const [empty] = nodes(render(), "EmptyState");
     assert.ok(empty);
     assert.equal(empty.props.title, title);
-    assert.equal(empty.props.artworkNode.type, icons[`${iconName}EmptyIcon`]);
+    assert.equal(empty.props.artworkNode.type, colorIcons[`${iconName}BlueIcon`]);
     assert.equal(empty.props.artworkNode.props.size, 64);
     assert.equal(empty.props.description, undefined);
     assert.equal(empty.props.icon, undefined);

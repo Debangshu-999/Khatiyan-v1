@@ -1,4 +1,5 @@
 import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
+import type { ModuleArt } from "@/features/owner/workspace-module-icons";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { Image, Text, View, type GestureResponderHandlers, type ImageSourcePropType } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -57,27 +58,11 @@ const SERVICE_SUMMARIES: Record<OwnerModuleKey, string> = {
 // The four tiles under the header share the Property screen's side-rail
 // tile, with every glyph in black (user, 2026-10-02). Rooms and Vacancy reuse
 // the Rooms & beds marks so a fact looks the same on both screens.
-const TILE_ICON_COLOR = "#000000";
-// A touch under the 38pt the side rail draws by default (user, 2026-10-02).
-const TILE_ICON_SIZE = 32;
-function TenanciesTileIcon(_props: LucideProps) {
-  return <MaterialCommunityIcons name="account" color={TILE_ICON_COLOR} size={TILE_ICON_SIZE} />;
-}
-function RoomsTileIcon(props: LucideProps) {
-  return <RoomsSummaryIcon {...props} color={TILE_ICON_COLOR} size={TILE_ICON_SIZE} />;
-}
-function VacancyTileIcon(props: LucideProps) {
-  return <InServiceIcon {...props} color={TILE_ICON_COLOR} size={TILE_ICON_SIZE} />;
-}
-// The Home tab's own glyph, so the tile names the property the way the tab bar does.
-function PropertyTileIcon(_props: LucideProps) {
-  return <MaterialCommunityIcons name="home-outline" color={TILE_ICON_COLOR} size={TILE_ICON_SIZE} />;
-}
 
 export default function OwnerScreen() {
   const router = useGuardedRouter();
   const dispatch = useAppDispatch();
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
   const pinnedKeys = useAppSelector((state) => state.ownerPins.pinnedKeys);
   const user = useAppSelector((state) => state.auth.user);
@@ -96,7 +81,6 @@ export default function OwnerScreen() {
   // Sections a manager has no access to are removed, not disabled — a greyed
   // card invites a tap and explains nothing.
   const visibleModules = visibleOwnerModules(canView, isOwner);
-  const roomsQuery = useListPropertyRoomsQuery(selectedProperty?.id ?? "", { skip: !selectedProperty });
   // Unassigned + escalated: the two states where a concern is sitting with
   // nobody working it. Anything already taken up is somebody's job and does not
   // belong on a "needs attention" count.
@@ -174,6 +158,7 @@ export default function OwnerScreen() {
   function renderServiceCard(module: OwnerModule, handle?: GestureResponderHandlers, held = false, divider = false) {
     return (
       <ServiceCard
+        art={module.art}
         artwork={module.artwork}
         artworkVariant={module.artworkVariant}
         description={SERVICE_SUMMARIES[module.key]}
@@ -191,23 +176,11 @@ export default function OwnerScreen() {
       />
     );
   }
-  const tenanciesQuery = useListPropertyTenanciesQuery(
-    { includePast: false, propertyId: selectedProperty?.id ?? "" },
-    { skip: !selectedProperty },
-  );
 
   function open(route: OwnerModuleRoute) {
     router.push(route as never);
   }
 
-  const rooms = roomsQuery.data ?? [];
-  const activeTenancies = tenanciesQuery.data ?? [];
-  // Either source still arriving means the tiles have nothing true to show.
-  const tilesLoading =
-    (roomsQuery.isFetching && !roomsQuery.data) ||
-    (tenanciesQuery.isFetching && !tenanciesQuery.data);
-  const occupiedRooms = rooms.filter((room) => room.occupiedCount > 0).length;
-  const vacantRooms = rooms.filter((room) => room.availableVacancies > 0).length;
 
   const loadFailed = loadFailure(propertiesQuery, dashboardQuery);
   if (loadFailed) {
@@ -217,11 +190,6 @@ export default function OwnerScreen() {
   return (
     <ScreenScrollView safeAreaEdges={["top", "bottom"]} scrollEnabled={!dragging} surface={colors.surface}>
       <ManageHeader />
-
-      {/* Keep the four-card loading shape without a duplicate property summary. */}
-      {propertiesQuery.isFetching && properties.length === 0 ? (
-        <OwnerManageMetricsSkeleton />
-      ) : null}
 
       {!propertiesQuery.isFetching && properties.length === 0 ? (
         <EmptyState
@@ -241,28 +209,11 @@ export default function OwnerScreen() {
             />
           ) : null}
 
-          {/* The tiles read from the rooms and tenancies queries, not from the
-              properties one that gates the screen — so on a warm property cache
-              they rendered four zeros while their own data was still in flight.
-              Their ghost belongs to THEIR load. */}
-          {selectedProperty && tilesLoading ? <OwnerManageMetricsSkeleton /> : null}
-
-          {selectedProperty && !tilesLoading ? (
-            <>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                {/* "Tenants", in ink (user, 2026-10-04). It was "Tenancies", in green. */}
-                <MetricTile icon={TenanciesTileIcon} iconPlacement="side" label="Tenants" value={tenanciesQuery.isError ? "-" : String(activeTenancies.length)} hint="Active stays" />
-                <MetricTile icon={RoomsTileIcon} iconPlacement="side" label="Rooms" value={String(rooms.length)} hint={`${occupiedRooms} occupied`} />
-              </View>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                {/* The green is here now: rooms to let are the number to act on. "primary" is the tile's green. */}
-                <MetricTile icon={VacancyTileIcon} iconPlacement="side" label="Vacancy" value={String(vacantRooms)} hint="Rooms" tone="primary" />
-                <MetricTile icon={PropertyTileIcon} iconPlacement="side" label="Property" value={selectedProperty.type} hint={selectedProperty.city ?? "Selected"} />
-              </View>
-            </>
-          ) : null}
-
+          {/* No count cards, no "Open workspace" subheading (user, 2026-11-14): the
+              screen is the list, its sort and view right under the header. */}
           <SectionWithDropdown<WorkspaceSortMode>
+            // The sort and view pills on their own line under the header, at the right (user, 2026-11-14).
+            header={(controls) => <View style={{ alignItems: "flex-end", marginBottom: -spacing.xs, marginTop: -spacing.lg }}>{controls}</View>}
             beforeFilter={!grid ? <WorkspaceViewToggle disabled={arranging} onChange={workspaceSort.setView} value={workspaceSort.view} /> : undefined}
             icon={ArrowUpDown}
             onChange={chooseSort}
@@ -279,11 +230,16 @@ export default function OwnerScreen() {
             <View style={{ gap: spacing.xl }}>
               {categories.map((category) => (
                 <View key={category.key} style={{ gap: spacing.sm }}>
-                  <Text accessibilityRole="header" style={[type.label, { color: colors.muted }]}>{category.title}</Text>
+                  {grid ? <Text accessibilityRole="header" style={[type.label, { color: colors.muted }]}>{category.title}</Text> : null}
                   {grid ? (
                     <WorkspaceServiceGrid modules={category.modules} renderItem={(module) => renderServiceCard(module)} />
                   ) : (
                     <View style={{ backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, paddingHorizontal: spacing.xs, paddingVertical: spacing.xxs, ...softShadow(colors.shadow, 3, 10, 0.7) }}>
+                      {/* The category names its card, a line under it (user, 2026-11-14). */}
+                      <Text accessibilityRole="header" style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 15.5, paddingBottom: spacing.sm, paddingHorizontal: spacing.sm, paddingTop: spacing.sm }}>
+                        {category.title}
+                      </Text>
+                      <View style={{ backgroundColor: colors.border, height: 1, marginHorizontal: -spacing.xs }} />
                       {arranging ? (
                         <ReorderableList
                           gap={0}
@@ -318,12 +274,13 @@ export default function OwnerScreen() {
   );
 }
 
-function ManageHeader() {
+function ManageHeader({ trailing }: { trailing?: ReactNode }) {
   const activeAccount = useAppSelector((state) => state.account.activeAccount);
 
   return (
     <ScreenHeader
       italicTail="Workspace"
+      trailing={trailing}
       subtitle="Find all services for your property in one place. Each service opens its own focused workspace."
       title={activeAccount === "manager" ? "Manager" : "Owner"}
     />
@@ -345,7 +302,8 @@ function WorkspaceViewToggle({ disabled = false, onChange, value }: {
       disabled={disabled}
       hitSlop={6}
       onPress={() => onChange(value === "list" ? "grid" : "list")}
-      style={{ alignItems: "center", backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderRadius: 999, borderWidth: 1, height: 32, justifyContent: "center", opacity: disabled ? 0.45 : 1, width: 32 }}
+      // White with the search bar's edge, no grey fill (user, 2026-11-14).
+      style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: `${colors.ink}40`, borderRadius: 999, borderWidth: 1, height: 32, justifyContent: "center", opacity: disabled ? 0.45 : 1, width: 32 }}
     >
       <Icon color={colors.ink} size={16} strokeWidth={2.1} />
     </AnimatedPressable>
@@ -369,6 +327,7 @@ function WorkspaceServiceGrid({ modules, renderItem }: { modules: OwnerModule[];
 }
 
 function ServiceCard({
+  art: Art,
   artwork,
   artworkVariant,
   description,
@@ -383,6 +342,7 @@ function ServiceCard({
   pinned,
   title,
 }: {
+  art?: ModuleArt;
   artwork?: ImageSourcePropType;
   artworkVariant?: "compact" | "large" | "wide";
   /** One short line under the title, kept narrow (user, 2026-10-28). */
@@ -440,15 +400,19 @@ function ServiceCard({
           <View
             style={{
               alignItems: "center",
-              backgroundColor: artwork ? "transparent" : colors.primarySoft,
+              backgroundColor: Art || artwork ? "transparent" : colors.primarySoft,
               borderRadius: 999,
               justifyContent: "center",
-              overflow: "hidden",
+              // Only a picture is clipped round: a vector drawing inside a clipping
+              // round view drew nothing on Android (user, 2026-11-14).
+              overflow: Art ? "visible" : "hidden",
               flexShrink: 0,
               ...artworkFrame,
             }}
           >
-            {artwork ? (
+            {Art ? (
+              <Art size={artworkImage.height} />
+            ) : artwork ? (
               <Image
                 accessibilityIgnoresInvertColors
                 accessible={false}

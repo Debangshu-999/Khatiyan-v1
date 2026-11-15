@@ -3,7 +3,7 @@ import { Text, View } from "react-native";
 import { Timer, type LucideProps } from "lucide-react-native";
 
 import { cardText } from "@/components/card-name-row";
-import { GhostPill } from "@/components/skeletons/boundary";
+import { GhostPill, useIsSkeleton } from "@/components/skeletons/boundary";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
@@ -31,7 +31,9 @@ export function TagPill({
   label: string;
 }) {
   const { colors, fonts } = useTheme();
+  // Inside a skeleton the tag is a grey bar about its own width, never the sample's words.
   return (
+    <GhostPill height={18} width={Math.min(150, 28 + label.length * 5.5)}>
     <View
       style={{
         alignItems: "center",
@@ -50,6 +52,7 @@ export function TagPill({
       ) : null}
       <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, fontSize: 10.5 }}>{label}</Text>
     </View>
+    </GhostPill>
   );
 }
 
@@ -287,6 +290,9 @@ export function StateChip({
 }) {
   const { fonts } = useTheme();
   const palette = useTonePalette(neutralBackground)[tone];
+  const ghost = useIsSkeleton();
+  // Inside a skeleton a grey bar about its own size, never the sample's words (user, 2026-11-15).
+  if (ghost) return <GhostPill height={stretch ? 28 : 20} width={Math.min(140, 30 + label.length * 6)}><View /></GhostPill>;
   return (
     <View
       style={{

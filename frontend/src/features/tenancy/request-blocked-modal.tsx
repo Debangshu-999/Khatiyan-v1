@@ -159,7 +159,6 @@ export function RequestBlockedModal({
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
             <StatusIcon size={40} tone="warning" />
             <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-              <Text style={[type.eyebrow, { color: colors.kicker }]}>REQUEST BLOCKED</Text>
               <ModalTitle
                 style={{
                   color: colors.ink,

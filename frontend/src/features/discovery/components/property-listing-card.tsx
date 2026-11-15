@@ -1,4 +1,5 @@
 import { Image, Linking, Text, View } from "react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 import {
   Bath,
   BedDouble,
@@ -9,7 +10,6 @@ import {
   Eye,
   GraduationCap,
   ImageOff,
-  MapPin,
   Navigation,
   Utensils,
   Zap,
@@ -18,16 +18,19 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { AiNoteCard } from "@/components/ai-style";
+import { AnimatedPressable } from "@/components/animated-pressable";
 import { Card } from "@/components/card";
 import { IconButton } from "@/components/icon-button";
 import { MarqueeText } from "@/components/marquee-text";
 import type { PropertyDiscoveryCard } from "@/store/services/discovery-api";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 import { computeFilterMatches, type FilterMatch, type MatchStrength } from "../discovery-match";
 import type { PropertyFilterState } from "./property-filter-modal";
 import { formatMoneyPaise } from "../discovery-format";
+import { SavedBookmarkIcon } from "./saved-bookmark-icon";
 import { FitText } from "@/components/fit-text";
 
 type PropertyListingCardProps = {
@@ -55,6 +58,8 @@ type PropertyListingCardProps = {
   /** The AI's line for this card. */
   reason?: string | null;
   onView: () => void;
+  /** Saved properties (user, 2026-11-14): a filled bookmark on the card that removes it from saved. */
+  onRemove?: () => void;
 };
 
 export function PropertyListingCard({
@@ -64,6 +69,7 @@ export function PropertyListingCard({
   nearest,
   reason,
   property,
+  onRemove,
   onView,
 }: PropertyListingCardProps) {
   const { colors, fonts } = useTheme();
@@ -110,7 +116,8 @@ export function PropertyListingCard({
   } as const;
 
   return (
-    <Card style={{ gap: 0, padding: spacing.md }}>
+    // The shadow directly: a Card on a tab screen keeps one only a browser draws.
+    <Card style={{ gap: 0, padding: spacing.md, ...cardShadow(colors.shadow) }}>
       <View style={{ flexDirection: "row", gap: spacing.md }}>
         {imageUri ? (
           <Image
@@ -171,7 +178,11 @@ export function PropertyListingCard({
             {property.name}
           </FitText>
           <View style={{ alignItems: "flex-start", flexDirection: "row", gap: 5 }}>
-            <MapPin color={colors.muted} size={14} strokeWidth={2.2} style={{ marginTop: 1 }} />
+            {/* Drawn here, as a lucide fill would paint the pin's centre red too. */}
+            <Svg height={15} style={{ marginTop: 1 }} viewBox="0 0 24 24" width={15}>
+              <Path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" fill={colors.danger} stroke={colors.danger} strokeWidth={2} />
+              <Circle cx={12} cy={10} fill="#FFFFFF" r={3} />
+            </Svg>
             <FitText
               numberOfLines={2}
               style={{ color: colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 11.5, lineHeight: 15 }}
@@ -287,6 +298,18 @@ export function PropertyListingCard({
         <Text style={{ color: property.dailyRentingAvailable ? colors.inkSoft : colors.muted, flex: 1, fontFamily: fonts.sansMedium, fontSize: 13.5 }}>
           {property.dailyRentingAvailable ? "Daily renting available" : "Daily renting unavailable"}
         </Text>
+        {/* At the right of this row, no border (user, 2026-11-14). */}
+        {onRemove ? (
+          <AnimatedPressable
+            accessibilityLabel={`Remove ${property.name} from saved`}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={onRemove}
+            style={{ alignItems: "center", height: 28, justifyContent: "center", width: 28 }}
+          >
+            <SavedBookmarkIcon size={22} />
+          </AnimatedPressable>
+        ) : null}
       </View>
 
       {reason ? (

@@ -8,7 +8,7 @@ import { SelectField } from "@/components/select-field";
 import { GhostText, SkeletonBoundary } from "@/components/skeletons/boundary";
 import { useGetMetroSystemsQuery, type MetroLine, type MetroStation } from "@/store/services/metro-api";
 import { radii, spacing } from "@/theme/spacing";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 
 import {
@@ -221,7 +221,7 @@ function LineRow({ line, onPress, ticked }: { line: MetroLine; onPress: () => vo
         flexDirection: "row",
         gap: spacing.md,
         padding: spacing.md,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ backgroundColor: line.colour, borderRadius: 999, height: 40, width: 6 }} />

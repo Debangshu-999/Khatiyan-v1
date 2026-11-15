@@ -27,6 +27,7 @@ import { contentFitsWithoutScroll, getHeaderScrollMinHeight } from "@/components
 import { ScreenHeader, ScreenHeaderScrollContext } from "@/components/screen-header";
 import { API_TAGS, api } from "@/store/api";
 import { useAppDispatch } from "@/store/hooks";
+import { announcePullRefreshed, untilQueriesSettle } from "@/lib/pull-refresh";
 import { fetchCurrentLocation } from "@/store/slices/location-slice";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
@@ -220,9 +221,27 @@ export function ScreenScrollView({
         // locked (user, 2026-10-29). The content's own height has to agree.
         && (Platform.OS !== "web" || contentFits)
       : contentFits);
+  // RN-web reports the content's size through a ResizeObserver on its content box,
+  // which padding is not part of. A padding that grows later, a wizard's measured
+  // header, went unreported: the page read as fitting and locked (user, 2026-11-07:
+  // Register a property). Re-measured whenever the padding changes.
+  const callerPaddingTop = typeof flattenedContentStyle?.paddingTop === "number" ? flattenedContentStyle.paddingTop : undefined;
+  useEffect(() => {
+    if (Platform.OS !== "web" || !(scrollOnlyWhenNeeded || fitWithoutScroll) || typeof requestAnimationFrame !== "function") return;
+    const frame = requestAnimationFrame(() => {
+      const node = (scrollRef.current as unknown as { getInnerViewNode?: () => { getBoundingClientRect?: () => { height: number } } | null } | null)
+        ?.getInnerViewNode?.();
+      const height = node?.getBoundingClientRect?.().height;
+      if (height) setContentHeight(height);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [callerPaddingBottom, callerPaddingTop, fitWithoutScroll, keyboardInset, scrollOnlyWhenNeeded]);
+  // A page that fits still takes the pull-to-refresh gesture on a phone (user, 2026-11-07):
+  // a locked ScrollView blocks Android's refresh. It has no room to move, so it stays still.
+  const pullable = refreshable && Platform.OS !== "web";
   const scrollEnabled = fitWithoutScroll
-    ? !fits
-    : !scrollOnlyWhenNeeded || viewportHeight === 0 || contentHeight > viewportHeight + 1;
+    ? !fits || pullable
+    : !scrollOnlyWhenNeeded || viewportHeight === 0 || contentHeight > viewportHeight + 1 || pullable;
   // Locked while scrolled down, the page would stay where the thumb left it. It goes back to its top.
   useEffect(() => {
     if (fits) {
@@ -255,7 +274,16 @@ export function ScreenScrollView({
         // queries mounted right now refetch; the rest are just marked stale.
         dispatch(api.util.invalidateTags([...API_TAGS]));
       }
-      await new Promise((resolve) => setTimeout(resolve, 650));
+      // Held until the refetched data is in, so the spinner means what it says, and then
+      // screens holding a form copy reload it (user, 2026-11-07).
+      await untilQueriesSettle(() => {
+        // Read through a thunk: the store as it is now, with no extra import.
+        const state = dispatch(((_: unknown, getState: () => unknown) => getState()) as never) as unknown as
+          { api?: { queries?: Record<string, { status?: string } | undefined> } } | undefined;
+        const queries = state?.api?.queries ?? {};
+        return Object.values(queries).some((query) => query?.status === "pending");
+      });
+      announcePullRefreshed();
     } finally {
       setRefreshing(false);
     }

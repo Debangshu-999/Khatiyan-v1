@@ -9,6 +9,7 @@ import { AlertModal } from "@/components/alert-modal";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BookingTokenAmountIcon } from "@/components/booking-vector-icons";
 import { Card } from "@/components/card";
+import { ConfirmedBookingTicket } from "@/features/booking/confirmed-booking-ticket";
 import { EmptyState } from "@/components/empty-state";
 import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 import { PinnedFooter, PINNED_FOOTER_CLEARANCE } from "@/components/pinned-footer";
@@ -169,7 +170,7 @@ function BookingDetails({ booking }: { booking: BookingRequest; owner: boolean }
     {/* The handler's name sits under the reference only when there is a handler, as on the tenant's screen.
         With none, the chip already says "Awaiting handler": a second line saying nobody handles it repeated
         that, pressed against the card's bottom edge (user, 2026-10-11). A named handler gets room under it. */}
-    <Card style={{ gap: spacing.xs, padding: spacing.md, paddingBottom: booking.handlerName ? spacing.sm : spacing.xxs }}>
+    {booking.status === "CONFIRMED" ? <ConfirmedBookingTicket referenceCode={booking.referenceCode} roomNumber={booking.roomNumber} moveInDate={booking.moveInDate} handlerName={booking.handlerName} /> : <Card style={{ gap: spacing.xs, padding: spacing.md, paddingBottom: booking.handlerName ? spacing.sm : spacing.xxs }}>
       <CardNameRow rowStyle={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
           <Text style={labelStyle}>Ref</Text>
@@ -178,7 +179,7 @@ function BookingDetails({ booking }: { booking: BookingRequest; owner: boolean }
         <CardStatus><OwnerBookingStatus status={booking.status} /></CardStatus>
       </CardNameRow>
       {booking.handlerName ? <Text style={[type.description, { color: colors.muted }]}>Handled by {booking.handlerName}</Text> : null}
-    </Card>
+    </Card>}
     {booking.status === "AWAITING_TENANT" ? <NoticeBar title={booking.currentOfferNegotiable ? "The property has made an offer" : "This is the property's final price"} message={booking.currentOfferNegotiable ? "The tenant can accept, counter or withdraw." : "The tenant can accept this rent or withdraw. This offer cannot be countered."} tone="info" /> : null}
     {booking.agreedAt && !booking.tenancyId ? <NoticeBar title={booking.status === "TOKEN_RECEIVED" ? "Token received" : booking.status === "CONFIRMED" ? "Booking confirmed" : "Agreed terms are frozen"} message={booking.status === "TOKEN_RECEIVED" ? "The token payment has been verified. Review the agreed terms and confirm the booking below." : "The agreed rent, deposit, room and term are fixed. The stay is created when the tenant arrives."} tone={booking.status === "CONFIRMED" || booking.status === "TOKEN_RECEIVED" ? "success" : "info"} /> : null}
 

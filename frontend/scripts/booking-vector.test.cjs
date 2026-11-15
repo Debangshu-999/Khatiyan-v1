@@ -24,6 +24,8 @@ vm.runInNewContext(outputText, {
     if (name === "react/jsx-runtime") return require(name);
     if (name === "react-native-svg") return svg;
     if (name === "@/theme/use-theme") return { useTheme: () => ({ colors: { primary } }) };
+    // The Damages tile draws the tenant damage icon with a spanner (user, 2026-11-14).
+    if (name === "@/components/damage-record-icon") return { DamageRecordIcon: () => null };
     assert.fail(`Unexpected vector dependency: ${name}`);
   },
 });
@@ -112,12 +114,13 @@ test("token amount has its own bounded minted-rupee vector, distinct from the to
   assert.notEqual(xml, drawMetric("BookingTokenDueIcon"));
 });
 
+// Each workspace icon has its own colour now (user, 2026-11-14), not the one theme blue.
 test("bookings is a true, bounded SVG in the same filled family as enquiries and visits", () => {
   for (const name of ["BookingsIcon", "EnquiriesIcon", "PropertyVisitsIcon", "PropertyLeadsIcon"]) {
     const xml = draw(name);
     assert.match(xml, /viewBox="0 0 64 64"/);
     assert.match(xml, /width="64" height="64"/);
-    assert.match(xml, /fill="#3F6ED8"/);
+    assert.match(xml, /fill="#[0-9A-F]{6}"/i);
     assert.match(xml, /#FFFFFF/);
     assert.doesNotMatch(xml, /<image|data:image|<filter|<text/);
   }
@@ -140,12 +143,10 @@ test("Property Leads redraws the approved profile clipboard and magnifier as a b
   }
 });
 
-test("booking artwork scales to glyph size and follows the shared theme", () => {
-  primary = "#7CA3F4";
+test("booking artwork scales to glyph size and keeps its own colour", () => {
   const xml = draw("BookingsIcon", 24);
   assert.match(xml, /width="24" height="24"/);
-  assert.match(xml, /fill="#7CA3F4"/);
-  primary = "#3F6ED8";
+  assert.match(xml, /fill="#2F9E9B"/);
 });
 
 test("Property's Bookings card uses the shared blue artwork at the same size as its workspace neighbours", () => {

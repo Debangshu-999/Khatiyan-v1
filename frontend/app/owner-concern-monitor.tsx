@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
@@ -12,12 +12,17 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricTile } from "@/components/metric-tile";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
+import { SearchField } from "@/components/search-field";
+import { filterByConcernCode } from "@/features/concerns/concern-search";
 import { Section } from "@/components/section";
 import { OwnerConcernQueueSkeleton } from "@/components/skeletons/owner";
 import { ActionButton, humanizeToken } from "@/features/owner/owner-ui";
 import { type ConcernSummary, useListPropertyConcernMonitorQuery } from "@/store/services/concern-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+/** A little more room between a concern empty state's picture and its words (user, 2026-11-14). */
+const CONCERN_EMPTY_GAP = spacing.lg + spacing.xs;
 
 const CONCERN_EMPTY_ILLUSTRATION = require("../assets/empty-states/concern-empty_state.png");
 
@@ -52,6 +57,9 @@ export default function OwnerConcernMonitorScreen() {
   }, [concerns]);
 
   const sortedConcerns = useMemo(() => sortMonitor(concerns), [concerns]);
+  // A search by concern ID above the list (user, 2026-11-14).
+  const [search, setSearch] = useState("");
+  const searchedConcerns = filterByConcernCode(sortedConcerns, search);
 
   function openConcern(concern: ConcernSummary) {
     router.push({
@@ -74,12 +82,13 @@ export default function OwnerConcernMonitorScreen() {
       />
 
       {!propertyId ? (
-        <EmptyState icon={PropertyIcon} title="No property selected" description="Open this screen from a selected owner property." />
+        <EmptyState artworkTextGap={CONCERN_EMPTY_GAP} icon={PropertyIcon} title="No property selected" description="Open this screen from a selected owner property." />
       ) : null}
 
       {propertyId ? (
         <>
-          <Section title="Progress snapshot">
+          {/* No subheadings (user, 2026-11-14): the tiles, then a search over the list. */}
+          <View>
             <View style={{ gap: spacing.sm }}>
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <MetricTile icon={ReviewIcon} iconTone="primary" label="In review" value={String(counts.inReview)} hint="Assigned" tone={counts.inReview > 0 ? "primary" : "default"} />
@@ -90,25 +99,26 @@ export default function OwnerConcernMonitorScreen() {
                 <MetricTile icon={ResolvedIcon} iconTone="success" label="Resolved" value={String(counts.resolvedWindow)} hint="Reopen window" />
               </View>
             </View>
-          </Section>
+          </View>
 
-          <Section title="Monitored concerns">
+          <View style={{ gap: spacing.md }}>
+            <SearchField autoCapitalize="characters" onChangeText={setSearch} placeholder="Search by concern ID" value={search} />
             {monitorQuery.isFetching ? (
               <OwnerConcernQueueSkeleton />
-            ) : sortedConcerns.length > 0 ? (
+            ) : searchedConcerns.length > 0 ? (
               <View style={{ gap: spacing.md }}>
-                {sortedConcerns.map((concern) => (
+                {searchedConcerns.map((concern) => (
                   <MonitorConcernCard concern={concern} key={concern.id} onOpen={() => openConcern(concern)} />
                 ))}
               </View>
             ) : (
-              <EmptyState
+              <EmptyState artworkTextGap={CONCERN_EMPTY_GAP}
                 artwork={CONCERN_EMPTY_ILLUSTRATION}
-                title="No concerns being monitored"
-                description="Assigned active concerns and resolved concerns in the reopen window will appear here."
+                title={search.trim() ? "No matching concerns" : "No concerns being monitored"}
+                description={search.trim() ? "Try another concern ID." : "Assigned active concerns and resolved concerns in the reopen window will appear here."}
               />
             )}
-          </Section>
+          </View>
         </>
       ) : null}
     </ScreenScrollView>

@@ -36,6 +36,18 @@ public interface FoodSubscriptionRepository extends JpaRepository<FoodSubscripti
     Optional<FoodSubscription> findCoveringForTenancy(
             @Param("tenancyId") UUID tenancyId, @Param("date") LocalDate date);
 
+    /**
+     * Every plan version still running on {@code date} or starting after it:
+     * today's plans and tomorrow's changes. Who to tell about a change that
+     * lasts, such as a new weekly menu or new meal times (2026-11-08).
+     */
+    @Query("""
+            SELECT s FROM FoodSubscription s
+            WHERE s.propertyId = :propertyId
+              AND (s.effectiveUntil IS NULL OR s.effectiveUntil > :date)
+            """)
+    List<FoodSubscription> findCurrentOrUpcoming(@Param("propertyId") UUID propertyId, @Param("date") LocalDate date);
+
     /** Versions that start after {@code date}: a change scheduled for tomorrow. */
     List<FoodSubscription> findByTenancyIdAndEffectiveFromAfter(UUID tenancyId, LocalDate date);
 

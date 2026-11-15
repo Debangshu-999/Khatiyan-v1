@@ -19,7 +19,8 @@ const leadCard = read("src/features/lead/lead-card.tsx");
 test("both screens are registered and reached from their own screens", () => {
   assert.match(layout, /name="owner-external-visit"/);
   assert.match(layout, /name="owner-external-booking"/);
-  assert.match(visits, /label="Record external visit"/);
+  // Shortened to Record external on its half-row card (user, 2026-11-14).
+  assert.match(visits, />Record external<\/Text>/);
   assert.match(visits, /"\/owner-external-visit"/);
   assert.match(bookings, /<AddRecordCard icon=\{CalendarPlus\} label="Create external booking"/);
   assert.match(bookings, /"\/owner-external-booking"/);
@@ -105,7 +106,8 @@ test("Today shows one slot at a time, opening on the first left, with Record ext
   // History filters by status, All first and by default.
   assert.match(visits, /useState<VisitHistoryStatus>\("ALL"\)/);
   assert.match(visits, /\{ label: "All", value: "ALL" \},\s+\{ label: "Visited", value: "VISITED" \},\s+\{ label: "No visit", value: "NO_VISIT" \},\s+\{ label: "Cancelled", value: "CANCELLED" \},/);
-  assert.match(read("src/store/services/enquiry-chat-api.ts"), /visits\/history\?page=\$\{page\}&size=12&status=\$\{status\}/);
+  // Sent as params, with the search (user, 2026-11-14).
+  assert.match(read("src/store/services/enquiry-chat-api.ts"), /params: \{ page, size: 12, status, \.\.\.\(search \? \{ search \} : \{\}\) \},\s+url: `\/api\/v1\/properties\/\$\{propertyId\}\/visits\/history`/);
   assert.match(visits, /> - by owner<\/Text>/);
   const stepper = read("src/features/visits/slot-stepper.tsx");
   assert.match(stepper, /label="Previous slot"/);

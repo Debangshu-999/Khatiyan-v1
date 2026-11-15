@@ -1,9 +1,11 @@
 import { ModalTitle } from "@/components/modal-title";
-import { onKeyboardLeaving } from "@/components/keyboard-intent";
+import { SHEET_CLOSE_GAP, SHEET_CLOSE_SIZE, SheetCloseButton } from "@/components/help-modal-header";
+import { holdKeyboardForModal } from "@/components/keyboard-intent";
+import { revealFocusedInput, useKeyboardRoom, useRevealOnKeyboard } from "@/components/use-keyboard-inset";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView as GestureScrollView } from "react-native-gesture-handler";
-import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, View, type DimensionValue, type GestureResponderEvent, type PanResponderGestureState, type ViewStyle } from "react-native";
+import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Text, View, type DimensionValue, type GestureResponderEvent, type PanResponderGestureState, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, X } from "lucide-react-native";
 
@@ -31,6 +33,7 @@ const RAISED_CLOSE_SHADOW = {
 // same motion.
 export function SheetShell({
   animated = true,
+  belowRule,
   belowTitle,
   besideTitle,
   children,
@@ -87,6 +90,12 @@ export function SheetShell({
    * the head of the sheet.
    */
   belowTitle?: ReactNode;
+  /**
+   * Under the title line, still outside the scrolling body, so it stays put
+   * while the list scrolls: a search over a long list (user, 2026-11-08,
+   * the State picker).
+   */
+  belowRule?: ReactNode;
   children: ReactNode;
   /**
    * Raised is a white circle with a shadow, and it is what every sheet built
@@ -140,54 +149,17 @@ export function SheetShell({
   const nativeDriven = runsOwnAnimation && !dismissOnDrag;
 
   /**
-   * The keyboard's height, measured — on Android only.
+   * The room kept for the keyboard, on Android, inside the sheet as bottom padding: the wallet
+   * PIN sheet's way, app wide (user, 2026-11-08). It starts growing when an input takes focus,
+   * so the keyboard rises behind white instead of covering the sheet until Android reports it.
+   * At rest it is the nav bar's inset, which the keyboard covers when up.
    *
-   * <p>`KeyboardAvoidingView behavior="padding"` is broken on Android under
-   * edge-to-edge (mandatory since SDK 53). It infers the keyboard height by
-   * comparing screen height to window height, and edge-to-edge makes the window
-   * span the whole display — so the number is wrong, and on DISMISSAL its padding
-   * does not return to zero. That is the bug where a sheet stays shoved up the
-   * screen after the keyboard closes.
-   *
-   * <p>iOS keeps the avoider, where it works correctly. `ScreenScrollView` solves
-   * the same problem the same way; this is the sheet's copy of it.
+   * <p>`KeyboardAvoidingView behavior="padding"` is broken on Android under edge-to-edge, so
+   * iOS alone keeps the avoider, where it works correctly.
    */
-  const [keyboardInset, setKeyboardInset] = useState(0);
-  // The lift itself, eased rather than set: the sheet slides onto the keyboard
-  // and back down instead of jumping once the keyboard has finished moving
-  // (user, 2026-10-29).
-  const keyboardLift = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (Platform.OS !== "android") {
-      return;
-    }
-
-    const slide = (toValue: number) =>
-      Animated.timing(keyboardLift, { duration: 160, easing: Easing.out(Easing.quad), toValue, useNativeDriver: false }).start();
-    const onShow = Keyboard.addListener("keyboardDidShow", (event) => {
-      // From the keyboard's own top edge to the bottom of the screen: this
-      // sheet's window covers the whole screen, nav bar included, so that is
-      // exactly how far it has to rise. Subtracting the safe-area inset from the
-      // keyboard's height was right on gesture navigation only, and left the
-      // sheet's bottom on the keyboard with three-button navigation (2026-10-29).
-      const lift = Math.max(0, Dimensions.get("screen").height - event.endCoordinates.screenY);
-      setKeyboardInset(lift);
-      slide(lift);
-    });
-    const drop = () => {
-      setKeyboardInset(0);
-      slide(0);
-    };
-    const onHide = Keyboard.addListener("keyboardDidHide", drop);
-    // Sooner than keyboardDidHide: the input losing focus is when the keyboard starts to close.
-    const offLeaving = onKeyboardLeaving(drop);
-
-    return () => {
-      onShow.remove();
-      onHide.remove();
-      offLeaving();
-    };
-  }, [keyboardLift]);
+  const { room: keyboardRoom } = useKeyboardRoom(insets.bottom);
+  // The page behind leaves the keyboard alone while this sheet has it (user, 2026-11-02).
+  useEffect(() => holdKeyboardForModal(), []);
   // Far enough to be off-screen from any starting point, and the distance a
   // dismissing drag travels.
   const travel = Dimensions.get("window").height;
@@ -214,7 +186,9 @@ export function SheetShell({
    */
   const maxSheetHeight: DimensionValue =
     Platform.OS === "android"
-      ? Math.min(travel * 0.92, Math.max(240, travel - keyboardInset - insets.top - spacing.md))
+      // Clear of the status bar and camera cutout, with room above for the cross (user, 2026-11-07).
+      // The keyboard's room is inside the sheet, so it takes from the body, not from this.
+      ? Math.min(travel * 0.92, Math.max(240, travel - insets.top - SHEET_CLOSE_SIZE - SHEET_CLOSE_GAP - spacing.lg))
       : "92%";
   // How far down the sheet is sitting: 0 open, travel gone. Drives the slide and
   // the backdrop together, so a half-dragged sheet has a half-lit page behind
@@ -298,6 +272,8 @@ export function SheetShell({
    * take.
    */
   const scrollRef = useRef<React.ComponentRef<typeof GestureScrollView> | null>(null);
+  // With the keyboard up the list scrolls to the focused input (user, 2026-11-08).
+  useRevealOnKeyboard(() => revealFocusedInput(scrollRef.current as never, scrollTop.current));
   const historyViewportHeight = useRef(0);
   const historyContentHeight = useRef(0);
 
@@ -432,7 +408,11 @@ export function SheetShell({
     ? SHEET_HEIGHTS[size === "content" ? contentMaxSize : size]
     : Math.min(TALLEST_SHEET, SHEET_HEIGHTS[size] + FOOTER_EXTRA_HEIGHT);
   const untitled = title === "" && !onBack && !belowTitle;
-  const closeInside = showClose;
+  // Every sheet fits its content up to the screen's limit (user, 2026-11-07): a fixed height
+  // left most sheets half empty. "picker" stays the height it was chosen at.
+  const fixedHeight = size === "picker";
+  // Every sheet's × is now the dark one floating above it, so nothing closes from inside.
+  const closeInside = false;
   const closeButton = (
     <AnimatedPressable
       accessibilityLabel="Close"
@@ -487,6 +467,12 @@ export function SheetShell({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1, justifyContent: "flex-end" }}
       >
+        {/* The ×, over the sheet's top edge and riding with it. A sibling in the
+            column rather than drawn outside the sheet: Android drops touches on
+            anything outside its parent's bounds (user, 2026-11-07). */}
+        <Animated.View style={{ transform: [{ translateY: offset }] }}>
+          <SheetCloseButton onClose={dismiss} />
+        </Animated.View>
         <Animated.View
           style={{
             transform: [{ translateY: offset }],
@@ -495,20 +481,17 @@ export function SheetShell({
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             borderWidth: 1,
-            // Lifted clear of the keyboard rather than padded behind it, so the
-            // sheet's rounded bottom edge stays visible sitting on top of it.
-            marginBottom: Platform.OS === "android" ? keyboardLift : 0,
             // Fixed by what the sheet is for, never taller than the room left
             // with the keyboard up (user, 2026-10-29).
-            height: size === "content" ? undefined : typeof maxSheetHeight === "number"
+            height: !fixedHeight ? undefined : typeof maxSheetHeight === "number"
               ? Math.min(maxSheetHeight, travel * sheetShare)
               : `${Math.round(sheetShare * 100)}%`,
-            maxHeight: size === "content"
-              ? typeof maxSheetHeight === "number" ? Math.min(maxSheetHeight, travel * SHEET_HEIGHTS[contentMaxSize]) : `${Math.round(SHEET_HEIGHTS[contentMaxSize] * 100)}%`
-              : maxSheetHeight,
-            // The safe-area inset is the nav bar's. With the keyboard up the
-            // keyboard covers it, so applying both leaves a dead strip.
-            paddingBottom: (keyboardInset > 0 ? 0 : insets.bottom) + spacing.md,
+            // Up to the screen's own limit (below the cutout, room for the cross), the
+            // body scrolling past that (user, 2026-11-07). A size no longer caps it.
+            maxHeight: maxSheetHeight,
+            // The nav bar's inset at rest, the keyboard's height with it up, which covers
+            // that inset, so applying both would leave a dead strip.
+            paddingBottom: Animated.add(keyboardRoom, spacing.md),
             paddingHorizontal: spacing.lg,
             paddingTop: spacing.sm,
           }}
@@ -523,36 +506,51 @@ export function SheetShell({
             </View>
             {untitled ? null : <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", marginBottom: belowTitle ? spacing.xs : spacing.md }}>
               {onBack ? (
-                <AnimatedPressable
-                  accessibilityLabel="Back"
-                  accessibilityRole="button"
-                  hitSlop={8}
-                  onPress={onBack}
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: colors.surfaceSunken,
-                    borderRadius: 999,
-                    height: 32,
-                    justifyContent: "center",
-                    width: 32,
-                  }}
-                >
-                  <ArrowLeft color={colors.ink} size={16} strokeWidth={2.4} />
-                </AnimatedPressable>
-              ) : null}
-              <ModalTitle style={{ color: colors.ink, flex: besideTitle ? undefined : 1, flexShrink: 1, fontFamily: fonts.display, fontSize: 22, }} >
-                {title}
-              </ModalTitle>
+                <View style={{ alignItems: "center", flex: 1, flexDirection: "row", gap: spacing.sm, minWidth: 0 }}>
+                  <AnimatedPressable
+                    accessibilityLabel="Back"
+                    accessibilityRole="button"
+                    hitSlop={8}
+                    onPress={onBack}
+                    style={{
+                      alignItems: "center",
+                      backgroundColor: colors.surfaceSunken,
+                      borderRadius: 999,
+                      height: 32,
+                      justifyContent: "center",
+                      width: 32,
+                    }}
+                  >
+                    <ArrowLeft color={colors.ink} size={16} strokeWidth={2.4} />
+                  </AnimatedPressable>
+                  <ModalTitle fullWidth style={{ color: colors.ink, flex: 1, flexShrink: 1, fontFamily: fonts.display, fontSize: 22 }}>
+                    {title}
+                  </ModalTitle>
+                </View>
+              ) : (
+                besideTitle ? (
+                  // Sized to its own text, so what sits beside it follows the words (2026-11-15: the roll
+                  // call sheet's date). ModalTitle's fixed 80% width pushed it to the far edge.
+                  <Text accessibilityRole="header" numberOfLines={1} style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 22 }}>
+                    {title}
+                  </Text>
+                ) : (
+                  <ModalTitle style={{ color: colors.ink, flex: 1, flexShrink: 1, fontFamily: fonts.display, fontSize: 22, }} >
+                    {title}
+                  </ModalTitle>
+                )
+              )}
               {headerRight}
               {besideTitle ? <View style={{ flex: 1, flexDirection: "row", paddingLeft: spacing.xs }}>{besideTitle}</View> : null}
               {closeInside ? closeButton : null}
             </View>}
             {belowTitle ? <View style={{ marginBottom: spacing.md }}>{belowTitle}</View> : null}
             {untitled ? null : <View style={{ marginBottom: spacing.md }}><ModalTitleRule flush /></View>}
+            {belowRule ? <View style={{ marginBottom: spacing.sm }}>{belowRule}</View> : null}
           </View>
           <GestureDetector gesture={bodyGesture}>
             <GestureScrollView
-              style={[size === "content" ? { flexGrow: 0, flexShrink: 1 } : { flex: 1 }, fullBleed ? { marginHorizontal: -spacing.lg } : null]}
+              style={[!fixedHeight ? { flexGrow: 0, flexShrink: 1 } : { flex: 1 }, fullBleed ? { marginHorizontal: -spacing.lg } : null]}
               ref={scrollRef}
               disallowInterruption={false}
               // No overscroll. Left on, the ScrollView swallows the first part

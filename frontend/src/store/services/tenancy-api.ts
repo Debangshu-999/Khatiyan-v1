@@ -256,6 +256,9 @@ export type TenancyExitRequest = {
   tenantName: string | null;
   propertyId: string;
   roomId: string;
+  /** On the tenant's own list only (2026-11-11): the property and room it was raised from. */
+  propertyName?: string | null;
+  roomNumber?: string | null;
   type: TenancyExitRequestType;
   status: TenancyExitRequestStatus;
   requestedCheckoutDate: string;
@@ -318,6 +321,11 @@ export type ExitCheckoutWindow = {
   fixed: boolean;
   /** True when this window belongs to a re-raise of a lapsed request. */
   reRaise: boolean;
+  /** The bill's request window (2026-11-11): its first day to its due date. */
+  requestWindowOpensOn?: string | null;
+  requestWindowClosesOn?: string | null;
+  /** The next bill's first day, when the window opens again. */
+  nextRequestWindowOpensOn?: string | null;
 };
 
 export type CreateExitRequestPayload = {
@@ -379,6 +387,10 @@ export type TenancyRoomChangeRequest = {
   approvalRevertAllowed: boolean;
   /** The outgoing bed is already reserved for an incoming monthly tenant. */
   outgoingBedBooked: boolean;
+  /** On the tenant's own list only (2026-11-11): the property, and the rooms from and to. */
+  propertyName?: string | null;
+  currentRoomNumber?: string | null;
+  targetRoomNumber?: string | null;
   createdAt: string;
   updatedAt: string;
   /**
@@ -480,9 +492,18 @@ export type TenancyOnboardingResult = {
 };
 
 /** The room's condition at move-in, as filled in at onboarding (2026-10-29). */
+/** How an item is at move-in (user, 2026-11-07): set fresh for every tenancy, separate from damage levels. */
+export type ItemCondition = "WORKING" | "DAMAGED" | "BROKEN";
+
+export const ITEM_CONDITIONS: { label: string; value: ItemCondition }[] = [
+  { label: "Working", value: "WORKING" },
+  { label: "Damaged", value: "DAMAGED" },
+  { label: "Broken", value: "BROKEN" },
+];
+
 export type MoveInChecklistInput = {
   /** Each item with 1 to 3 photos of it (2026-10-29). */
-  items: { name: string; damageLevel: DamageLevel; note: string | null; custom: boolean; photoUrls: string[]; section: MoveInSection }[];
+  items: { name: string; damageLevel?: DamageLevel | null; condition: ItemCondition; note: string | null; custom: boolean; photoUrls: string[]; section: MoveInSection }[];
   /** At least 1 (2026-10-29). */
   keysHandedOver: number | null;
 };
@@ -492,7 +513,7 @@ export type MoveInSection = "ROOM" | "AMENITY" | "BATHROOM";
 
 export type MoveInChecklist = {
   tenancyId: string;
-  items: { name: string; damageLevel: DamageLevel; note: string | null; custom: boolean; photoUrls: string[]; section: MoveInSection }[];
+  items: { name: string; damageLevel?: DamageLevel | null; condition: ItemCondition; note: string | null; custom: boolean; photoUrls: string[]; section: MoveInSection }[];
   keysHandedOver: number | null;
   recordedAt: string;
   /** 48 hours after it was recorded. */
@@ -506,8 +527,28 @@ export type MoveInChecklist = {
   levels: { level: DamageLevel; description: string }[];
 };
 
+/** Someone sharing the tenant's room (2026-11-11): a first name and initial, and since when. */
+export type Roommate = { tenancyId: string; name: string; since: string };
+
+/** One item in the tenant's own room and the damage level it is at (2026-11-11). */
+export type MyRoomItem = {
+  itemName: string;
+  section: MoveInSection | null;
+  level: DamageLevel | null;
+  photoUrls: string[];
+  updatedAt: string;
+};
+
 export const tenancyApi = api.injectEndpoints({
   endpoints: (builder) => ({
+    listMyRoommates: builder.query<Roommate[], void>({
+      query: () => "/api/v1/tenancies/me/roommates",
+      providesTags: ["Tenancy"],
+    }),
+    listMyRoomItems: builder.query<MyRoomItem[], void>({
+      query: () => "/api/v1/tenancies/me/room-items",
+      providesTags: ["Tenancy"],
+    }),
     // The move-in checklist (2026-10-29): read by the tenant and management, answered by the tenant.
     getMoveInChecklist: builder.query<MoveInChecklist | null, string>({
       query: (tenancyId) => `/api/v1/tenancies/${tenancyId}/move-in-checklist`,
@@ -768,6 +809,8 @@ export const {
   useWithdrawApprovedExitRequestMutation,
   useCreateRoomChangeRequestMutation,
   useGetMyActiveTenancyQuery,
+  useListMyRoomItemsQuery,
+  useListMyRoommatesQuery,
   useLazyLookupTenantQuery,
   useListMyActivePropertyRoomsQuery,
   useListMyExitRequestsQuery,

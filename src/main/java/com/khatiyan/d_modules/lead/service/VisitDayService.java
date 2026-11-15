@@ -179,6 +179,16 @@ public class VisitDayService {
     @Transactional(readOnly = true)
     public PageResponse<VisitCardResponse> propertyHistory(
             UUID actorUserId, UUID propertyId, int page, int size, String status) {
+        return propertyHistory(actorUserId, propertyId, page, size, status, null);
+    }
+
+    /**
+     * The history narrowed by status and searched (user, 2026-11-14): part of the
+     * visit ID or of the visitor's name. Null or blank for every record.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<VisitCardResponse> propertyHistory(
+            UUID actorUserId, UUID propertyId, int page, int size, String status, String search) {
         String filter = status == null || status.isBlank() ? "ALL" : status.strip().toUpperCase(java.util.Locale.ROOT);
         if (!HISTORY_FILTERS.contains(filter)) {
             throw new ValidationException("Pick All, Visited, No visit or Cancelled.");
@@ -186,7 +196,7 @@ public class VisitDayService {
         propertyModule.ensureCanManageProperty(actorUserId, propertyId);
         PropertyResponse property = propertyModule.getActiveProperty(propertyId);
         LocalDate today = now().toLocalDate();
-        Page<Visit> found = visitRepository.findPropertyHistory(propertyId, today, filter, historyPage(page, size));
+        Page<Visit> found = visitRepository.findPropertyHistory(propertyId, today, filter, likeOf(search), historyPage(page, size));
         Map<UUID, EnquirySnapshot> enquiries = enquiryModule.findSnapshots(found.getContent().stream()
                 .map(Visit::getEnquiryId).filter(java.util.Objects::nonNull).collect(Collectors.toSet()));
         Set<UUID> people = peopleOn(found.getContent(), enquiries);
@@ -617,6 +627,15 @@ public class VisitDayService {
     }
 
     /** The names of people who walked in, read once for the visits on screen (2026-10-19). */
+    /** A lower-case LIKE pattern for a search, or empty for none; % and _ are taken literally out. */
+    static String likeOf(String search) {
+        if (search == null || search.isBlank()) {
+            return "";
+        }
+        String bare = search.strip().toLowerCase(java.util.Locale.ROOT).replace("%", "").replace("_", "").strip();
+        return bare.isEmpty() ? "" : "%" + bare + "%";
+    }
+
     private Map<UUID, String> externalNames(List<Visit> visits) {
         List<UUID> ids = visits.stream().map(Visit::getExternalProspectId).filter(java.util.Objects::nonNull)
                 .distinct().toList();

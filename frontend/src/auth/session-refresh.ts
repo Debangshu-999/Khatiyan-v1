@@ -29,6 +29,16 @@ function tokenExpiryMs(token: string) {
   }
 }
 
+/** The error code in a refusal's body, or null when there is none. */
+async function refusalCode(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.clone().json()) as { code?: unknown };
+    return typeof body.code === "string" ? body.code : null;
+  } catch {
+    return null;
+  }
+}
+
 async function askForNewTokens(store: SessionStore): Promise<string | null> {
   const { appConfig, auth } = store.getState() as RootState;
   const presented = auth.refreshToken;
@@ -64,7 +74,10 @@ async function askForNewTokens(store: SessionStore): Promise<string | null> {
     return now.accessToken;
   }
 
-  if (response.status === 400 || response.status === 401 || response.status === 403) {
+  // Signed out ONLY when the server says this token is refused (2026-11-07). Any 401 used
+  // to do it, and a backend failing while it restarted answered 401 from its error page,
+  // signing a phone out with a perfectly good session.
+  if (response.status === 401 && (await refusalCode(response)) === "REFRESH_REFUSED") {
     store.dispatch(sessionExpired() as never);
     await clearStoredSession();
     return null;

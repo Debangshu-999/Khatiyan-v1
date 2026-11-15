@@ -29,9 +29,12 @@ import { useTheme } from "@/theme/use-theme";
 export function PinnedWizardHeader({
   children,
   onHeightChange,
+  tone = "soft",
 }: {
   children: ReactNode;
   onHeightChange: (height: number) => void;
+  /** "deep": a deep blue panel, for Register property (user, 2026-11-08). */
+  tone?: "deep" | "soft";
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -44,7 +47,7 @@ export function PinnedWizardHeader({
         // invisible until something scrolled behind it, so the form appeared to
         // slide under nothing — and the grey that replaced it was four shades
         // off white, which read as an artefact rather than a surface.
-        backgroundColor: colors.primarySoft,
+        backgroundColor: tone === "deep" ? colors.primaryDeep : colors.primarySoft,
         // Rounded at the bottom only. The top edge runs under the status bar,
         // where a curve would show the page through the corner; the bottom is
         // where the panel ends and reads as an object sitting on the form.

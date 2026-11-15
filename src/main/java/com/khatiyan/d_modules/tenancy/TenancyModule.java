@@ -42,6 +42,7 @@ public class TenancyModule {
     private final TenancyRoomChangeRequestService tenancyRoomChangeRequestService;
     private final BookingBedInventory bookingInventory;
     private final com.khatiyan.d_modules.tenancy.service.MoveInChecklistService moveInChecklists;
+    private final com.khatiyan.d_modules.tenancy.service.StayOutService stayOuts;
 
     // TenancyExitRequestService / TenancyRoomChangeRequestService transitively
     // depend on BillingModule, which depends back on TenancyModule
@@ -55,17 +56,38 @@ public class TenancyModule {
         this(tenancyService, tenancyExitRequestService, tenancyRoomChangeRequestService, bookingInventory, null);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public TenancyModule(
             TenancyService tenancyService,
             @Lazy TenancyExitRequestService tenancyExitRequestService,
             @Lazy TenancyRoomChangeRequestService tenancyRoomChangeRequestService, BookingBedInventory bookingInventory,
             com.khatiyan.d_modules.tenancy.service.MoveInChecklistService moveInChecklists) {
+        this(tenancyService, tenancyExitRequestService, tenancyRoomChangeRequestService, bookingInventory,
+                moveInChecklists, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TenancyModule(
+            TenancyService tenancyService,
+            @Lazy TenancyExitRequestService tenancyExitRequestService,
+            @Lazy TenancyRoomChangeRequestService tenancyRoomChangeRequestService, BookingBedInventory bookingInventory,
+            com.khatiyan.d_modules.tenancy.service.MoveInChecklistService moveInChecklists,
+            com.khatiyan.d_modules.tenancy.service.StayOutService stayOuts) {
         this.moveInChecklists = moveInChecklists;
+        this.stayOuts = stayOuts;
         this.tenancyService = tenancyService;
         this.tenancyExitRequestService = tenancyExitRequestService;
         this.tenancyRoomChangeRequestService = tenancyRoomChangeRequestService;
         this.bookingInventory = bookingInventory;
+    }
+
+    /**
+     * The stays at a property that a declared stay out takes off {@code meal}
+     * on {@code date} (user, 2026-11-08). Food leaves them out of the forecast
+     * and the meal roster.
+     */
+    public java.util.Set<UUID> awayTenancyIds(UUID propertyId, LocalDate date,
+            com.khatiyan.d_modules.property.model.MealType meal) {
+        return stayOuts == null ? java.util.Set.of() : stayOuts.awayTenancyIds(propertyId, date, meal);
     }
 
     public List<BookingFutureVacancyResponse> bookingFutureVacancies(UUID propertyId, LocalDate minimum, LocalDate maximum) {

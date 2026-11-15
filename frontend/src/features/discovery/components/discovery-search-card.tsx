@@ -1,4 +1,6 @@
 import { ModalTitleRule } from "@/components/modal-title-rule";
+import { FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -12,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
+import { useKeyboardRoom } from "@/components/use-keyboard-inset";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import {
   ArrowUpRight,
@@ -30,7 +33,8 @@ import { Card } from "@/components/card";
 import { MarqueeText } from "@/components/marquee-text";
 import type { LocationArea, LocationCity } from "@/store/services/discovery-api";
 import type { GeoSuggestion } from "@/store/services/geo-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
+import { SEARCH_BAR_HEIGHT, searchBarFrame } from "@/components/search-field";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -165,7 +169,7 @@ export function DiscoverySearchCard({
 
   return (
     // Direct, not the Card's own: a tab's card shadow is one phones do not draw.
-    <Card style={softShadow(colors.shadow, 4, 12)}>
+    <Card style={cardShadow(colors.shadow)}>
       {aiAvailable ? (
         // The AI's card, as on the meal reviews (user, 2026-11-02): a soft grey card edged in its
         // gradient, on or off. The toggle says which.
@@ -180,7 +184,7 @@ export function DiscoverySearchCard({
         <AiGradient />
         <View
           style={{
-            backgroundColor: colors.surfaceRaised,
+            backgroundColor: colors.surface,
             borderCurve: "continuous",
             borderRadius: 12.5,
             gap: spacing.sm,
@@ -666,7 +670,7 @@ function FilterPickerButton({
       style={{
         backgroundColor: fill,
         borderColor: colors.border,
-        borderRadius: 12,
+        borderRadius: FILTER_CHIP_RADIUS,
         borderWidth: PICKER_BORDER_WIDTH,
         justifyContent: "center",
         minHeight: 58,
@@ -728,6 +732,7 @@ function LocationFilterModal<T>({
   visible: boolean;
 }) {
   const { colors, fonts, type } = useTheme();
+  const { room: keyboardRoom } = useKeyboardRoom();
   const normalizedQuery = query.trim().toLowerCase();
   const filteredItems = normalizedQuery
     ? items.filter((item) => {
@@ -746,14 +751,17 @@ function LocationFilterModal<T>({
           justifyContent: "flex-end",
         }}
       >
-        <View
+        <SheetCloseButton onClose={() => dismiss()} />
+        <Animated.View
           style={{
             backgroundColor: colors.background,
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             gap: spacing.md,
-            maxHeight: "82%",
+            maxHeight: "100%",
             padding: spacing.lg,
+            // Room for the keyboard, inside the sheet, rising with it (user, 2026-11-08).
+            paddingBottom: Animated.add(keyboardRoom, spacing.lg),
           }}
         >
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
@@ -769,20 +777,8 @@ function LocationFilterModal<T>({
           </View>
           <ModalTitleRule />
 
-          <View
-            style={{
-              alignItems: "center",
-              backgroundColor: colors.neutralSoft,
-              borderColor: colors.border,
-              borderRadius: 12,
-              borderWidth: 1,
-              flexDirection: "row",
-              gap: spacing.sm,
-              minHeight: 48,
-              paddingHorizontal: spacing.md,
-            }}
-          >
-            <Search color={colors.muted} size={17} strokeWidth={2.2} />
+          <View style={searchBarFrame(colors)}>
+            <Search color={colors.muted} size={16} strokeWidth={2.2} />
             <AppTextInput
               accessibilityLabel={title}
               autoCapitalize="words"
@@ -794,8 +790,9 @@ function LocationFilterModal<T>({
                 color: colors.ink,
                 flex: 1,
                 fontFamily: fonts.sansMedium,
-                fontSize: 15,
-                minHeight: 46,
+                fontSize: 14,
+                includeFontPadding: false,
+                minHeight: SEARCH_BAR_HEIGHT - 2,
                 paddingVertical: 0,
               }}
               value={query}
@@ -861,7 +858,7 @@ function LocationFilterModal<T>({
               </View>
             ) : null}
           </ScrollView>
-        </View>
+        </Animated.View>
       </View>
       )}
     </BottomSheetModal>

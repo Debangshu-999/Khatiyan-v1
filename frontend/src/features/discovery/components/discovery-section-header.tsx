@@ -15,11 +15,6 @@ export function DiscoverySectionHeader({ eyebrow, subtitle, title }: DiscoverySe
 
   return (
     <View style={{ gap: spacing.xs }}>
-      {eyebrow ? (
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
-          {eyebrow}
-        </Text>
-      ) : null}
       <SectionHeading title={title} />
       {subtitle ? (
         <Text style={[type.description, { color: colors.muted }]}>

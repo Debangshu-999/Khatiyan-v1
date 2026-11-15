@@ -4,7 +4,7 @@ import Svg, { Path } from "react-native-svg";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { useHardwareBack } from "@/components/use-hardware-back";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -104,7 +104,7 @@ export function ForecastChefTip({ anchor, onClose }: { anchor: ChefAnchor; onClo
             flexDirection: "row",
             gap: spacing.sm,
             padding: spacing.md,
-            ...softShadow(colors.shadow, 4, 12),
+            ...cardShadow(colors.shadow),
           }}
         >
           <Image

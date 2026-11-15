@@ -245,10 +245,13 @@ export const enquiryChatApi = api.injectEndpoints({
       providesTags: ["EnquiryChat"],
     }),
 
-    getPropertyVisitHistory: builder.query<Page<VisitCard>, { propertyId: string; page: number; status?: VisitHistoryStatus }>({
-      // Narrowed by status on the server, All when not given (user, 2026-10-19).
-      query: ({ propertyId, page, status = "ALL" }) =>
-        `/api/v1/properties/${propertyId}/visits/history?page=${page}&size=12&status=${status}`,
+    getPropertyVisitHistory: builder.query<Page<VisitCard>, { propertyId: string; page: number; status?: VisitHistoryStatus; search?: string }>({
+      // Narrowed by status on the server, All when not given (user, 2026-10-19), and searched by
+      // visit ID or name there too (user, 2026-11-14), so a match on a later page is found.
+      query: ({ propertyId, page, status = "ALL", search }) => ({
+        params: { page, size: 12, status, ...(search ? { search } : {}) },
+        url: `/api/v1/properties/${propertyId}/visits/history`,
+      }),
       providesTags: ["EnquiryChat"],
     }),
 

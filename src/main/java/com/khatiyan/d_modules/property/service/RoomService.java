@@ -787,6 +787,21 @@ public class RoomService {
         return roomRepository.findLowestActiveRoomRentPaise(propertyId).orElse(null);
     }
 
+    /** Each property's lowest active rent in one read; a property with no active room is absent. */
+    @Transactional(readOnly = true)
+    public java.util.Map<UUID, Long> findLowestActiveRoomRentsPaise(java.util.Collection<UUID> propertyIds) {
+        if (propertyIds == null || propertyIds.isEmpty()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<UUID, Long> rents = new java.util.HashMap<>();
+        for (Object[] row : roomRepository.findLowestActiveRoomRentsPaise(propertyIds)) {
+            if (row[1] != null) {
+                rents.put((UUID) row[0], ((Number) row[1]).longValue());
+            }
+        }
+        return rents;
+    }
+
     /**
      * Answers whether a room can accept another active tenancy.
      */

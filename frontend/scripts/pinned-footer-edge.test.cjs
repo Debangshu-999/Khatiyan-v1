@@ -48,12 +48,13 @@ test("the filter cards have no icon, and a sentence-case label", () => {
 });
 
 test("the search and Listing Results cards draw a shadow phones can see", () => {
-  assert.match(read("src/features/discovery/components/discovery-search-card.tsx"), /<Card style=\{softShadow\(colors\.shadow, 4, 12\)\}>/);
-  assert.match(read("app/(tabs)/discovery.tsx"), /overflow: "hidden", \.\.\.softShadow\(colors\.shadow, 4, 12\)/);
+  assert.match(read("src/features/discovery/components/discovery-search-card.tsx"), /<Card style=\{cardShadow\(colors\.shadow\)\}>/);
+  assert.match(read("app/(tabs)/discovery.tsx"), /overflow: "hidden", \.\.\.cardShadow\(colors\.shadow\)/);
 });
 
 test("filter cards select in faded black, other choice sections keep their fill", () => {
   const section = read("src/components/choice-section.tsx");
-  assert.match(section, /FadedSelection\.Provider value=\{!Icon\}/);
-  assert.match(section, /selectedFill = faded && !isDark \? FADED_BLACK : colors\.inkSoft/);
+  // The property editor asks for black even with no icon, and pale blue for its meals (user, 2026-11-07).
+  assert.match(section, /FadedSelection\.Provider value=\{!Icon && !softSelection\}/);
+  assert.match(section, /selectedFill = soft \? colors\.primarySoft : faded && !isDark \? FADED_BLACK : colors\.inkSoft/);
 });

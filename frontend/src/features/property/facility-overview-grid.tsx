@@ -5,10 +5,11 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { AirVent } from "lucide-react-native";
 
 import { humanizeToken } from "@/features/owner/owner-ui";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
+import { WrapTitle } from "@/components/wrap-title";
 
 const COLLAPSED_FACILITY_ROWS = 3;
 const FACILITIES_PER_ROW = 2;
@@ -163,7 +164,7 @@ function FacilityOverviewCell({ facility, showDivider, card = false }: { facilit
           borderColor: colors.borderStrong,
           borderWidth: 1,
           borderRadius: 12,
-          ...softShadow(colors.shadow, 2, 6),
+          ...cardShadow(colors.shadow),
         } : {}),
         flex: 1,
         flexBasis: 0,
@@ -184,13 +185,10 @@ function FacilityOverviewCell({ facility, showDivider, card = false }: { facilit
         <MaterialCommunityIcons color={card ? "#000000" : colors.muted} name={iconName} size={card ? 30 : 25} style={{ flexShrink: 0 }} />
       )}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <FitText
-          minimumFontScale={0.7}
-          numberOfLines={card ? 1 : 2}
-          style={{ color: colors.text, fontFamily: card ? fonts.sansSemiBold : undefined, fontSize: 15, fontWeight: card ? undefined : "800", lineHeight: 19, width: "100%" }}
-        >
+        {/* The whole name at full size, wrapping (user, 2026-11-07). */}
+        <WrapTitle style={{ color: colors.text, fontFamily: card ? fonts.sansSemiBold : undefined, fontSize: 15, fontWeight: card ? undefined : "800", lineHeight: 19, width: "100%" }}>
           {humanizeToken(facility)}
-        </FitText>
+        </WrapTitle>
         <FitText style={{ color: colors.muted, fontSize: 12, fontWeight: "700", marginTop: 2, width: "100%" }}>
           Available
         </FitText>

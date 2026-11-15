@@ -44,6 +44,8 @@ class DamageRecordServiceTest {
     void seed() {
         fx = new BookingFixtures(jdbc);
         property = fx.property();
+        // Graded by level: these tests are about levels, and a new property starts with them off.
+        jdbc.update("UPDATE property.properties SET damage_levels_enabled = true WHERE id = ?", property);
         owner = fx.ownerAccount(property);
         room = fx.room(property, 3, 3);
         first = fx.stay(property, room, fx.appUser(), "ACTIVE", null);
@@ -200,41 +202,36 @@ class DamageRecordServiceTest {
     }
 
     @Test
-    void aRepairLowersTheRoomLevelReplacesItsPhotosAndMovesToHistory() {
+    void aRepairIsRecordedWithNoLevelAndLeavesTheRoomAlone() {
         DamageRecordResponse record = damage.create(owner, property, one(first, 150_000L));
 
-        damage.repair(owner, property, record.id(), new RepairDamageRecordRequest(DamageLevel.D1, List.of("fixed.jpg"), "Grille straightened"));
+        // Levels are only price tiers now (user, 2026-11-07): a repair asks none and resets nothing.
+        damage.repair(owner, property, record.id(), new RepairDamageRecordRequest(null, List.of("fixed.jpg"), "Grille straightened"));
 
         assertThat(damage.list(owner, property, false)).isEmpty();
         DamageRecordResponse history = damage.list(owner, property, true).get(0);
         assertThat(history.status()).isEqualTo(DamageRecordStatus.REPAIRED);
-        assertThat(history.repairedLevel()).isEqualTo(DamageLevel.D1);
-        var ac = propertyModule.roomConditions(room).get(0);
-        assertThat(ac.level()).isEqualTo(DamageLevel.D1);
-        assertThat(ac.photoUrls()).containsExactly("fixed.jpg");
-        // A repair must lower the level.
-        DamageRecordResponse again = damage.create(owner, property, one(first, 10_000L));
-        assertThatThrownBy(() -> damage.repair(owner, property, again.id(),
-                new RepairDamageRecordRequest(DamageLevel.D2, List.of("x.jpg"), null)))
-                .isInstanceOf(ValidationException.class).hasMessageContaining("below");
+        assertThat(history.repairedLevel()).isNull();
+        assertThat(propertyModule.roomConditions(room)).isEmpty();
     }
 
     @Test
-    void aReplacementSetsTheItemToNa() {
+    void aReplacementMovesTheDamageToHistory() {
         DamageRecordResponse record = damage.create(owner, property, one(first, 150_000L));
 
         DamageRecordResponse replaced = damage.replace(owner, property, record.id(),
                 new RepairDamageRecordRequest(null, List.of("new.jpg"), "New unit"));
 
         assertThat(replaced.status()).isEqualTo(DamageRecordStatus.REPLACED);
-        assertThat(propertyModule.roomConditions(room).get(0).level()).isEqualTo(DamageLevel.NA);
+        assertThat(propertyModule.roomConditions(room)).isEmpty();
     }
 
     @Test
     void pagesAndGlobalCountsFollowChargesAndRepairs() {
         damage.create(owner, property, one(first, 10_000L));
-        var billed = damage.create(owner, property, one(second, 10_000L));
-        var fixed = damage.create(owner, property, one(third, 10_000L));
+        // Other items: one open damage per item at a time (user, 2026-11-07).
+        var billed = damage.create(owner, property, onItem("Fan", second, 10_000L));
+        var fixed = damage.create(owner, property, onItem("Mirror", third, 10_000L));
         damage.charge(owner, property, billed.id());
 
         var firstPage = damage.page(owner, property, false, 0, 2);
@@ -267,12 +264,11 @@ class DamageRecordServiceTest {
     }
 
     @Test
-    void aSmallerDamageNeverLowersTheRoomLevel() {
+    void aDamageNeverTouchesTheRoomCondition() {
         damage.create(owner, property, one(first, 150_000L));
-        damage.create(owner, property, new SaveDamageRecordRequest(room, "AC", "ROOM", DamageLevel.D1, 5_000L,
-                null, List.of("d1.jpg"), DamageResponsibility.TENANT, second));
 
-        assertThat(propertyModule.roomConditions(room).get(0).level()).isEqualTo(DamageLevel.D2);
+        // No lifecycle (user, 2026-11-07): each move-in records its own conditions.
+        assertThat(propertyModule.roomConditions(room)).isEmpty();
     }
 
     @Test
@@ -282,6 +278,34 @@ class DamageRecordServiceTest {
 
         assertThat(damage.listForTenancy(owner, first)).hasSize(2);
         assertThat(damage.listForTenancy(owner, second)).hasSize(1);
+    }
+
+    @Test
+    void anItemTakesNoNewDamageWhileOneIsOpenOnIt() {
+        DamageRecordResponse open = damage.create(owner, property, one(first, 40_000L));
+
+        // One open damage per item (user, 2026-11-07): the next waits for the fix.
+        assertThatThrownBy(() -> damage.create(owner, property, one(second, 5_000L)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("is still open for AC");
+
+        damage.repair(owner, property, open.id(), new RepairDamageRecordRequest(null, List.of("fixed.jpg"), null));
+        assertThat(damage.create(owner, property, one(second, 5_000L)).itemName()).isEqualTo("AC");
+    }
+
+    @Test
+    void aDamageCanHaveNoLevel() {
+        // An item with one price, or none, is recorded with its amount alone (user, 2026-11-07).
+        DamageRecordResponse recorded = damage.create(owner, property, new SaveDamageRecordRequest(room, "AC", "ROOM",
+                null, 40_000L, null, List.of("ac.jpg"), DamageResponsibility.TENANT, first));
+        assertThat(recorded.damageLevel()).isNull();
+        assertThatThrownBy(() -> damage.create(owner, property, new SaveDamageRecordRequest(room, "AC", "ROOM",
+                DamageLevel.NA, 40_000L, null, List.of("ac.jpg"), DamageResponsibility.TENANT, first)))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("D1 to D3");
+    }
+
+    private SaveDamageRecordRequest onItem(String item, UUID tenancy, long costPaise) {
+        return new SaveDamageRecordRequest(room, item, "ROOM", DamageLevel.D2, costPaise, null,
+                List.of("x.jpg"), DamageResponsibility.TENANT, tenancy);
     }
 
     private SaveDamageRecordRequest one(UUID tenancy, long costPaise) {

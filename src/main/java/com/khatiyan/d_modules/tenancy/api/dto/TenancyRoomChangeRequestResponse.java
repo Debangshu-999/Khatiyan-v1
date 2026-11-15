@@ -51,8 +51,23 @@ public record TenancyRoomChangeRequestResponse(
      * it acts, and a record changed since the screen loaded it is refused.
      */
     long version,
-    String decidedByRole
+    String decidedByRole,
+    /** The property's name, on the tenant's own list (2026-11-11). Null elsewhere. */
+    String propertyName,
+    /** The room moved from, on the tenant's own list. */
+    String currentRoomNumber,
+    /** The room moved to, on the tenant's own list. */
+    String targetRoomNumber
 ) {
+    /** The same response, naming where it was raised and the two rooms. */
+    public TenancyRoomChangeRequestResponse withPlaces(String propertyName, String currentRoomNumber, String targetRoomNumber) {
+        return new TenancyRoomChangeRequestResponse(id, referenceCode, tenancyId, tenantUserId, tenantName, propertyId,
+            currentRoomId, targetRoomId, billingCycleId, status, effectiveTransferDate, tenantReason, adminNotes,
+            requestedRoomRentAmountPaise, executedRentAmountPaise, decidedByUserId, decidedByName, decidedAt, executedAt,
+            expiresAt, supersededRequestId, reRaiseAllowed, approvalRevertAllowed, outgoingBedBooked, createdAt, updatedAt,
+            version, decidedByRole, propertyName, currentRoomNumber, targetRoomNumber);
+    }
+
     public static TenancyRoomChangeRequestResponse from(TenancyRoomChangeRequest request) {
         return from(request, Map.of(), false);
     }
@@ -104,7 +119,10 @@ public record TenancyRoomChangeRequestResponse(
             request.getCreatedAt(),
             request.getUpdatedAt(),
             request.getVersion(),
-            nameOf(roles, request.getDecidedByUserId())
+            nameOf(roles, request.getDecidedByUserId()),
+            null,
+            null,
+            null
         );
     }
 

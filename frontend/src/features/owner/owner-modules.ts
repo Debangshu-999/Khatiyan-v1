@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { BillingArt, ConcernArt, MealsArt, type ModuleArt, NoticeArt, PropertyArt, StaffArt, TenancyArt } from "@/features/owner/workspace-module-icons";
 import type { ImageSourcePropType } from "react-native";
 
 import type { ManagerResource } from "@/store/services/property-api";
@@ -20,6 +21,8 @@ export type OwnerModuleRoute = string | { pathname: string; params: Record<strin
 
 export type OwnerModule = {
   artwork?: ImageSourcePropType;
+  /** The coloured vector drawing (user, 2026-11-14), drawn in place of `artwork`. */
+  art?: ModuleArt;
   artworkVariant?: "compact" | "large" | "wide";
   key: OwnerModuleKey;
   title: string;
@@ -67,6 +70,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     description: "Move tenants in and see them out. Their stays, agreements, rules and exit requests all live here.",
     summary: "Manage move-ins, agreements, exits and room changes.",
     icon: UsersRound,
+    art: TenancyArt,
     key: "tenancy",
     resources: ["TENANCIES", "TENANCY_CREATE", "EXIT_REQUESTS", "ROOM_CHANGES", "TENANCY_RULES"],
     route: "/owner-tenancy",
@@ -77,6 +81,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     description: "Rent, extra charges and deposits in one place. See what is paid, what is due and what has gone late.",
     summary: "Manage rent bills, extra charges, deposits and payments.",
     icon: Banknote,
+    art: BillingArt,
     key: "billing",
     resources: ["BILLING_CYCLES", "DEPOSITS"],
     route: "/owner-billing",
@@ -90,6 +95,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     // of four things behind this tile — and it is now the Manage tab's own
     // icon, so the module and the tab it lives in were wearing the same glyph.
     icon: PropertyIcon,
+    art: PropertyArt,
     key: "property",
     resources: ["PROPERTY_SETTINGS", "ROOMS", "PROPERTY_BOARD", "NEARBY_PLACES"],
     route: "/owner-property",
@@ -100,6 +106,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     description: "Set the week's menu and who eats what. Know how many plates to cook before every meal.",
     summary: "Manage menus, meal plans and daily plate counts.",
     icon: foodIcon("silverware-fork-knife"),
+    art: MealsArt,
     key: "food",
     resources: ["FOOD"],
     // "Meals" once pinned (user, 2026-10-04). It was "Food preference".
@@ -113,6 +120,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     description: "Tell the whole property at once. Post a notice now, schedule it for later, or set it to repeat.",
     summary: "Manage notices to post, schedule or repeat for everyone.",
     icon: Megaphone,
+    art: NoticeArt,
     key: "notice",
     resources: ["NOTICES"],
     route: "/owner-notices",
@@ -123,6 +131,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     description: "Everything your tenants raise, from open to resolved. See who has taken each one up and what is stuck.",
     summary: "Manage tenant concerns from raised to resolved.",
     icon: AlertCircle,
+    art: ConcernArt,
     key: "concern",
     resources: ["CONCERNS"],
     route: "/owner-concerns",
@@ -133,6 +142,7 @@ export const OWNER_MODULES: OwnerModule[] = [
     description: "Your managers and staff in one place. Keep their details, their pay and every salary you have given.",
     summary: "Manage your managers, staff and their salaries.",
     icon: BriefcaseBusiness,
+    art: StaffArt,
     key: "staff",
     ownerOnly: true,
     route: "/owner-staff",

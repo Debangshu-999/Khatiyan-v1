@@ -66,6 +66,30 @@ public class MealRatingStore {
                 """, Boolean.class, propertyId, Date.valueOf(date), meal.name(), tenancyId));
     }
 
+    /** This tenancy's own ratings for one meal, for the tenant to see and change. */
+    public List<NewRating> mine(UUID propertyId, LocalDate date, MealType meal, UUID tenancyId) {
+        return jdbc.query("""
+                SELECT item_id, rating, review FROM food.food_meal_ratings
+                WHERE property_id = ? AND meal_date = ? AND meal_type = ? AND tenancy_id = ?
+                """, (row, index) -> new NewRating(row.getObject("item_id", UUID.class), row.getInt("rating"),
+                        row.getString("review")),
+                propertyId, Date.valueOf(date), meal.name(), tenancyId);
+    }
+
+    /**
+     * Puts this tenancy's ratings for a meal in place of whatever it gave before
+     * (user, 2026-11-14: a rating can be changed while the meal is on offer). A
+     * dish left out of the new set is no longer rated. Call inside a transaction.
+     */
+    public int replace(UUID propertyId, LocalDate date, MealType meal, UUID tenancyId, UUID userId, UUID profileId,
+            List<NewRating> ratings) {
+        jdbc.update("""
+                DELETE FROM food.food_meal_ratings
+                WHERE property_id = ? AND meal_date = ? AND meal_type = ? AND tenancy_id = ?
+                """, propertyId, Date.valueOf(date), meal.name(), tenancyId);
+        return insert(propertyId, date, meal, tenancyId, userId, profileId, ratings);
+    }
+
     /** How many landed. Two submissions at once meet on the unique key. */
     public int insert(UUID propertyId, LocalDate date, MealType meal, UUID tenancyId, UUID userId, UUID profileId,
             List<NewRating> ratings) {
@@ -87,6 +111,27 @@ public class MealRatingStore {
                         + ") person GROUP BY meal_date",
                 (rs, n) -> new DayRating(rs.getDate("meal_date").toLocalDate(), rs.getDouble("total"), rs.getLong("people")),
                 propertyId, Date.valueOf(from), Date.valueOf(to));
+    }
+
+    /** The average over every person's meal in the range, or null with no ratings. */
+    public Double average(UUID propertyId, LocalDate from, LocalDate to) {
+        return jdbc.queryForObject("SELECT AVG(person_rating) FROM (" + PERSON_MEALS + ") person", Double.class,
+                propertyId, Date.valueOf(from), Date.valueOf(to));
+    }
+
+    /**
+     * One meal's average so far, over each person's own average of their dishes,
+     * or null before anyone has rated it (Home's card, user, 2026-11-09).
+     */
+    public Double mealAverage(UUID propertyId, LocalDate date, MealType meal) {
+        return jdbc.queryForObject("""
+                SELECT AVG(person_rating) FROM (
+                    SELECT AVG(rating)::double precision AS person_rating
+                    FROM food.food_meal_ratings
+                    WHERE property_id = ? AND meal_date = ? AND meal_type = ?
+                    GROUP BY tenancy_id
+                ) person
+                """, Double.class, propertyId, Date.valueOf(date), meal.name());
     }
 
     public List<DayRating> byMonth(UUID propertyId, LocalDate from, LocalDate to) {

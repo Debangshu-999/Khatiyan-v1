@@ -1,128 +1,62 @@
-import { ActivityIndicator, Text, View } from "react-native";
-import { PriorityChip } from "@/features/notice/notice-ui";
-import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
-import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { Bell, Megaphone } from "lucide-react-native";
+import { useState } from "react";
 
-import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
-import { EmptyState } from "@/components/empty-state";
+import { loadFailure, LoadFailed } from "@/components/load-failed";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { Section } from "@/components/section";
-import { StatusPill } from "@/components/status-pill";
-import { SkeletonCard } from "@/components/skeleton";
+import { PropertyBoardScreenSkeleton } from "@/components/skeletons/property-board";
+import {
+  NoticeBoardHero,
+  NoNoticesNote,
+  NoticeCard,
+  noticeGroupLabel,
+  sortNoticesNewestFirst,
+} from "@/features/notice/notice-board-ui";
+import { PropertyBoardItemModal } from "@/features/property-board/property-board-ui";
 import type { NoticeSummary } from "@/store/services/notice-api";
 import { useListMyVisibleNoticesQuery } from "@/store/services/notice-api";
-import { spacing } from "@/theme/spacing";
-import { useTheme } from "@/theme/use-theme";
 
-const NOTICE_EMPTY_ILLUSTRATION = require("../assets/empty-states/No-Notice_512x512.png");
 
+/**
+ * The tenant's notice board, built like the property board's screen (user,
+ * 2026-11-10): the banner, then every notice newest first, each card carrying
+ * its own priority and date (user, 2026-11-15), each opening in full. The blue board and the megaphone where the board has its cork.
+ */
 export default function PropertyNoticesScreen() {
-  const { colors, type } = useTheme();
-  const router = useGuardedRouter();
-  const noticesQuery = useListMyVisibleNoticesQuery();
-  const notices = [...(noticesQuery.data ?? [])].sort(compareNoticePriority);
-
-  const loadFailed = loadFailure(noticesQuery);
-  if (loadFailed) {
-    return <LoadFailedScreen failure={loadFailed} />;
-  }
+  // Checked every minute and on return, so a notice that goes live shows without a reload (user, 2026-11-14).
+  const noticesQuery = useListMyVisibleNoticesQuery(undefined, { pollingInterval: 60_000, refetchOnFocus: true });
+  const notices = sortNoticesNewestFirst(noticesQuery.data ?? []);
+  const [selected, setSelected] = useState<NoticeSummary | null>(null);
+  const failed = loadFailure(noticesQuery);
 
   return (
-    <ScreenScrollView>
-      <ScreenHeader
-        title="Notices,"
-        italicTail="published."
-        subtitle="Active announcements for your current property, including notices generated from recurring schedules."
-      />
+    <>
+      <ScreenScrollView
+        contentContainerStyle={{ paddingBottom: 0 }}
+        onRefresh={async () => {
+          await noticesQuery.refetch();
+        }}
+      >
+        <ScreenHeader italicTail="board." title="Notice" />
+        <NoticeBoardHero />
 
-      <Section title="Published notices">
-        {noticesQuery.isFetching ? (
-          <SkeletonCard />
+        {noticesQuery.isFetching && !noticesQuery.data ? (
+          <PropertyBoardScreenSkeleton />
+        ) : failed ? (
+          <LoadFailed error={failed.error} onReload={failed.reload} />
         ) : notices.length > 0 ? (
-          notices.map((notice) => <NoticeCard key={notice.id} notice={notice} />)
+          notices.map((notice) => <NoticeCard key={notice.id} notice={notice} onSelect={setSelected} />)
         ) : (
-          <EmptyState
-            artwork={NOTICE_EMPTY_ILLUSTRATION}
-            title="No active notices"
-            description="Published property notices will appear here when they are visible to tenants."
-          />
+          // The same blank taped notice as Home's board (user, 2026-11-10).
+          <NoNoticesNote />
         )}
-      </Section>
-    </ScreenScrollView>
+      </ScreenScrollView>
+
+      <PropertyBoardItemModal
+        item={selected ? { body: selected.body, categoryName: `${noticeGroupLabel(selected.priority)} notice`, title: selected.title } : null}
+        onClose={() => setSelected(null)}
+        // Just the notice: no megaphone, no "Important notice" over its title (user, 2026-11-13).
+        plain
+      />
+    </>
   );
-}
-
-
-function NoticeCard({ notice }: { notice: NoticeSummary }) {
-  const { colors, type } = useTheme();
-  const urgent = notice.priority === "URGENT" || notice.priority === "EMERGENCY";
-
-  return (
-    <Card tone={urgent ? "default" : "sunken"}>
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-        <View
-          style={{
-            alignItems: "center",
-            backgroundColor: urgent ? colors.primarySoft : colors.surface,
-            borderColor: colors.border,
-            borderRadius: 12,
-            borderWidth: 1,
-            height: 40,
-            justifyContent: "center",
-            width: 40,
-          }}
-        >
-          <Megaphone color={urgent ? colors.primary : colors.kicker} size={19} strokeWidth={2.2} />
-        </View>
-        <View style={{ flex: 1, gap: spacing.xs }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" }}>
-            <Text style={[type.eyebrow, { color: urgent ? colors.primary : colors.kicker, flex: 1 }]}>
-              {formatDate(notice.publishedAt)}
-            </Text>
-            <PriorityChip priority={notice.priority} />
-          </View>
-          <Text style={[type.display, { color: colors.ink, fontSize: 19, lineHeight: 24 }]}>
-            {notice.title}
-          </Text>
-          <Text style={[type.description, { color: colors.muted }]}>
-            {notice.body}
-          </Text>
-        </View>
-      </View>
-    </Card>
-  );
-}
-
-function compareNoticePriority(left: NoticeSummary, right: NoticeSummary) {
-  const rank: Record<string, number> = {
-    EMERGENCY: 4,
-    URGENT: 3,
-    IMPORTANT: 2,
-    NORMAL: 1,
-  };
-  const priorityDiff = (rank[right.priority] ?? 0) - (rank[left.priority] ?? 0);
-
-  if (priorityDiff !== 0) {
-    return priorityDiff;
-  }
-
-  return new Date(right.publishedAt).getTime() - new Date(left.publishedAt).getTime();
-}
-
-function humanizeToken(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-  }).format(new Date(value));
 }

@@ -1,11 +1,23 @@
 import { StayStatusMark } from "@/features/owner/status-filter-marks";
 import { HelpModalClose } from "@/components/help-modal-header";
+import { FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
 import { LoadFailed } from "@/components/load-failed";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
-import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { TenancyAgreementIcon } from "@/components/tenancy-rule-icons";
-import { ActiveTenancyIcon, OnNoticeTenancyIcon, StartedTenancyIcon, EndedTenancyIcon, CreateTenancyIcon, RoomChangeIcon, TenancyHistoryIcon, UpcomingExitsIcon } from "@/components/tenancy-line-icons";
+// Coloured vector icons on the counts and the tools (user, 2026-11-14; were clean outlines).
+import {
+  ActiveTenancyArt as ActiveTenancyIcon,
+  CreateTenancyArt as CreateTenancyIcon,
+  EndedTenancyArt as EndedTenancyIcon,
+  ExitRequestArt as ExitRequestOutline,
+  OnNoticeTenancyArt as OnNoticeTenancyIcon,
+  RoomChangeArt as RoomChangeIcon,
+  StartedTenancyArt as StartedTenancyIcon,
+  TenancyHistoryArt as TenancyHistoryIcon,
+  UpcomingExitsArt as UpcomingExitsIcon,
+  RollCallArt as RollCallIcon,
+} from "@/components/control-art";
 import { useEffect, useMemo, useState } from "react";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import { useLocalSearchParams } from "expo-router";
@@ -30,7 +42,7 @@ import { useAccumulatedPages } from "@/hooks/use-accumulated-pages";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SearchField } from "@/components/search-field";
+import { SearchField, SearchFilterButton } from "@/components/search-field";
 import { Section } from "@/components/section";
 import {
   OwnerTenancyInitialSkeleton,
@@ -50,11 +62,12 @@ import {
   useListActivePropertyTenanciesQuery,
   useListPastPropertyTenanciesQuery,
 } from "@/store/services/tenancy-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { metricFontSize } from "@/theme/metric-size";
 
 import { useTheme } from "@/theme/use-theme";
+import { AgreementHeroCard } from "@/features/tenancy/stay-overview-cards";
 import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react-native";
 import { FitText } from "@/components/fit-text";
 
@@ -301,7 +314,7 @@ export default function OwnerTenancyWorkspaceScreen() {
                   },
                   {
                     badge: dashboardQuery.data?.attention.pendingExitRequests ?? 0,
-                    icon: ExitTenancyIcon,
+                    icon: ExitRequestOutline,
                     key: "exit-requests",
                     label: "Exit requests",
                     onPress: () => guard("EXIT_REQUESTS", "Exit requests", () => router.push("/owner-exit-requests")),
@@ -330,6 +343,13 @@ export default function OwnerTenancyWorkspaceScreen() {
                     label: "Upcoming exits",
                     onPress: () => guard("TENANCIES", "Upcoming exits", () => setUpcomingOpen(true)),
                   },
+                  // Roll call (user, 2026-11-15): tonight's head count, PGs and hostels only.
+                  ...(selectedProperty?.type === "PG" || selectedProperty?.type === "HOSTEL" ? [{
+                    icon: RollCallIcon,
+                    key: "roll-call",
+                    label: "Attendance",
+                    onPress: () => guard("TENANCIES", "Attendance", () => router.push("/owner-roll-call")),
+                  }] : []),
                 ]}
               />
             </View>
@@ -339,20 +359,19 @@ export default function OwnerTenancyWorkspaceScreen() {
               when they move out. They were only under Property because that is
               where they are configured, which is where the owner does not look
               for them. */}
-          <Section title="Tenancy rules">
-            <ActionCard
-              borderRadius={radii.card}
-              icon={TenancyAgreementIcon}
-              iconSize={36}
-              raised
-              showArrow={false}
-              smallDescription
+          {/* No "Tenancy rules" heading over it (user, 2026-11-14). */}
+          <View>
+            {/* The tenant's agreement card, in the owner's words (user, 2026-11-14). */}
+            <AgreementHeroCard
+              actionLabel="Set up agreement"
+              badge="Monthly stays"
+              // The drawing first and only the chip and title (user, 2026-11-14).
+              drawingFirst
+              onView={() => guard("TENANCY_RULES", "Tenancy agreement", () => router.push("/owner-tenancy-agreement"))}
               title="Tenancy agreement"
-              description="Set the term and clauses for monthly agreements."
-              onPress={() => guard("TENANCY_RULES", "Tenancy agreement", () => router.push("/owner-tenancy-agreement"))}
             />
             {/* Exit policies moved to the Property module as the Item catalogue & damage (user, 2026-10-29). */}
-          </Section>
+          </View>
 
           </>}
           <Section title="Property stays">
@@ -372,26 +391,7 @@ export default function OwnerTenancyWorkspaceScreen() {
                 placeholder="Search by tenant name, phone or tenancy ID"
                 trailing={
                   // Status filter, the same control Billing has (user, 2026-09-30).
-                  <AnimatedPressable
-                    accessibilityLabel="Filter tenancies by status"
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: statusFilter !== "ALL" }}
-                    onPress={() => setStatusPickerOpen(true)}
-                    style={{
-                      alignItems: "center",
-                      backgroundColor: statusFilter === "ALL" ? colors.surfaceSunken : colors.primary,
-                      borderRadius: 999,
-                      height: 34,
-                      justifyContent: "center",
-                      width: 34,
-                    }}
-                  >
-                    <SlidersHorizontal
-                      color={statusFilter === "ALL" ? colors.ink : colors.onPrimary}
-                      size={17}
-                      strokeWidth={2.3}
-                    />
-                  </AnimatedPressable>
+                  <SearchFilterButton accessibilityLabel="Filter tenancies by status" active={statusFilter !== "ALL"} inside onPress={() => setStatusPickerOpen(true)} />
                 }
                 value={searchDraft}
               />
@@ -584,12 +584,11 @@ function TenancySnapshotTile({
         borderCurve: "continuous",
         borderRadius: 12,
         borderWidth: 1,
-        elevation: 2,
         flex: 1,
         gap: spacing.xs,
         justifyContent: "center",
         padding: spacing.md,
-        ...softShadow(colors.shadow, 2, 6),
+        ...cardShadow(colors.shadow),
       }}
     >
       {/* The billing and concern card's rail: a 44 box holding a 30 glyph in

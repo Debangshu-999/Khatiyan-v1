@@ -1,4 +1,5 @@
 import { ModalTitleRule } from "@/components/modal-title-rule";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useState } from "react";
@@ -533,6 +534,7 @@ function DocumentPreviewModal({
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <SheetCloseButton onClose={() => dismiss()} />
         <View
           style={{
             backgroundColor: colors.surface,
@@ -540,7 +542,7 @@ function DocumentPreviewModal({
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             borderWidth: 1,
-            maxHeight: "90%",
+            maxHeight: "100%",
             paddingHorizontal: spacing.lg,
             paddingTop: spacing.lg,
           }}

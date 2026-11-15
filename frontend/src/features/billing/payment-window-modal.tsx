@@ -27,6 +27,8 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
   // Null while the cycle is UPCOMING — the rate is stamped when it goes live.
   // The API omits nulls, so this can arrive as undefined rather than null.
   const rate = cycle.lateFeePerDayPaise;
+  // A one-off bill has no cycle and no late fee (user, 2026-11-13).
+  const oneOff = cycle.category === "ONE_OFF";
 
   return (
     <CenterModal animationType="fade" navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent transparent visible>
@@ -49,14 +51,17 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
           }}
         >
           <HelpModalClose corner onClose={onClose} />
-          <HelpModalHeader />
+          {/* Named for what it holds (user, 2026-11-13). */}
+          <HelpModalHeader keepTitle title="Bill policies" />
 
           <View style={{ borderTopColor: colors.border, borderTopWidth: 1 }}>
-            <PaymentWindowLine
-              icon={CalendarRange}
-              label="Cycle period"
-              value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}`}
-            />
+            {oneOff ? null : (
+              <PaymentWindowLine
+                icon={CalendarRange}
+                label="Cycle period"
+                value={`${formatDate(cycle.periodStartDate)} – ${formatDate(cycle.periodEndDate)}`}
+              />
+            )}
             <PaymentWindowLine
               icon={CalendarCheck2}
               label="Billing window"
@@ -76,7 +81,7 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
 
           {/* The one paragraph here that changes what a tenant does, so it gets
               the notice treatment rather than another grey block to skim. */}
-          <NoticeBar
+          {oneOff ? null : <NoticeBar
             message={
               rate == null
                 ? `The daily late fee for this bill is set when the cycle starts. Paying by ${formatDate(cycle.rentDueDate)} avoids it either way.`
@@ -87,7 +92,7 @@ export function PaymentWindowModal({ cycle, onClose }: { cycle: BillingCycle; on
             selectable={false}
             title="IF PAID LATE?"
             tone="warning"
-          />
+          />}
 
         </View>
       </View>

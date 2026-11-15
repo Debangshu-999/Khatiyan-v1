@@ -272,9 +272,10 @@ public class PropertyService {
                 : request.damageCharges().stream()
                         .map(input -> PropertyDamageCharge.of(input.name(), input.d1(), input.d2(), input.d3(), input.category()))
                         .toList();
-        if (request.damageLevels() != null) {
-            property.updateDamageLevelDescriptions(
-                    request.damageLevels().d1(), request.damageLevels().d2(), request.damageLevels().d3());
+        // request.damageLevels() is ignored: the levels are fixed for the system now
+        // (user, 2026-11-07). The field stays so an older app's save is not refused.
+        if (request.damageLevelsEnabled() != null) {
+            property.useDamageLevels(request.damageLevelsEnabled());
         }
 
         // The premature-exit policy is deliberately NOT touched here. It is

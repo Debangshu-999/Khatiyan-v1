@@ -126,10 +126,15 @@ export type BillingCycle = {
 // and the original charge label for other one-offs (e.g. an early-exit penalty).
 export function billTitle(cycle: Pick<BillingCycle, "cycleNumber" | "lineItems">): string {
   if (cycle.cycleNumber != null) {
-    return `Cycle ${cycle.cycleNumber}`;
+    // "Rent cycle #6", for tenant and owner alike (user, 2026-11-11).
+    return `Rent cycle #${cycle.cycleNumber}`;
   }
-  const label = cycle.lineItems?.[0]?.label ?? "One-off bill";
-  return /^Damage DMG-\d{4}-\d+: .+ \(D[123]\)(?:, split \d+)?(?: \(from deposit\))?$/.test(label) ? "Damage bill" : label;
+  return isDamageBill(cycle) ? "Damage bill" : cycle.lineItems?.[0]?.label ?? "One-off bill";
+}
+
+// A one-off bill raised from a damage record, known by the label that record gives its charge.
+export function isDamageBill(cycle: Pick<BillingCycle, "cycleNumber" | "lineItems">): boolean {
+  return cycle.cycleNumber == null && /^Damage DMG-\d{4}-\d+: .+?(?: \(D[123]\))?(?:, split \d+)?(?: \(from deposit\))?$/.test(cycle.lineItems?.[0]?.label ?? "");
 }
 
 // Sort key for bills, newest first, tolerating one-off bills (null cycle number).

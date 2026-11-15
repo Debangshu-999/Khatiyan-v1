@@ -4,9 +4,10 @@ import { ActivityIndicator, Linking, ScrollView, Text, View } from "react-native
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
+import { FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
+import { WrapTitle } from "@/components/wrap-title";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
-import { MarqueeText } from "@/components/marquee-text";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { foodIcon } from "@/features/food/food-ui";
@@ -560,7 +561,7 @@ export default function TenancyNearbyMapScreen() {
           >
             <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
               <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-                <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{callout.name}</MarqueeText>
+                <WrapTitle style={[type.bodyStrong, { color: colors.ink }]}>{callout.name}</WrapTitle>
                 {callout.address ? (
                   <FitText numberOfLines={2} style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 12 }}>
                     {callout.address}
@@ -1021,7 +1022,7 @@ function FilterBubble({
         alignItems: "center",
         backgroundColor: on ? colors.primary : "transparent",
         borderColor: on ? colors.primary : colors.border,
-        borderRadius: radii.pill,
+        borderRadius: FILTER_CHIP_RADIUS,
         borderWidth: 1,
         flexDirection: "row",
         gap: spacing.xxs,
@@ -1158,12 +1159,12 @@ function PlaceCard({
     >
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xxs }}>
+          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xxs }}>
             {recommended ? (
-              <MaterialCommunityIcons color={colors.accent} name="star" size={14} />
+              <MaterialCommunityIcons color={colors.accent} name="star" size={14} style={{ marginTop: 3 }} />
             ) : null}
             <View style={{ flex: 1, minWidth: 0 }}>
-              <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{name}</MarqueeText>
+              <WrapTitle style={[type.bodyStrong, { color: colors.ink }]}>{name}</WrapTitle>
             </View>
           </View>
           {address ? (

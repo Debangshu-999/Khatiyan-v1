@@ -77,11 +77,24 @@ export function LineChart({
       )}
       // Held at the right of what shows, not at the end of the plot, where it
       // would be out of sight until the last month is scrolled to.
+      // On the side of the line away from the last point, whose own figure sits
+      // just above it: below the line they met (user, 2026-11-08, "10%" on
+      // "avg 15%" on a phone).
       renderOverlay={() =>
         reference ? (
           <Text
             pointerEvents="none"
-            style={{ color: colors.ink, fontFamily: fonts.sansSemiBold, fontSize: 10, position: "absolute", right: 0, top: y(reference.value) + 3 }}
+            style={{
+              color: colors.ink,
+              fontFamily: fonts.sansSemiBold,
+              fontSize: 10,
+              lineHeight: 13,
+              position: "absolute",
+              right: 0,
+              top: lastIndex >= 0 && (values[lastIndex] as number) < reference.value
+                ? Math.max(0, y(reference.value) - 16)
+                : y(reference.value) + 3,
+            }}
           >
             {reference.label}
           </Text>

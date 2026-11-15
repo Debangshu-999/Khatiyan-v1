@@ -150,6 +150,9 @@ public class AuthService {
         // Paths that set a PIN bump credentialVersion, which revokes every
         // session before reaching here — so only PIN login and e-mail login can
         // actually be over the cap.
+        // The same device signing in again frees its own old places first, so a phone
+        // that was reinstalled is never asked to sign itself out.
+        userSessionService.replaceSameDevice(user.getId(), deviceDescriptor.label(), deviceDescriptor.platform(), issuedAt);
         userSessionService.ensureCapacity(user.getId(), issuedAt);
 
         JwtService.IssuedToken issued = jwtService.issue(user);
@@ -275,6 +278,9 @@ public class AuthService {
     public void registerUser(String phone, String email, String fullName, String requestIpAddress) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
         checkRegistrationRateLimits(normalizedPhone, requestIpAddress);
+        // The resend schedule first, before the account is looked up (user,
+        // 2026-11-14): a number with no account is counted and refused alike.
+        otpService.claimSend(OtpSendSchedule.phoneKey(normalizedPhone), OtpPurpose.LOGIN);
 
         // An account with no PIN can be several things — a tenant or a manager
         // an owner provisioned, or somebody who started signing up and walked
@@ -419,6 +425,9 @@ public class AuthService {
     public void registerOwner(String phone, String email, String fullName, String requestIpAddress) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
         checkRegistrationRateLimits(normalizedPhone, requestIpAddress);
+        // The resend schedule first, before the account is looked up (user,
+        // 2026-11-14): a number with no account is counted and refused alike.
+        otpService.claimSend(OtpSendSchedule.phoneKey(normalizedPhone), OtpPurpose.LOGIN);
 
         // The same resume the tenant path gets, and it was missing. An owner who
         // started signing up and abandoned it before setting a PIN was told
@@ -472,6 +481,9 @@ public class AuthService {
     @Transactional
     public void requestPinSetupOTP(String phone, OtpDeliveryChannel channel, String requestIpAddress) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
+        // The resend schedule first, before the account is looked up (user,
+        // 2026-11-14): a number with no account is counted and refused alike.
+        otpService.claimSend(OtpSendSchedule.phoneKey(normalizedPhone), OtpPurpose.LOGIN);
         Optional<User> found = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
 
         // Silent in EVERY refusal case. Not a 404, not a "you already have a
@@ -515,6 +527,9 @@ public class AuthService {
     @Transactional
     public void requestPINResetOTP(String phone, OtpDeliveryChannel channel, String requestIpAddress) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
+        // The resend schedule first, before the account is looked up (user,
+        // 2026-11-14): a number with no account is counted and refused alike.
+        otpService.claimSend(OtpSendSchedule.phoneKey(normalizedPhone), OtpPurpose.PIN_RESET);
         Optional<User> found = userRepository.findByPhoneAndActiveTrue(normalizedPhone);
 
         // Same uniform-response rule as requestPinSetupOTP: every outcome is a
@@ -629,8 +644,11 @@ public class AuthService {
         }
     }
 
+    @Transactional
     public void requestEmailLoginOTP(String email, String requestIpAddress) {
         checkEmailOtpRateLimit(normalizeEmail(email), requestIpAddress);
+        // The resend schedule, per address, before the account is looked up (user, 2026-11-14).
+        otpService.claimSend(OtpSendSchedule.emailKey(normalizeEmail(email)), OtpPurpose.EMAIL_LOGIN);
 
         // Silent on both misses, same rule as the phone paths: a distinct answer
         // per address lets a caller test a list and learn which ones hold
@@ -646,6 +664,27 @@ public class AuthService {
         otpService.issue(user.getPhone(), user.getEmail(), requestIpAddress, OtpPurpose.EMAIL_LOGIN, OtpDeliveryChannel.EMAIL);
     }
 
+    /**
+     * Seconds before another code may be sent to this number or address (user,
+     * 2026-11-14), for a screen opened again mid-wait. Answers the same for a
+     * number with an account and one without: every request is counted.
+     * Unreadable input answers 0 rather than an error.
+     */
+    public long otpWaitSeconds(String phone, String email, OtpPurpose purpose) {
+        OtpPurpose resolved = purpose == null ? OtpPurpose.LOGIN : purpose;
+        try {
+            if (email != null && !email.isBlank()) {
+                return otpService.sendWaitSeconds(OtpSendSchedule.emailKey(normalizeEmail(email)), resolved);
+            }
+            if (phone != null && !phone.isBlank()) {
+                return otpService.sendWaitSeconds(OtpSendSchedule.phoneKey(phoneNumberNormalizer.normalize(phone)), resolved);
+            }
+        } catch (RuntimeException unreadable) {
+            return 0L;
+        }
+        return 0L;
+    }
+
     @Transactional
     public TokenResponse loginWithEmailOTP(String email, String otp, UUID signOutSessionId) {
         User user = findActiveByEmail(email);
@@ -658,6 +697,7 @@ public class AuthService {
     @Transactional
     public void requestPINResetOTPByEmail(String email, String requestIpAddress) {
         checkEmailOtpRateLimit(normalizeEmail(email), requestIpAddress);
+        otpService.claimSend(OtpSendSchedule.emailKey(normalizeEmail(email)), OtpPurpose.PIN_RESET);
 
         Optional<User> found = userRepository.findByEmailIgnoreCaseAndActiveTrue(normalizeEmail(email));
         if (found.isEmpty() || !found.get().isEmailVerified()) {
@@ -769,6 +809,13 @@ public class AuthService {
      */
     @Transactional(noRollbackFor = ValidationException.class)
     public TokenResponse loginWithPIN(String phone, String pin, String ipAddress, UUID signOutSessionId) {
+        return loginWithPIN(phone, pin, ipAddress, signOutSessionId, false);
+    }
+
+    /** @param signOutAll ends every session the account holds first, once the PIN is proven */
+    @Transactional(noRollbackFor = ValidationException.class)
+    public TokenResponse loginWithPIN(String phone, String pin, String ipAddress, UUID signOutSessionId,
+            boolean signOutAll) {
         String normalizedPhone = phoneNumberNormalizer.normalize(phone);
 
         // Ahead of everything else, and phone-scoped rather than user-scoped:
@@ -837,6 +884,9 @@ public class AuthService {
         user.recordSuccessfulLogin(now);
         loginAttemptService.recordSuccess(normalizedPhone, ipAddress);
 
+        if (signOutAll) {
+            userSessionService.revokeAll(user.getId(), Instant.now());
+        }
         return tokenFor(user, signOutSessionId);
     }
 

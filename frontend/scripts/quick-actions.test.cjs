@@ -17,7 +17,7 @@ function load(file, dependencies = {}, globals = {}) {
       assert.ok(fs.existsSync(asset), `Missing image asset ${asset}`);
       return asset;
     }
-    if (name === "@/components/load-failed") return require("./shared-text-mocks.cjs")[name]; if (name === "@/theme/shadows") return { softShadow: () => ({}) };
+    if (name === "@/components/load-failed") return require("./shared-text-mocks.cjs")[name]; if (name === "@/theme/shadows") return { softShadow: () => ({}), cardShadow: () => ({}) };
     assert.ok(name in dependencies, `Missing dependency ${name}`); return dependencies[name];
   } });
   return exports;
@@ -383,7 +383,8 @@ test("Home searches on the full screen and fills its tiles with what is waiting,
   assert.match(read("app/owner-quick-actions.tsx"), /<View style=\{\{ gap: spacing\.lg \}\}>\s+<SearchField[\s\S]*?showFilters \? <FilterPillRow[\s\S]*?<\/View>\s+<\/View>\s+\{model\.loading/);
   assert.doesNotMatch(read("app/owner-quick-actions.tsx"), /backgroundColor: colors\.background, gap:/);
   // The chosen filter is the bigger one.
-  assert.match(read("src/components/filter-bubbles.tsx"), /paddingVertical: active \? 6 : 4/);
+  // Taller rounded boxes since 2026-11-07, not pills.
+  assert.match(read("src/components/filter-bubbles.tsx"), /paddingVertical: active \? 8 : 7/);
   assert.match(read("src/components/filter-bubbles.tsx"), /fontSize: active \? 13 : 12/);
   const results = read("src/features/quick-actions/quick-action-ui.tsx");
   assert.match(results, /results\.other \? "Other quick actions" : "Similar actions"/);
@@ -487,10 +488,11 @@ for (const [mode, colors] of Object.entries(themes)) {
     const props = { value: "", placeholder: "Search", onChangeText: () => {} };
     const normal = module.SearchField(props);
     const compact = module.SearchField({ ...props, compact: true });
-    assert.equal(normal.props.style.minHeight, 50);
-    assert.equal(normal.props.style.borderRadius, 10);
-    assert.equal(compact.props.style.minHeight, 44);
-    assert.equal(compact.props.style.borderRadius, 10);
+    // A thin, compact pill (user, 2026-11-13).
+    assert.equal(normal.props.style.minHeight, 38);
+    assert.equal(normal.props.style.borderRadius, 999);
+    assert.equal(compact.props.style.minHeight, 34);
+    assert.equal(compact.props.style.borderRadius, 999);
     const changes = [];
     const filled = { ...props, value: "ghh", onChangeText: (value) => changes.push(value) };
     const plain = allNodes(module.SearchField(filled)).find((node) => node.props?.accessibilityLabel === "Clear search");
@@ -515,6 +517,7 @@ for (const [mode, colors] of Object.entries(themes)) {
       "react-native": { Text: "Text", View: "View" }, "lucide-react-native": icons,
       "@/components/animated-pressable": { AnimatedPressable: "Button" }, "@/components/card": { Card: "Card" },
       "@/components/fit-text": { FitText: "FitText" },
+      "@/components/search-field": { SEARCH_BAR_HEIGHT: 38, searchBarFrame: () => ({ borderRadius: 999 }) },
       "@/components/skeleton": { Skeleton: "Skeleton" },
       "@/features/owner/action-center": { buildActionItems: () => [] }, "@/navigation/use-guarded-router": { useGuardedRouter: () => ({ push: (route) => calls.push(route), prefetch: (route) => prefetched.push(route) }) },
       "@/theme/spacing": { radii: { card: 10 }, spacing }, "@/theme/use-theme": { useTheme: () => theme },
@@ -558,8 +561,8 @@ for (const [mode, colors] of Object.entries(themes)) {
     const [search, arrow] = searchRow.props.children;
     assert.equal(arrow.props.style.backgroundColor, colors.neutralSoft);
     assert.equal(arrow.props.style.borderRadius, 999);
-    assert.equal(arrow.props.style.width, 44);
-    assert.equal(arrow.props.style.height, 44);
+    assert.equal(arrow.props.style.width, 38); // As tall as the search bar beside it (user, 2026-11-13).
+    assert.equal(arrow.props.style.height, 38);
     assert.equal(allNodes(arrow).find((node) => node.type === icons.ArrowRight).props.color, colors.ink);
     assert.ok(!nodes.some((node) => node.props?.children === "See more"));
     assert.equal(arrow.props.onPress, undefined, "The arrow is scenery inside the whole-area button");
@@ -568,8 +571,8 @@ for (const [mode, colors] of Object.entries(themes)) {
     assert.equal(calls.at(-1), "/owner-quick-actions");
     assert.equal(searchRow.props.style.flexDirection, "row");
     assert.ok(searchRow.props.style.marginBottom + nodes[0].props.style.gap > spacing.md);
-    assert.equal(search.props.style.flex, 1);
-    assert.equal(search.props.style.minWidth, 0);
+    assert.equal(Object.assign({}, ...[].concat(search.props.style)).flex, 1);
+    assert.equal(Object.assign({}, ...[].concat(search.props.style)).minWidth, 0);
     assert.equal(allNodes(search).find((node) => node.type === "FitText").props.numberOfLines, 1);
     assert.ok(!nodes.some((node) => node.props?.accessibilityRole === "search"), "Home is a screen launcher, not an editable input");
     tiles[0].props.onPress();

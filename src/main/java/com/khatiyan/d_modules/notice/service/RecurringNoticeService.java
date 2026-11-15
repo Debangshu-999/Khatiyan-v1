@@ -8,7 +8,9 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -136,10 +138,22 @@ public class RecurringNoticeService {
     public List<RecurringNoticeResponse> listActiveRecurringNotices(UUID actorUserId, UUID propertyId) {
         noticeAccessPolicy.ensureCanViewNotices(actorUserId, propertyId);
 
+        // Today's real copy per template, in one read: the desk shows a template as live
+        // from it, not from the template's own (possibly just edited) times.
+        Map<UUID, Notice> todayCopy = new HashMap<>();
+        noticeRepository.findCurrentOccurrencesByPropertyId(propertyId, Instant.now())
+                .forEach(notice -> todayCopy.putIfAbsent(notice.getGeneratedFromRecurringNoticeId(), notice));
+
         return recurringNoticeRepository.findActiveByPropertyId(propertyId)
                 .stream()
-                .map(recurringNotice ->
-                        RecurringNoticeResponse.from(recurringNotice, templateAttachmentsFor(recurringNotice.getId())))
+                .map(recurringNotice -> {
+                    Notice copy = todayCopy.get(recurringNotice.getId());
+                    return RecurringNoticeResponse.from(
+                            recurringNotice,
+                            templateAttachmentsFor(recurringNotice.getId()),
+                            copy == null ? null : copy.getVisibleFrom(),
+                            copy == null ? null : copy.getVisibleUntil());
+                })
                 .toList();
     }
 

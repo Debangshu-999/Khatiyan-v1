@@ -65,6 +65,7 @@ public class MoveInChecklistService {
                 .map(item -> new MoveInChecklistItem(
                         item.name().strip(),
                         item.damageLevel(),
+                        conditionOf(item),
                         item.note() == null || item.note().isBlank() ? null : item.note().strip(),
                         item.custom(),
                         item.photoUrls(),
@@ -72,6 +73,17 @@ public class MoveInChecklistService {
                 .toList();
         checklists.save(MoveInChecklist.record(tenancyId, recordedBy, clock.instant(), items, input.keysHandedOver()));
         log.info("Move-in checklist recorded tenancyId={} items={} actorUserId={}", tenancyId, items.size(), recordedBy);
+    }
+
+    /** Every item's condition, or what an old client's level reads as. */
+    private static com.khatiyan.d_modules.tenancy.model.ItemCondition conditionOf(MoveInChecklistInput.ItemInput item) {
+        if (item.condition() != null) {
+            return item.condition();
+        }
+        if (item.damageLevel() != null) {
+            return com.khatiyan.d_modules.tenancy.model.ItemCondition.fromLevel(item.damageLevel());
+        }
+        throw new ValidationException("Pick a condition for " + item.name().strip());
     }
 
     @Transactional(readOnly = true)

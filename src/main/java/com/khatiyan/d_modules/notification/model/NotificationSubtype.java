@@ -52,6 +52,11 @@ public enum NotificationSubtype {
     TENANCY_CANCELLED,
     TENANCY_ROOM_TRANSFERRED,
 
+    // A tenant declared, changed or cancelled a stay out (2026-11-08).
+    TENANCY_STAY_OUT_DECLARED,
+    TENANCY_STAY_OUT_CHANGED,
+    TENANCY_STAY_OUT_CANCELLED,
+
     // Tenancy exit request workflow.
     TENANCY_EXIT_REQUESTED,
     TENANCY_EXIT_APPROVED,
@@ -86,6 +91,12 @@ public enum NotificationSubtype {
 
     // Food: one of today's meals was pushed later (2026-09-28).
     FOOD_MEAL_DELAYED,
+    // Food: a dish off or back on one day's meal, a plan's weekly menu, and
+    // the meal timetable changed (P1.5.h, 2026-11-08).
+    FOOD_DISH_UNAVAILABLE,
+    FOOD_DISH_AVAILABLE,
+    FOOD_MENU_CHANGED,
+    FOOD_MEAL_TIMINGS_CHANGED,
 
     // Property management.
     MANAGER_ASSIGNED,

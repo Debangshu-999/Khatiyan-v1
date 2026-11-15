@@ -1,8 +1,8 @@
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Text, View } from "react-native";
-import { BellRing, X } from "lucide-react-native";
+import { Text, View } from "react-native";
+import Svg, { Path } from "react-native-svg";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { requestNotificationDeviceRegistration } from "@/features/notifications/device-registration";
@@ -10,13 +10,14 @@ import {
   dismissNotificationPrompt,
   hasDismissedNotificationPrompt,
 } from "@/features/notifications/notification-prompt-storage";
+import { YellowBell3D } from "@/features/tenant-home/tenant-status-bar";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   useListMyDevicesQuery,
   useRegisterDeviceMutation,
 } from "@/store/services/notification-api";
 import { setRegisteredDeviceTokenId } from "@/store/slices/auth-slice";
-import { radii, spacing } from "@/theme/spacing";
+import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 export function NotificationOptInPrompt() {
@@ -86,105 +87,65 @@ export function NotificationOptInPrompt() {
 
   return (
     <CenterModal animationType="fade" statusBarTranslucent transparent visible={visible} navigationBarTranslucent onRequestClose={() => void closePrompt()}>
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: "rgba(0, 0, 0, 0.38)",
-          flex: 1,
-          justifyContent: "center",
-          padding: spacing.lg,
-        }}
-      >
+      <View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+        {/* The alerts ask, the way most apps put it (user, 2026-11-14): a big bell in
+            the middle, a title and one line under it, then Later and Enable side by side. */}
         <View
           style={{
+            alignItems: "center",
             backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: radii.card,
-            borderWidth: 1,
+            borderCurve: "continuous",
+            borderRadius: 28,
             gap: spacing.md,
-            maxWidth: 420,
-            padding: spacing.lg,
+            maxWidth: 380,
+            paddingBottom: spacing.lg,
+            paddingHorizontal: spacing.xl,
+            paddingTop: spacing.xl,
             width: "100%",
           }}
         >
-          <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
-            <View
-              style={{
-                alignItems: "center",
-                borderRadius: radii.card,
-                height: 44,
-                justifyContent: "center",
-                width: 44,
-              }}
-            >
-              <BellRing color={colors.ink} size={29} strokeWidth={1.8} />
+          <View style={{ alignItems: "center", height: 124, justifyContent: "center", width: 124 }}>
+            <View style={{ backgroundColor: "#FFD12E", borderRadius: 62, height: 124, opacity: 0.12, position: "absolute", width: 124 }} />
+            <View style={{ backgroundColor: "#FFD12E", borderRadius: 46, height: 92, opacity: 0.2, position: "absolute", width: 92 }} />
+            <View style={{ marginTop: 4 }}>
+              <YellowBell3D size={74} />
             </View>
-            <View style={{ flex: 1, gap: spacing.xs }}>
-              <ModalTitle
-                style={{
-                  color: colors.ink,
-                  fontFamily: fonts.display,
-                  fontSize: 24,
-                }}
-              >
-                Enable alerts
-              </ModalTitle>
-              <Text style={[type.modalDescription, { color: colors.muted }]}>
-                Get bill, concern, notice and tenancy updates on this device.
-              </Text>
-            </View>
-            <AnimatedPressable
-              accessibilityLabel="Dismiss notification prompt"
-              onPress={() => void closePrompt()}
-              style={{
-                alignItems: "center",
-                borderColor: colors.border,
-                borderRadius: 10,
-                borderWidth: 1,
-                height: 36,
-                justifyContent: "center",
-                width: 36,
-              }}
-            >
-              <X color={colors.muted} size={17} strokeWidth={2} />
-            </AnimatedPressable>
+            <Sparkle color="#F5B400" left={10} size={11} top={22} />
+            <Sparkle color="#3F6ED8" left={102} size={9} top={14} />
+            <Sparkle color="#F0663A" left={104} size={12} top={88} />
+          </View>
+
+          <View style={{ alignItems: "center", gap: 6 }}>
+            <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 24, letterSpacing: -0.4, textAlign: "center" }}>
+              Enable alerts
+            </ModalTitle>
+            <Text style={[type.modalDescription, { color: colors.muted, textAlign: "center" }]}>
+              Get bill, concern, notice and tenancy updates on this device.
+            </Text>
           </View>
 
           {message ? (
-            <Text style={[type.caption, { color: colors.danger }]}>
+            <Text style={[type.caption, { color: colors.danger, textAlign: "center" }]}>
               {message}
             </Text>
           ) : null}
 
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          {/* Side by side (user, 2026-11-14): the way out on the left, the action on the right. */}
+          <View style={{ alignSelf: "stretch", flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs }}>
             <AnimatedPressable
+              accessibilityRole="button"
               onPress={() => void closePrompt()}
-              style={{
-                alignItems: "center",
-                borderColor: colors.border,
-                borderRadius: 12,
-                borderWidth: 1,
-                flex: 1,
-                justifyContent: "center",
-                minHeight: 48,
-              }}
+              style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.primary, borderCurve: "continuous", borderRadius: 14, borderWidth: 1.5, flex: 1, justifyContent: "center", minHeight: 50 }}
             >
-              <Text style={{ color: colors.muted, fontFamily: fonts.sansBold, }}>
-                Later
-              </Text>
+              <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 15.5 }}>Later</Text>
             </AnimatedPressable>
             <AnimatedPressable
+              accessibilityRole="button"
+              disabled={registerDeviceState.isLoading}
               onPress={() => void enableNotifications()}
-              style={{
-                alignItems: "center",
-                backgroundColor: colors.primary,
-                borderRadius: 12,
-                flex: 1,
-                justifyContent: "center",
-                minHeight: 48,
-              }}
+              style={{ alignItems: "center", backgroundColor: colors.primary, borderCurve: "continuous", borderRadius: 14, flex: 1, justifyContent: "center", minHeight: 50 }}
             >
-              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, }}>
+              <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 15.5 }}>
                 {registerDeviceState.isLoading ? "Enabling..." : "Enable"}
               </Text>
             </AnimatedPressable>
@@ -192,5 +153,14 @@ export function NotificationOptInPrompt() {
         </View>
       </View>
     </CenterModal>
+  );
+}
+
+/** A small four-point star around the bell. */
+function Sparkle({ color, left, size, top }: { color: string; left: number; size: number; top: number }) {
+  return (
+    <Svg height={size} style={{ left, position: "absolute", top }} viewBox="-10 -10 20 20" width={size}>
+      <Path d="M0,-10 Q1.4,-1.4 10,0 Q1.4,1.4 0,10 Q-1.4,1.4 -10,0 Q-1.4,-1.4 0,-10 Z" fill={color} />
+    </Svg>
   );
 }

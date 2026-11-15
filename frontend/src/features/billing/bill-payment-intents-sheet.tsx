@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays } from "lucide-react-native";
 import { LoadFailedCard, loadFailure } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { SheetShell } from "@/components/sheet-shell";
+import { EmptyState } from "@/components/empty-state";
 import { type BillingCycle } from "@/store/services/billing-api";
 import {
   useListMyPaymentIntentsQuery,
@@ -13,6 +14,8 @@ import {
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
+
+const PAYMENT_CLAIMS_ILLUSTRATION = require("../../../assets/images/workspace/payment_claims1254.png");
 
 /**
  * Every payment attempt made on one bill, and the way to finish an open one.
@@ -52,25 +55,21 @@ export function BillPaymentIntentsSheet({
   }
 
   return (
-    <SheetShell size="tall" dismissOnDrag onClose={onClose} title="Payment attempts">
-      {/* The code alone, unlabelled. It is the only thing that could be under
-          this title, and "Bill" in front of it was a word doing no work.
-
-          No negative top margin to tighten it against the title either: this is
-          the ScrollView's first child, so pulling it up slides it under the
-          header row and clips the top of the code. */}
-      <Text style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 15 }}>
-        {cycle.referenceCode}
-      </Text>
-
+    <SheetShell
+      // The bill's code under the title (user, 2026-11-11).
+      belowTitle={<Text style={[type.caption, { color: colors.muted, fontWeight: "700" }]}>{cycle.referenceCode}</Text>}
+      dismissOnDrag
+      onClose={onClose}
+      size="tall"
+      title="Payment attempts"
+    >
       {attemptsQuery.isLoading ? (
         <View style={{ alignItems: "center", paddingVertical: spacing.xl }}>
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : attempts.length === 0 ? (
-        <Text style={[type.modalDescription, { color: colors.muted, paddingVertical: spacing.md }]}>
-          No payments have been started for this bill yet. Anything you pay through the app is recorded here.
-        </Text>
+        // The owner's claims empty state (user, 2026-11-11).
+        <EmptyState artwork={PAYMENT_CLAIMS_ILLUSTRATION} compact title="No claims yet" />
       ) : (
         attempts.map((attempt) => (
           <PaymentAttemptCard attempt={attempt} key={attempt.id} onResolve={onResolve} />
@@ -166,6 +165,10 @@ function PaymentAttemptCard({
         }}
       >
         <View style={{ flex: 1, gap: spacing.xs }}>
+          {/* The amount above the sentence, named (user, 2026-11-11). */}
+          <Text style={{ color: colors.muted, fontFamily: fonts.sans, fontSize: 13 }}>
+            Bill amount: <Text style={{ color: colors.ink, fontFamily: fonts.sansBold }}>{formatMoney(attempt.amountPaise)}</Text>
+          </Text>
           <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, fontSize: 14, lineHeight: 20 }}>
             {display.note}
           </Text>
@@ -179,25 +182,10 @@ function PaymentAttemptCard({
           ) : null}
         </View>
 
-        <View
-          style={{
-            borderLeftColor: colors.border,
-            borderLeftWidth: 1,
-            justifyContent: "center",
-            paddingLeft: spacing.md,
-          }}
-        >
-          <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 19, letterSpacing: -0.3 }}>
-            {formatMoney(attempt.amountPaise)}
-          </Text>
-        </View>
-      </View>
-
-      {/* Only an unanswered attempt has anything left to do. A confirmed one is
-          with the owner and a decided one is closed — offering "Resolve" there
-          would promise an action that does not exist. */}
-      {attempt.status === "CREATED" ? (
-        <View style={{ alignItems: "flex-start", marginTop: spacing.md }}>
+        {/* Only an unanswered attempt has anything left to do, so only it has
+            Resolve, where the amount used to sit (user, 2026-11-11). */}
+        {attempt.status === "CREATED" ? (
+        <View style={{ borderLeftColor: colors.border, borderLeftWidth: 1, justifyContent: "center", paddingLeft: spacing.md }}>
           <AnimatedPressable
             accessibilityLabel="Resolve this payment attempt"
             accessibilityRole="button"
@@ -216,7 +204,8 @@ function PaymentAttemptCard({
             <ArrowRight color={colors.onPrimary} size={17} strokeWidth={2.4} />
           </AnimatedPressable>
         </View>
-      ) : null}
+        ) : null}
+      </View>
     </View>
   );
 }

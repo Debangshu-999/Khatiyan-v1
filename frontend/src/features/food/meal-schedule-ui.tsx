@@ -6,6 +6,7 @@ import { Clock, Megaphone } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
+import { HighlightCard, highlightPalette } from "@/components/highlight-card";
 import { FieldError } from "@/components/field-error";
 import { SheetShell } from "@/components/sheet-shell";
 import { useToast } from "@/components/toast";
@@ -93,19 +94,22 @@ export function DelayedChip({ minutes }: { minutes: number }) {
 
 /** Shown where the next meal would be, once the day's last meal is over. */
 export function MealsDoneForToday() {
-  const { colors, fonts, type } = useTheme();
+  const { fonts } = useTheme();
+  const palette = highlightPalette.warm;
   return (
-    <Card>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-        <MaterialCommunityIcons color={colors.jade} name="check-circle-outline" size={22} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]}>All meals are done for today</Text>
-          <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
+    <HighlightCard variant="warm" style={{ padding: spacing.lg }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+        <View style={{ alignItems: "center", backgroundColor: "#FFF9EE", borderColor: palette.line, borderRadius: 999, borderWidth: 1, height: 46, justifyContent: "center", width: 46 }}>
+          <MaterialCommunityIcons color="#22775E" name="check-circle-outline" size={27} />
+        </View>
+        <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
+          <Text style={{ color: palette.ink, fontFamily: fonts.display, fontSize: 18, lineHeight: 24 }}>All meals are done for today</Text>
+          <Text style={{ color: palette.muted, fontFamily: fonts.sansMedium, fontSize: 12, lineHeight: 18 }}>
             Tomorrow's first meal shows after midnight.
           </Text>
         </View>
       </View>
-    </Card>
+    </HighlightCard>
   );
 }
 

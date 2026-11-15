@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { EmptyDeposit } from "@/components/empty-art";
+import { TenantAvatar } from "@/features/owner/tenancy-list";
 import { ActivityIndicator, BackHandler, Text, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import Svg, { Path } from "react-native-svg";
 import { LoadFailedScreen, loadFailure } from "@/components/load-failed";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
-import { AlertTriangle, CalendarDays, ChevronRight, ChevronUp, Clock, History, Landmark, Minus, Plus, UserRound, Wallet } from "lucide-react-native";
+import { AlertTriangle, CalendarDays, ChevronRight, ChevronUp, Clock, History, Landmark, Minus, Plus, Wallet } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
@@ -48,6 +50,7 @@ import { DepositCorrectionModal as CorrectionModal, type CorrectionMode } from "
 import { FitText } from "@/components/fit-text";
 import { cardName } from "@/lib/person-name";
 import { useQuickActionIntent } from "@/features/quick-actions/quick-action-intent";
+import { cardShadow } from "@/theme/shadows";
 
 // Pending exit still holds its deposit: it settles when the stay is ended.
 const ACTIVE_STATUSES: TenancyStatus[] = ["ACTIVE", "ON_NOTICE", "ON_PREMATURE_NOTICE", "PENDING_EXIT"];
@@ -230,7 +233,7 @@ export default function OwnerDepositManagerScreen() {
 
       {!property ? (
         <EmptyState
-          artworkNode={<DepositHistoryArtwork size={124} />}
+          artworkNode={<EmptyDeposit size={120} />}
 
           title="Choose a property first"
           description="Open the workspace tab on the home screen and select the property you want to manage deposits for."
@@ -238,7 +241,7 @@ export default function OwnerDepositManagerScreen() {
       ) : (
         <>
           {selectedTenancy ? (
-            <DepositAccountTenantCard tenancy={selectedTenancy} onPress={goBack} />
+            <DepositAccountTenantCard tenancy={selectedTenancy} />
           ) : (
             <TenancyPicker
               activeTenancies={activeTenancies}
@@ -272,7 +275,7 @@ export default function OwnerDepositManagerScreen() {
           {selectedTenancy && !pickerOpen ? (
             selectedTenancy.billingType === "DAILY" ? (
               <EmptyState
-                artworkNode={<DepositHistoryArtwork size={124} />}
+                artworkNode={<EmptyDeposit size={120} />}
 
                 title="No deposit for daily stays"
                 description="Daily tenancies are billed per night and do not carry a refundable security deposit, so there is no deposit ledger to manage."
@@ -291,7 +294,7 @@ export default function OwnerDepositManagerScreen() {
               />
             ) : (
               <EmptyState
-                artworkNode={<DepositHistoryArtwork size={124} />}
+                artworkNode={<EmptyDeposit size={120} />}
 
                 title="Deposit not opened yet"
                 description="A deposit account opens automatically once this tenant's first monthly cycle is paid."
@@ -400,7 +403,7 @@ function TenancyPicker({
           borderColor: colors.border,
           borderRadius: 16,
           borderWidth: 1,
-          elevation: 1,
+          ...cardShadow(colors.shadow),
           flexDirection: "row",
           gap: spacing.md,
           // Shorter. At 126 the card was mostly air around two lines of text.
@@ -496,10 +499,11 @@ function TenancyOptionRow({
             shadowOffset: { width: 0, height: 3 },
             shadowOpacity: 0.05,
             shadowRadius: 10,
-            elevation: 1,
+            ...cardShadow(colors.shadow),
           }}
         >
-          <UserRound color={colors.primary} size={28} strokeWidth={1.8} />
+          {/* Their photo, or their initials (user, 2026-11-07). */}
+          <TenantAvatar name={tenancy.tenantName} photoUrl={tenancy.tenantPhotoUrl} />
           <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
               <FitText
@@ -559,7 +563,7 @@ function HistoryEntryCard({ onPress }: { onPress: () => void }) {
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.05,
         shadowRadius: 12,
-        elevation: 1,
+        ...cardShadow(colors.shadow),
       }}
     >
       <Svg accessible={false} pointerEvents="none" width={190} height={65} viewBox="0 0 190 65" style={{ bottom: 0, position: "absolute", right: 0 }}>

@@ -115,10 +115,12 @@ test("Budget status uses the same soft shadow and elevation as the adjacent expe
   const Tile = component(expenses, "StatusValueTile", {
     radii: { card: 10 },
     useSoftShadow: () => (color, offset, blur) => ({ boxShadow: `${color}:${offset}:${blur}` }),
+    cardShadow: (color) => ({ boxShadow: `${color}:card` }),
   });
   const tree = Tile({ color: colors.jade, hint: "INR 19260 remaining", label: "Budget status", value: "On track" });
-  assert.equal(tree.props.style.boxShadow, `${colors.shadow}:2:6`);
-  assert.equal(tree.props.style.elevation, 2);
+  // The room-tab card depth, no elevation (user, 2026-11-13).
+  assert.equal(tree.props.style.boxShadow, `${colors.shadow}:card`);
+  assert.equal(tree.props.style.elevation, undefined);
   assert.equal(tree.props.style.backgroundColor, colors.surface);
   assert.equal(tree.props.style.padding, spacing.md);
   assert.ok(nodes(tree).some((node) => node.props.children === "INR 19260 remaining"));
@@ -129,12 +131,13 @@ test("notice cards keep the shared soft shadow across every filter, whether stat
   const BoardCard = component(board, "BoardCard", {
     radii: { card: 10 }, LaneBadge: "LaneBadge", ChevronRight: "ChevronRight", FactRow: "FactRow",
     useSoftShadow: () => (color, offset, blur) => ({ boxShadow: `${color}:${offset}:${blur}` }),
+    cardShadow: (color) => ({ boxShadow: `${color}:card` }),
   });
   for (const lane of ["LIVE", "SCHEDULED", "RECURRING", "PAUSED", "ARCHIVED", "ENDED"]) {
     for (const interactive of [false, true]) {
       let opened = 0;
       const tree = BoardCard({ lane, title: "Notice title", subtitle: "Notice preview", metaLeft: {}, metaRight: {}, footerLeft: {}, footerRight: {}, onPress: interactive ? () => opened++ : undefined });
-      assert.equal(tree.props.style.boxShadow, `${colors.shadow}:4:12`);
+      assert.equal(tree.props.style.boxShadow, `${colors.shadow}:card`);
       assert.equal(tree.props.style.padding, spacing.md);
       assert.equal(tree.props.style.borderRadius, 10);
       assert.equal(tree.type, interactive ? "Button" : "View");

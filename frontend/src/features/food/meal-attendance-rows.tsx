@@ -19,7 +19,7 @@ import {
   type MealAttendanceDayMeal,
   type MealAttendancePerson,
 } from "@/store/services/food-api";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -186,7 +186,7 @@ function PeopleCard({ people, title, tone }: { people: MealAttendancePerson[]; t
         borderRadius: radii.card,
         borderWidth: 1,
         overflow: "hidden",
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "center", backgroundColor: look.tint, flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>

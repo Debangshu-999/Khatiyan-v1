@@ -1,9 +1,10 @@
 import { PriorityChip } from "@/features/notice/notice-ui";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { ModalTitleRule } from "@/components/modal-title-rule";
 import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -22,7 +23,7 @@ import { FieldError } from "@/components/field-error";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
 import { useToast } from "@/components/toast";
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom, useRevealInputScroll } from "@/components/use-keyboard-inset";
 import {
   ActionButton,
   FormInput,
@@ -294,7 +295,9 @@ function DelaySheet({
   onDelayed: () => void;
 }) {
   const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom();
+  // The list scrolls to the focused input with the keyboard up (user, 2026-11-08).
+  const revealInput = useRevealInputScroll();
   const [picked, setPicked] = useState<Date>(new Date(notice.visibleFrom));
   const [pickerOpen, setPickerOpen] = useState(false);
   // "time" is the only thing on this sheet, so a bad choice is a field error
@@ -350,15 +353,16 @@ function DelaySheet({
             shrinkable ScrollView or its content runs off the bottom of the
             screen, and Expo 56 Android needs the KAV to lift it. */}
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          <View
+          <SheetCloseButton onClose={() => dismiss()} />
+          <Animated.View
             style={{
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
-              marginBottom: keyboardInset,
-              maxHeight: "92%",
+              paddingBottom: keyboardRoom,
+              maxHeight: "100%",
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}
@@ -380,7 +384,7 @@ function DelaySheet({
             </View>
             <ModalTitleRule />
 
-            <ScrollView
+            <ScrollView {...revealInput}
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
@@ -446,7 +450,7 @@ function DelaySheet({
             </View>
 
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
 

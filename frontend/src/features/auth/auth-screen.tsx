@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { retryAfterSeconds } from "@/features/forms/server-error";
 import { useRouter } from "expo-router";
 import { BackHandler, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,9 +13,9 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { saveSession } from "@/auth/session-storage";
 import { FadeInView } from "@/components/fade-in-view";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { useToast } from "@/components/toast";
 import { loadThemeModeForUser, saveActiveAccount } from "@/config/app-settings-storage";
 import { AUTH_SHEET_OVERLAP, AuthHero, authHeroCopy, type AuthMode, type AuthStep } from "@/features/auth/auth-hero";
+import { LinearGradient } from "expo-linear-gradient";
 import { queueWelcome } from "@/features/auth/pending-welcome";
 import {
   AuthAlertModal,
@@ -43,6 +44,7 @@ import {
   useConfirmEmailLoginMutation,
   useConfirmPinResetMutation,
   useLoginWithPinMutation,
+  useOtpWaitMutation,
   type UserSession,
   useRegisterOwnerMutation,
   useRegisterUserMutation,
@@ -61,6 +63,9 @@ import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
 /** How long a validation line stays under its field before clearing itself. */
+/** What a send pressed too soon, or refused for it, says (user, 2026-11-14). */
+const TOO_MANY_OTP_REQUESTS = "Too many OTP requests. Try again after some time.";
+
 const FIELD_ERROR_TIMEOUT_MS = 3000;
 
 /** Every input on the auth flow that can carry its own validation line. */
@@ -74,7 +79,6 @@ type AuthField = "phone" | "pin" | "otp" | "email" | "fullName" | "newPin" | "co
 export function AuthScreen() {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const toast = useToast();
   const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   const auth = useAppSelector((state) => state.auth);
@@ -101,10 +105,15 @@ export function AuthScreen() {
   const [otp, setOtp] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [otpRequestedAt, setOtpRequestedAt] = useState<number | null>(null);
+  // When the next code may be sent, from the server's database (user,
+  // 2026-11-14): asked on every screen that sends one, and again after each send
+  // or refusal. Never worked out on the device.
+  const [otpWaitUntil, setOtpWaitUntil] = useState(0);
+  const [otpWaitAsk, setOtpWaitAsk] = useState(0);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
 
   const [loginWithPin, loginState] = useLoginWithPinMutation();
+  const [otpWait] = useOtpWaitMutation();
   // Set when the account is at its device cap. Holds the PIN so "sign out other
   // devices" can complete the sign-in it interrupted.
   const [sessionLimit, setSessionLimit] = useState<
@@ -126,16 +135,10 @@ export function AuthScreen() {
     }
   }, [auth.accessToken, auth.hydrated, router]);
 
-  // Bridge the screen's existing message calls to the global toast system.
-  // null clears are no-ops now; type is inferred from the copy.
-  const setMessage = useCallback(
-    (value: string | null) => {
-      if (value) {
-        toast.show(value);
-      }
-    },
-    [toast],
-  );
+  // No toasts on the auth screens (user, 2026-11-14): the only one left is the
+  // welcome after signing in, shown on the next screen. The screen's message
+  // calls stay, and say nothing.
+  const setMessage = useCallback((_value: string | null) => {}, []);
 
   /**
    * Errors split two ways, by whether the reader can act on the field.
@@ -175,16 +178,16 @@ export function AuthScreen() {
   }, []);
 
   useEffect(() => {
-    if (!otpRequestedAt) {
+    if (otpWaitUntil <= Date.now()) {
       return;
     }
-
+    setCurrentTimeMs(Date.now());
     const timer = setInterval(() => {
       setCurrentTimeMs(Date.now());
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [otpRequestedAt]);
+  }, [otpWaitUntil]);
 
   const busy = useMemo(
     () =>
@@ -215,9 +218,43 @@ export function AuthScreen() {
   /** The number the setup steps act on: whichever door opened them. */
   const setupPhone = setupOrigin === "activate" ? activatePhone : signupPhone;
 
-  const otpCooldownSeconds = otpRequestedAt
-    ? Math.max(0, 30 - Math.floor((currentTimeMs - otpRequestedAt) / 1000))
-    : 0;
+  const otpCooldownSeconds = otpWaitUntil > currentTimeMs ? Math.ceil((otpWaitUntil - currentTimeMs) / 1000) : 0;
+
+  // Which number or address the current screen would send a code to, once it is
+  // complete enough to ask about.
+  const otpTarget = useMemo((): { email?: string; phone?: string; purpose: "LOGIN" | "PIN_RESET" | "EMAIL_LOGIN" } | null => {
+    if (step === "emailLogin") {
+      const email = loginEmail.trim();
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? { email, purpose: "EMAIL_LOGIN" } : null;
+    }
+    const phone = step === "resetRequest" || step === "resetOtp" ? resetPhone : step === "activate" ? activatePhone : step === "setupOtp" ? setupPhone : "";
+    if (!isValidPhone(phone)) return null;
+    return { phone, purpose: step === "resetRequest" || step === "resetOtp" ? "PIN_RESET" : "LOGIN" };
+  }, [activatePhone, loginEmail, resetPhone, setupPhone, step]);
+  const otpTargetKey = otpTarget ? `${otpTarget.purpose}:${otpTarget.phone ?? otpTarget.email}` : "";
+
+  // Ask the server for the wait whenever the target changes, and after every send.
+  useEffect(() => {
+    if (!otpTarget) {
+      setOtpWaitUntil(0);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void otpWait(otpTarget)
+        .unwrap()
+        .then((answer) => {
+          if (!cancelled) setOtpWaitUntil(answer.retryAfterSeconds > 0 ? Date.now() + answer.retryAfterSeconds * 1000 : 0);
+        })
+        .catch(() => undefined);
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // The target object is rebuilt each render; its key is what changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otpTargetKey, otpWaitAsk]);
 
   /**
    * Establishes the session after any successful authentication.
@@ -303,10 +340,38 @@ export function AuthScreen() {
     return true;
   }
 
+  /** After a code goes out: ask the server for the new wait. */
   function startOtpCooldown() {
-    const now = Date.now();
-    setCurrentTimeMs(now);
-    setOtpRequestedAt(now);
+    setOtpWaitAsk((ask) => ask + 1);
+  }
+
+  /**
+   * A refusal for coming too soon carries the server's wait: the Resend countdown
+   * takes it, and the person is told in the error popup (user, 2026-11-14).
+   * Returns true when it was that refusal.
+   */
+  function noteOtpRefusal(error: unknown) {
+    const wait = retryAfterSeconds(error);
+    if (wait > 0) {
+      setCurrentTimeMs(Date.now());
+      setOtpWaitUntil(Date.now() + wait * 1000);
+      setAlertMessage(TOO_MANY_OTP_REQUESTS);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * The send buttons have no timer and stay pressable (user, 2026-11-14). Pressed
+   * while the server's wait is still running, they open the error popup instead
+   * of sending. Returns true when the press was stopped.
+   */
+  function blockedByOtpWait() {
+    if (otpCooldownSeconds > 0) {
+      setAlertMessage(TOO_MANY_OTP_REQUESTS);
+      return true;
+    }
+    return false;
   }
 
   async function handleLogin() {
@@ -335,9 +400,9 @@ export function AuthScreen() {
    * verifies credentials on the same call that does the revoking, so nothing is
    * signed out on the strength of a request that was already refused.
    */
-  async function attemptPinLogin(pin: string, signOutSessionId?: string) {
+  async function attemptPinLogin(pin: string, signOutSessionId?: string, signOutAll = false) {
     try {
-      const response = await loginWithPin({ phone: loginPhone, pin, signOutSessionId }).unwrap();
+      const response = await loginWithPin({ phone: loginPhone, pin, signOutAll, signOutSessionId }).unwrap();
       setSessionLimit(null);
       await persistTokenSession(response);
     } catch (error) {
@@ -385,7 +450,9 @@ export function AuthScreen() {
       setStep("setupOtp");
       setMessage("Account created. Setup OTP requested.");
     } catch (error) {
-      setAlertMessage(errorMessage(error));
+      if (!noteOtpRefusal(error)) {
+        setAlertMessage(errorMessage(error));
+      }
     }
   }
 
@@ -413,6 +480,9 @@ export function AuthScreen() {
     if (!validatePhone(activatePhone)) {
       return;
     }
+    if (blockedByOtpWait()) {
+      return;
+    }
 
     try {
       await requestOtp({ phone: activatePhone, purpose: "LOGIN", channel: "SMS_AND_EMAIL" }).unwrap();
@@ -424,7 +494,9 @@ export function AuthScreen() {
       setStep("setupOtp");
       setMessage("If that number is waiting to be set up, we've sent it a code.");
     } catch (error) {
-      setAlertMessage(errorMessage(error));
+      if (!noteOtpRefusal(error)) {
+        setAlertMessage(errorMessage(error));
+      }
     }
   }
 
@@ -439,7 +511,9 @@ export function AuthScreen() {
       startOtpCooldown();
       setMessage("PIN setup OTP requested.");
     } catch (error) {
-      setAlertMessage(errorMessage(error));
+      if (!noteOtpRefusal(error)) {
+        setAlertMessage(errorMessage(error));
+      }
     }
   }
 
@@ -504,6 +578,9 @@ export function AuthScreen() {
     if (!validatePhone(resetPhone)) {
       return;
     }
+    if (blockedByOtpWait()) {
+      return;
+    }
 
     try {
       await requestPinReset({ phone: resetPhone, channel: "SMS" }).unwrap();
@@ -512,7 +589,9 @@ export function AuthScreen() {
       setStep("resetOtp");
       setMessage("If that number has an account, we've sent it a reset code.");
     } catch (error) {
-      setAlertMessage(errorMessage(error));
+      if (!noteOtpRefusal(error)) {
+        setAlertMessage(errorMessage(error));
+      }
     }
   }
 
@@ -554,7 +633,6 @@ export function AuthScreen() {
       // they remember it.
       await confirmPinReset({ phone: resetPhone, otp, newPin }).unwrap();
       goToLogin();
-      toast.show("PIN reset. Log in with your new PIN.", "success");
     } catch (error) {
       setAlertMessage(errorMessage(error));
     }
@@ -567,25 +645,31 @@ export function AuthScreen() {
       showFieldErrors({ email: loginEmailIssue });
       return;
     }
+    if (blockedByOtpWait()) {
+      return;
+    }
     try {
       await requestEmailLogin({ email: loginEmail.trim() }).unwrap();
       setOtp("");
       setEmailLoginOtpRequested(true);
       startOtpCooldown();
-      toast.show("Email OTP sent. Check your verified email.", "info");
     } catch (error) {
-      setAlertMessage(errorMessage(error));
+      if (!noteOtpRefusal(error)) {
+        setAlertMessage(errorMessage(error));
+      }
     }
   }
 
-  async function handleEmailLoginConfirm() {
+  async function handleEmailLoginConfirm(code?: string) {
     clearFieldErrors();
-    if (otp.length !== 6) {
-      showFieldErrors({ otp: otp.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
+    // The boxes hand over the code as the sixth digit lands, before state has caught up.
+    const entered = code ?? otp;
+    if (entered.length !== 6) {
+      showFieldErrors({ otp: entered.trim() ? "Enter all 6 digits." : "Enter the code we sent you." });
       return;
     }
     try {
-      const response = await confirmEmailLogin({ email: loginEmail.trim(), otp }).unwrap();
+      const response = await confirmEmailLogin({ email: loginEmail.trim(), otp: entered }).unwrap();
       await persistTokenSession(response);
     } catch (error) {
       setAlertMessage(errorMessage(error));
@@ -597,7 +681,7 @@ export function AuthScreen() {
     setOtp("");
     setNewPin("");
     setConfirmPin("");
-    setOtpRequestedAt(null);
+    setOtpWaitUntil(0);
   }
 
   /**
@@ -645,7 +729,7 @@ export function AuthScreen() {
     setOtp("");
     setNewPin("");
     setConfirmPin("");
-    setOtpRequestedAt(null);
+    setOtpWaitUntil(0);
   }
 
   function goToSignup() {
@@ -734,7 +818,7 @@ export function AuthScreen() {
       scrollOnlyWhenNeeded
     >
       {/* Full-bleed brand band running edge-to-edge under the status bar. */}
-      <AuthHero copy={heroCopy} />
+      <AuthHero copy={heroCopy} screen={`${step}:${mode}`} />
 
       {alertMessage ? (
         <AuthAlertModal message={alertMessage} onClose={() => setAlertMessage(null)} />
@@ -746,6 +830,7 @@ export function AuthScreen() {
           message={sessionLimit.message}
           onCancel={() => setSessionLimit(null)}
           onSignOut={(session) => void attemptPinLogin(sessionLimit.pin, session.id)}
+          onSignOutAll={() => void attemptPinLogin(sessionLimit.pin, undefined, true)}
           sessions={sessionLimit.sessions}
         />
       ) : null}
@@ -764,16 +849,25 @@ export function AuthScreen() {
       {/* Content sheet: overlaps the band with rounded corners and fills the
           rest of the screen. Fields flow from the top; each step pins its
           actions to the bottom via marginTop:"auto" inside this stretched column. */}
-      <View
+      {/* The form sheet (user, 2026-11-14): a deep continuous curve over the picture,
+          no grab handle, a tight top, and a wash of the theme's blue that deepens towards the
+          bottom so the card reads as part of the app, not a white slab. */}
+      <LinearGradient
+        colors={[colors.authSurface, mixColor(colors.authSurface, colors.primary, 0.05), mixColor(colors.authSurface, colors.primary, 0.13)]}
+        locations={[0, 0.45, 1]}
         style={{
-          backgroundColor: colors.authSurface,
-          borderTopLeftRadius: 26,
-          borderTopRightRadius: 26,
+          borderCurve: "continuous",
+          borderTopLeftRadius: 32,
+          borderTopRightRadius: 32,
           flexGrow: 1,
           marginTop: -AUTH_SHEET_OVERLAP,
           paddingBottom: insets.bottom + spacing.xs,
           paddingHorizontal: spacing.lg,
-          paddingTop: spacing.xl,
+          paddingTop: spacing.md,
+          shadowColor: "#0B1533",
+          shadowOffset: { height: -6, width: 0 },
+          shadowOpacity: 0.14,
+          shadowRadius: 16,
         }}
       >
       <FadeInView index={1} style={{ flexGrow: 1 }}>
@@ -785,9 +879,20 @@ export function AuthScreen() {
                 working label, not a brand moment. The serif stays on the wordmark
                 and the screen headers. */}
             <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 26, letterSpacing: -0.5 }}>
-                {heroCopy.title}
-              </Text>
+              {/* Two-tone (user, 2026-11-14): the title in the display face, its last
+                  word in the serif italic and the theme's blue. Two Texts side by
+                  side, not one nested in the other: Android measured the nested
+                  italic in the outer face and cut the word off. */}
+              <View style={{ alignItems: "baseline", flexDirection: "row", flexShrink: 1, flexWrap: "wrap" }}>
+                {titleLead(heroCopy.title) ? (
+                  <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 28, letterSpacing: -0.6, lineHeight: 36 }}>
+                    {titleLead(heroCopy.title)}
+                  </Text>
+                ) : null}
+                <Text style={{ color: colors.primary, fontFamily: fonts.fancyItalic, fontSize: 29, lineHeight: 36, paddingRight: 4 }}>
+                  {titleTail(heroCopy.title)}
+                </Text>
+              </View>
               {/* Only the provisioned door needs explaining, and only to someone
                   confused about why the other two doors refused them. Beside the
                   heading, not above the field, so the form stays a form. */}
@@ -810,11 +915,7 @@ export function AuthScreen() {
                 </AnimatedPressable>
               ) : null}
             </View>
-            {heroCopy.subtitle ? (
-              <Text style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
-                {heroCopy.subtitle}
-              </Text>
-            ) : null}
+            {/* No line under the title (user, 2026-11-14): the band above already says it. */}
           </View>
 
           {step === "entry" && mode === "login" ? (
@@ -882,7 +983,7 @@ export function AuthScreen() {
               resendBusy={requestEmailLoginState.isLoading}
               busy={emailLoginOtpRequested ? confirmEmailLoginState.isLoading : requestEmailLoginState.isLoading}
               onRequestOtp={() => void handleEmailLoginRequest()}
-              onConfirm={() => void handleEmailLoginConfirm()}
+              onConfirm={(code) => void handleEmailLoginConfirm(code)}
               emailError={fieldErrors.email}
               otpError={fieldErrors.otp}
               onEditEmail={() => {
@@ -973,9 +1074,27 @@ export function AuthScreen() {
         </View>
       </FadeInView>
 
-      </View>
+      </LinearGradient>
     </ScreenScrollView>
   );
 }
 import { CircleHelp } from "lucide-react-native";
 import { InfoModal } from "@/components/info-modal";
+
+/** `a` moved `t` of the way to `b` (both #RRGGBB): a solid tint, no see-through. */
+function mixColor(a: string, b: string, t: number) {
+  const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const [from, to] = [channels(a), channels(b)];
+  return `#${from.map((c, k) => Math.round(c + (to[k] - c) * t).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Everything up to the title's last word, a space kept apart by the row's gap. */
+function titleLead(title: string) {
+  const cut = title.lastIndexOf(" ");
+  return cut < 0 ? "" : `${title.slice(0, cut)} `;
+}
+
+/** The title's last word, drawn in the accent. */
+function titleTail(title: string) {
+  return title.slice(title.lastIndexOf(" ") + 1);
+}

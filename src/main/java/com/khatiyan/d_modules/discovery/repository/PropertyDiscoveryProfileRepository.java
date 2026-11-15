@@ -40,6 +40,15 @@ public interface PropertyDiscoveryProfileRepository extends JpaRepository<Proper
             """)
     List<PropertyDiscoveryProfile> findAllVisible();
 
+    @Query("""
+            select profile
+            from PropertyDiscoveryProfile profile
+            where profile.propertyId in :propertyIds
+              and profile.publicVisible = true
+              and profile.active = true
+            """)
+    List<PropertyDiscoveryProfile> findVisibleByPropertyIds(@Param("propertyIds") java.util.Collection<UUID> propertyIds);
+
     /** Distance (km) from a search point to one visible, coordinated property. */
     interface VisiblePropertyDistance {
         UUID getPropertyId();

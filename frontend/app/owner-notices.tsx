@@ -36,11 +36,11 @@ import {
   priorityLabel,
   type CardFact,
   type NoticeLane, PriorityMark } from "@/features/notice/notice-ui";
-import { CountTabPills } from "@/components/filter-bubbles";
+import { CountTabPills, FILTER_CHIP_RADIUS } from "@/components/filter-bubbles";
 import { PickerOptionRow } from "@/components/picker-option-row";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SearchField } from "@/components/search-field";
+import { SearchField, SearchFilterButton } from "@/components/search-field";
 import { OwnerNoticeListSkeleton, OwnerNoticeTotalsSkeleton } from "@/components/skeletons/owner";
 import { classifyToast, useToast } from "@/components/toast";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -61,7 +61,7 @@ import {
 } from "@/store/services/notice-api";
 import { useListMyPropertiesQuery, type OwnerProperty } from "@/store/services/property-api";
 import { radii, spacing } from "@/theme/spacing";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
 
@@ -76,7 +76,7 @@ type BoardTab = "active" | "scheduled" | "recurring" | "archived";
 /** One list holding both kinds of thing, so the board can order them together. */
 type BoardItem =
   | { kind: "notice"; lane: NoticeLane; notice: NoticeSummary; sortAt: number }
-  | { kind: "recurring"; lane: NoticeLane; recurringNotice: RecurringNoticeSummary; sortAt: number };
+  | { kind: "recurring"; lane: NoticeLane; liveNow: boolean; recurringNotice: RecurringNoticeSummary; sortAt: number };
 
 /**
  * Recurring is a filter, not a separate mode.
@@ -87,6 +87,27 @@ type BoardItem =
  * an owner had to know they existed to go and look. As one lane beside the
  * others they are named on the board itself.
  */
+/**
+ * Whether an item belongs on a tab. A recurring notice showing right now is on Active
+ * as well as Recurring (user, 2026-11-14): Active is everything live, not only one-offs.
+ */
+function inTab(item: BoardItem, tab: BoardTab) {
+  return TAB_LANES[tab].includes(item.lane) || (tab === "active" && item.kind === "recurring" && item.liveNow);
+}
+
+
+/**
+ * A recurring notice that is on the tenants' board at this moment: today's actual
+ * copy, not the template's times (user, 2026-11-15). An edit only reaches tomorrow's
+ * copy, so a template moved to 12:00 to 14:30 whose copy ran 13:00 to 14:00 is not
+ * live at 14:12, and the desk now agrees with what tenants see.
+ */
+function recurringLiveNow(template: RecurringNoticeSummary, now = Date.now()) {
+  if (template.status !== "ACTIVE" || !template.todayVisibleFrom) return false;
+  if (now < Date.parse(template.todayVisibleFrom)) return false;
+  return !template.todayVisibleUntil || now <= Date.parse(template.todayVisibleUntil);
+}
+
 const TAB_LANES: Record<BoardTab, NoticeLane[]> = {
   active: ["LIVE"],
   scheduled: ["SCHEDULED"],
@@ -186,6 +207,7 @@ export default function OwnerNoticesScreen() {
       items.push({
         kind: "recurring",
         lane: recurringNotice.status === "PAUSED" ? "PAUSED" : "RECURRING",
+        liveNow: recurringLiveNow(recurringNotice),
         recurringNotice,
         sortAt: Date.parse(recurringNotice.createdAt),
       });
@@ -203,10 +225,9 @@ export default function OwnerNoticesScreen() {
    * to paginate.
    */
   const visible = useMemo(() => {
-    const lanes = TAB_LANES[tab];
     const needle = search.trim().toLowerCase();
     return board.filter((item) => {
-      if (!lanes.includes(item.lane)) {
+      if (!inTab(item, tab)) {
         return false;
       }
       const source = item.kind === "notice" ? item.notice : item.recurringNotice;
@@ -224,7 +245,7 @@ export default function OwnerNoticesScreen() {
 
   const counts = useMemo(
     () => ({
-      live: board.filter((item) => item.lane === "LIVE").length,
+      live: board.filter((item) => inTab(item, "active")).length,
       recurring: board.filter((item) => item.lane === "RECURRING").length,
       scheduled: board.filter((item) => item.lane === "SCHEDULED").length,
     }),
@@ -289,22 +310,7 @@ export default function OwnerNoticesScreen() {
             onChangeText={setSearch}
             placeholder="Search notices"
             trailing={
-              <AnimatedPressable
-                accessibilityLabel="Filter notices by priority"
-                accessibilityRole="button"
-                accessibilityState={{ selected: priority !== "ALL" }}
-                onPress={() => setFiltersOpen(true)}
-                style={{
-                  alignItems: "center",
-                  backgroundColor: priority === "ALL" ? colors.surfaceSunken : colors.primary,
-                  borderRadius: 999,
-                  height: 34,
-                  justifyContent: "center",
-                  width: 34,
-                }}
-              >
-                <SlidersHorizontal color={priority === "ALL" ? colors.ink : colors.onPrimary} size={17} strokeWidth={2.3} />
-              </AnimatedPressable>
+              <SearchFilterButton accessibilityLabel="Filter notices by priority" active={priority !== "ALL"} inside onPress={() => setFiltersOpen(true)} />
             }
             value={search}
           />
@@ -316,7 +322,7 @@ export default function OwnerNoticesScreen() {
             options={BOARD_TABS.map((entry) => ({
               count: initialLoading
                 ? undefined
-                : board.filter((item) => TAB_LANES[entry.value].includes(item.lane)).length,
+                : board.filter((item) => inTab(item, entry.value)).length,
               label: entry.label,
               value: entry.value,
             }))}
@@ -663,7 +669,7 @@ function BoardCard({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
-    ...softShadow(colors.shadow, 4, 12),
+    ...cardShadow(colors.shadow),
   };
 
   if (!onPress) {

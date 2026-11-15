@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { Check } from "lucide-react-native";
+import { Check, CircleHelp } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { METHOD_ICON, type TenderMethod } from "@/features/billing/payment-methods";
@@ -56,10 +56,13 @@ export function PaymentMethodBand({ children }: { children: ReactNode }) {
 export function PaymentMethodToggle({
   checked,
   method,
+  onHelp,
   onToggle,
 }: {
   checked: boolean;
   method: TenderMethod;
+  /** Opens how this method works, from the ? beside its name. */
+  onHelp: () => void;
   onToggle: () => void;
 }) {
   const { colors, fonts } = useTheme();
@@ -69,11 +72,24 @@ export function PaymentMethodToggle({
   return (
     <PaymentMethodBand>
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 32 }}>
+      <MaterialCommunityIcons color={colors.ink} name={METHOD_ICON[method]} size={20} />
+      <Text style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 18 }}>{SETUP_LABEL[method]}</Text>
+      <AnimatedPressable
+        accessibilityLabel={`How ${SETUP_LABEL[method]} works`}
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={onHelp}
+        style={{ alignItems: "center", height: 26, justifyContent: "center", width: 26 }}
+        tapLockMs={0}
+      >
+        <CircleHelp color={colors.kicker} size={17} strokeWidth={2.4} />
+      </AnimatedPressable>
+      <View style={{ flex: 1 }} />
       <AnimatedPressable
         accessibilityLabel={`${SETUP_LABEL[method]}, ${checked ? "taken" : "not taken"}`}
         accessibilityRole="checkbox"
         accessibilityState={{ checked }}
-        hitSlop={{ bottom: 11, left: 11, right: 6, top: 11 }}
+        hitSlop={{ bottom: 11, left: 6, right: 11, top: 11 }}
         onPress={onToggle}
         style={{
           alignItems: "center",
@@ -89,8 +105,6 @@ export function PaymentMethodToggle({
       >
         {checked ? <Check color={colors.onPrimary} size={14} strokeWidth={3} /> : null}
       </AnimatedPressable>
-      <MaterialCommunityIcons color={colors.ink} name={METHOD_ICON[method]} size={20} />
-      <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>{SETUP_LABEL[method]}</Text>
     </View>
     </PaymentMethodBand>
   );

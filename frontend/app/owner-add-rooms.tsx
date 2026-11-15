@@ -286,7 +286,8 @@ export default function OwnerAddRoomsScreen() {
         safeAreaEdges={["top"]}
         // The full clearance and the nav bar's inset: the form ends in the
         // amenities card, which sat clipped behind the button (user, 2026-10-29).
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE + insets.bottom }}
+        // No gap under the header, as on Edit room (user, 2026-11-08).
+        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE + insets.bottom, paddingTop: 0 }}
         surface={colors.formSurface}
       >
         <ScreenHeader
@@ -303,7 +304,7 @@ export default function OwnerAddRoomsScreen() {
           title={bulk ? "Add multiple" : "Add a"}
         />
 
-        <View style={{ gap: spacing.lg, marginTop: spacing.md }}>
+        <View style={{ gap: spacing.lg }}>
           {molds.isLoading ? (
             <OwnerSettingsFormSkeleton fields={5} />
           ) : live.length === 0 ? (

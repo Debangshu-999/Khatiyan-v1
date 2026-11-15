@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { usePullRefreshed } from "@/lib/pull-refresh";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DoorOpen, Info, Pencil, Plus } from "lucide-react-native";
@@ -32,21 +33,23 @@ import {
   type PropertyDamageCharge,
 } from "@/store/services/property-api";
 import { ChevronDisc } from "@/components/chevron-disc";
+import { FitText } from "@/components/fit-text";
+
 import { NotchedInput } from "@/components/notched-input";
 import { SheetShell } from "@/components/sheet-shell";
 import { roomDamageItems } from "@/features/property/damage-catalogue";
-import { DamageLevelPill } from "@/features/tenancy/damage-level";
+import { DamageLevelBoxes, DamageLevelPill } from "@/features/tenancy/damage-level";
 import { ItemIcon } from "@/features/property/item-icon";
 
-type LevelWords = { d1: string; d2: string; d3: string };
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
 
 // Property-level exit policies: the damage-charge schedule and move-out
 // checklist. These apply to EVERY monthly tenancy at deposit settlement (with or
 // without an agreement) and are read into agreements by the compliance module.
 export default function OwnerExitPoliciesScreen() {
-  const { colors, type } = useTheme();
+  const { colors, fonts, type } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const selectedPropertyId = useAppSelector((state) => state.ownerWorkspace.selectedPropertyId);
@@ -70,68 +73,60 @@ export default function OwnerExitPoliciesScreen() {
   // Editable draft, seeded from the server copy once it arrives.
   const [damageCharges, setDamageCharges] = useState<PropertyDamageCharge[] | null>(null);
   const [checklist, setChecklist] = useState<string[] | null>(null);
-  // What D1, D2 and D3 mean here, the same for every item (2026-10-29).
-  const [levelWords, setLevelWords] = useState<LevelWords | null>(null);
   // The premature-exit policy is NOT edited here any more. It moved to the
   // agreement screen, under the indefinite term it qualifies — the two halves of
   // "how does this tenancy end" were split across two screens, so neither read
   // as a whole rule.
+  // What the form was last filled from, to tell an untouched form from an edited one.
+  const seededFrom = useRef<typeof policiesQuery.data>(undefined);
   useEffect(() => {
     if (policiesQuery.data && damageCharges === null && checklist === null) {
       setDamageCharges(policiesQuery.data.damageCharges);
       setChecklist(policiesQuery.data.exitChecklist);
-      setLevelWords(wordsOf(policiesQuery.data.damageLevels));
+      seededFrom.current = policiesQuery.data;
     }
   }, [checklist, damageCharges, policiesQuery.data]);
+  // A pull-to-refresh reloads the form from the fresh copy, unless it has edits to keep (2026-11-07).
+  usePullRefreshed(() => {
+    const base = seededFrom.current;
+    const fresh = policiesQuery.data;
+    if (!base || !fresh || damageCharges === null || checklist === null) return;
+    const untouched = isUnchanged(
+      { checklist: base.exitChecklist, damages: base.damageCharges.map(damageKey) },
+      { checklist, damages: damageCharges.map(damageKey) },
+    );
+    if (!untouched) return;
+    setDamageCharges(fresh.damageCharges);
+    setChecklist(fresh.exitChecklist);
+    seededFrom.current = fresh;
+  });
 
   // Server refusal — no field owns it, so it takes a modal.
   const opErrors = useFormErrors<never>();
 
-  async function save() {
-    if (!propertyId || damageCharges === null || checklist === null || levelWords === null) {
-      return;
-    }
-    if (!levelWords.d1.trim() || !levelWords.d2.trim() || !levelWords.d3.trim()) {
-      opErrors.failFromServer("Describe what each damage level means.");
-      return;
-    }
-
-    // Compared against the server copy, so returning a field to its original
-    // value counts as no change rather than arming the save forever.
-    const saved = policiesQuery.data;
-    if (
-      saved &&
-      isUnchanged(
-        {
-          checklist: saved.exitChecklist,
-          damages: saved.damageCharges.map(damageKey),
-          levels: Object.values(wordsOf(saved.damageLevels)),
-        },
-        {
-          checklist,
-          damages: damageCharges.map(damageKey),
-          levels: [levelWords.d1.trim(), levelWords.d2.trim(), levelWords.d3.trim()],
-        },
-      )
-    ) {
-      toast.warning("No changes have been made.");
-      return;
-    }
-
+  // Every action saves on its own (user, 2026-11-07): no Save button. The latest version
+  // is kept from each answer, so quick actions in a row do not trip the stale-edit check.
+  const versionRef = useRef<number | null>(null);
+  async function persist(next: PropertyDamageCharge[], done: string) {
+    if (!propertyId || checklist === null || damageCharges === null) return;
+    const before = damageCharges;
+    setDamageCharges(next);
     try {
-      await savePolicies({
+      const saved = await savePolicies({
         propertyId,
         payload: {
-          damageCharges,
-          damageLevels: { d1: levelWords.d1.trim(), d2: levelWords.d2.trim(), d3: levelWords.d3.trim() },
+          damageCharges: next,
           exitChecklist: checklist,
           permittedDeductions: policiesQuery.data?.permittedDeductions ?? [],
         },
-        // The property as loaded (2026-09-29): the policies live on it.
-        version: policiesQuery.data?.version ?? 0,
+        // The property as last saved or loaded (2026-09-29): the policies live on it.
+        version: versionRef.current ?? policiesQuery.data?.version ?? 0,
       }).unwrap();
-      toast.success("Item catalogue saved.");
+      versionRef.current = saved.version;
+      seededFrom.current = saved;
+      toast.success(done);
     } catch (caught) {
+      setDamageCharges(before);
       opErrors.failFromServer(errorMessage(caught));
     }
   }
@@ -143,16 +138,15 @@ export default function OwnerExitPoliciesScreen() {
   ) : undefined;
   const loading = accountsLoading || Boolean(property && !loadError && (
     policiesQuery.isLoading || roomsQuery.isLoading || myPropertiesQuery.isLoading
-    || damageCharges === null || checklist === null || levelWords === null
+    || damageCharges === null || checklist === null
   ));
-  const ready = Boolean(property) && !loading && !loadError && damageCharges !== null && checklist !== null && levelWords !== null;
+  const ready = Boolean(property) && !loading && !loadError && damageCharges !== null && checklist !== null;
 
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView
-        bottomPaddingCovered={ready}
         safeAreaEdges={["top"]}
-        contentContainerStyle={{ paddingBottom: PINNED_FOOTER_CLEARANCE + insets.bottom }}
+        contentContainerStyle={{ paddingBottom: spacing.xxl + insets.bottom }}
       >
         {loading ? <OwnerItemCatalogueScreenSkeleton /> : <>
         <ScreenHeader
@@ -174,23 +168,25 @@ export default function OwnerExitPoliciesScreen() {
           />
         ) : loadError ? (
           <LoadFailed error={loadError} onReload={() => void Promise.all([policiesQuery.refetch(), roomsQuery.refetch(), myPropertiesQuery.refetch()])} />
-        ) : damageCharges !== null && levelWords !== null ? (
+        ) : damageCharges !== null ? (
           <>
-            {/* The same four levels for every item, in the property's own words (P1.9.a, 2026-10-29). */}
+            {/* What each price tier means, the same for every item (user, 2026-11-07: levels are only prices). */}
             <Section title="Damage levels">
-              <Card>
-                <DamageLevelsEditor onChange={setLevelWords} readOnly={readOnly} words={levelWords} />
-              </Card>
+              <Text style={[type.description, { color: colors.muted }]}>
+                The same four levels for every item.
+              </Text>
+              <DamageLevelBoxes />
             </Section>
 
             <Section title="Item catalogue & Damages">
               <Text style={[type.description, { color: colors.muted }]}>
-                Each item is priced at one to three damage levels. NA costs nothing.
+                Each item can be charged at one or more damage levels.
               </Text>
               <DamageChargesEditor
                 attached={bathroomType === "ATTACHED"}
+                busy={saveState.isLoading}
                 charges={damageCharges}
-                onChange={setDamageCharges}
+                onChange={(next, done) => void persist(next, done)}
                 readOnly={readOnly}
                 roomItems={roomDamageItems(roomsQuery.data ?? [], bathroomType)}
               />
@@ -204,15 +200,6 @@ export default function OwnerExitPoliciesScreen() {
       {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
       </ScreenScrollView>
 
-      {ready ? (
-        <PinnedFooter>
-          <ActionButton
-            disabled={readOnly || saveState.isLoading}
-            label={saveState.isLoading ? "Saving…" : readOnly ? "View only" : "Save item catalogue"}
-            onPress={() => void save()}
-          />
-        </PinnedFooter>
-      ) : null}
     </View>
   );
 }
@@ -228,6 +215,12 @@ type PriceDraft = { d1: string; d2: string; d3: string };
 type CatalogueDeletion =
   | { kind: "item"; name: string; category: DamageCategory }
   | { kind: "level"; name: string; category: DamageCategory; index: number };
+
+/** How many levels an item is priced at, the prices themselves open under it (user, 2026-11-07). */
+function priceLine(levels: number[]) {
+  if (levels.length === 0) return "No prices set";
+  return `${levels.length} damage level${levels.length === 1 ? "" : "s"} set`;
+}
 
 /** An item's priced levels in order, D1 first: one to three of them. */
 function levelsOf(charge: PropertyDamageCharge): number[] {
@@ -271,14 +264,18 @@ function catalogueDeletionMessage(target: CatalogueDeletion, charges: PropertyDa
  */
 function DamageChargesEditor({
   attached,
+  busy,
   charges,
   onChange,
   readOnly,
   roomItems,
 }: {
   attached: boolean;
+  /** A save is on its way: further actions wait for it. */
+  busy: boolean;
   charges: PropertyDamageCharge[];
-  onChange: (next: PropertyDamageCharge[]) => void;
+  /** Saves at once, with what to say when it is done (user, 2026-11-07). */
+  onChange: (next: PropertyDamageCharge[], done: string) => void;
   readOnly: boolean;
   roomItems: { name: string; category: DamageCategory }[];
 }) {
@@ -304,10 +301,18 @@ function DamageChargesEditor({
 
   // An item stays on the list with no levels left, unpriced: only its bin takes it
   // off. A room's own amenity with no price simply goes back to being the room's.
-  function save(name: string, category: DamageCategory, levels: number[]) {
+  function save(name: string, category: DamageCategory, levels: number[], done: string) {
+    if (busy) return;
+    const at = charges.findIndex((charge) => charge.name.toLowerCase() === name.toLowerCase());
     const kept = charges.filter((charge) => charge.name.toLowerCase() !== name.toLowerCase());
     const amenityOnly = levels.length === 0 && fromRooms.has(name.toLowerCase());
-    onChange(amenityOnly ? kept : [...kept, withLevels({ category, name }, levels)]);
+    if (amenityOnly) {
+      onChange(kept, done);
+      return;
+    }
+    // In its place on the list, so it does not jump to the end (user, 2026-11-07).
+    const updated = withLevels({ category, name }, levels);
+    onChange(at === -1 ? [...kept, updated] : [...charges.slice(0, at), updated, ...charges.slice(at + 1)], done);
   }
 
   return (
@@ -382,21 +387,20 @@ function DamageChargesEditor({
         <ConfirmDialog
           confirmLabel={deleting.kind === "level" ? `Delete D${deleting.index + 1}` : "Delete item"}
           destructive
-          footnote="This change takes effect when you save the item catalogue."
           message={catalogueDeletionMessage(deleting, charges)}
           onCancel={() => setDeleting(null)}
           onConfirm={() => {
             setDeleting(null);
             if (readOnly) return;
             if (deleting.kind === "item") {
-              onChange(charges.filter((charge) => charge.name.toLowerCase() !== deleting.name.toLowerCase()));
+              onChange(charges.filter((charge) => charge.name.toLowerCase() !== deleting.name.toLowerCase()), `${deleting.name} removed.`);
               return;
             }
             const charge = charges.find((entry) => entry.name.toLowerCase() === deleting.name.toLowerCase());
             if (!charge) return;
             const levels = levelsOf(charge);
             levels.splice(deleting.index, 1);
-            save(deleting.name, deleting.category, levels);
+            save(deleting.name, deleting.category, levels, `D${deleting.index + 1} removed from ${deleting.name}.`);
           }}
           title={deleting.kind === "level" ? "Delete damage level?" : "Delete this item?"}
         />
@@ -409,7 +413,7 @@ function DamageChargesEditor({
           name={sheet.name}
           onClose={() => setSheet(null)}
           onSave={(name, levels) => {
-            save(name, sheet.category, levels);
+            save(name, sheet.category, levels, sheet.name ? `${name} prices saved.` : `${name} added.`);
             setSheet(null);
           }}
           taken={(name) => entries.some((entry) => entry.name.toLowerCase() === name.toLowerCase())}
@@ -503,11 +507,12 @@ function DamageItemRow({
         style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, paddingVertical: spacing.xs }}
       >
         <ItemIcon color={colors.inkSoft} name={name} size={20} />
-        <View style={{ flex: 1, gap: 2 }}>
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
           <Text style={{ color: colors.ink, fontFamily: fonts.sansBold, fontSize: 14 }}>{name}</Text>
-          <Text style={[type.caption, { color: levels.length ? colors.muted : colors.kicker, fontVariant: ["tabular-nums"] }]}>
-            {levels.length ? levels.map((price, at) => `D${at + 1} ${formatMoneyPaise(price)}`).join("  ·  ") : "No prices set"}
-          </Text>
+          {/* A count, not the prices: they show when the item is opened (user, 2026-11-07). */}
+          <FitText numberOfLines={1} style={[type.caption, { color: levels.length ? colors.muted : colors.kicker, fontVariant: ["tabular-nums"] }]}>
+            {priceLine(levels)}
+          </FitText>
         </View>
         {onDelete && !readOnly ? (
           <AnimatedPressable accessibilityLabel={`Delete ${name}`} accessibilityRole="button" hitSlop={10} onPress={onDelete}>
@@ -641,42 +646,6 @@ function PriceSheet({
   );
 }
 
-/**
- * NA fixed as no damage; D1 to D3 in the property's own words, each level set
- * inside its field like a ₹ (user, 2026-10-29).
- */
-function DamageLevelsEditor({
-  onChange,
-  readOnly,
-  words,
-}: {
-  onChange: (next: LevelWords) => void;
-  readOnly: boolean;
-  words: LevelWords;
-}) {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ gap: spacing.sm }}>
-      <NotchedInput editable={false} prefix="NA:" value="No damage" />
-      {(["d1", "d2", "d3"] as const).map((key) => (
-        <NotchedInput
-          editable={!readOnly}
-          key={key}
-          maxLength={120}
-          onChangeText={(value) => onChange({ ...words, [key]: value })}
-          placeholder="What this level means"
-          prefix={`${key.toUpperCase()}:`}
-          value={words[key]}
-        />
-      ))}
-      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.xs, paddingTop: spacing.xs }}>
-        <Info color={colors.muted} size={14} strokeWidth={2.2} style={{ marginTop: 2 }} />
-        <Text style={[type.description, { color: colors.muted, flex: 1 }]}>The same four levels for every item. D3 means the most damage.</Text>
-      </View>
-    </View>
-  );
-}
-
 function toRupeesCount(text: string) {
   const value = Number(text.replace(/[^\d]/g, ""));
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
@@ -690,9 +659,4 @@ function toRupeesCount(text: string) {
  */
 function damageKey(charge: PropertyDamageCharge) {
   return `${charge.name}::${charge.d1Paise}::${charge.d2Paise}::${charge.d3Paise}::${charge.category}`;
-}
-
-function wordsOf(levels: { level: string; description: string }[] | undefined): LevelWords {
-  const of = (level: string) => levels?.find((entry) => entry.level === level)?.description ?? "";
-  return { d1: of("D1"), d2: of("D2"), d3: of("D3") };
 }

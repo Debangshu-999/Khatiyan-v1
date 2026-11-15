@@ -24,7 +24,7 @@ function load(source, globals = {}) {
     exports: exported,
     require(name) {
       if (name === "react/jsx-runtime") return { jsx: element, jsxs: element };
-      if (name === "react") return { useRef: () => ({ current: null }), useState: (value) => [value, () => {}] };
+      if (name === "react") return { useEffect: () => {}, useRef: () => ({ current: null }), useState: (value) => [value, () => {}] };
       if (name === "react-native") return { Image: "Image", Text: "Text", View: "View", Dimensions: { get: () => ({ height: 800 }) } };
       if (name === "@/components/card") return { Card: "Card" };
       if (name === "@/theme/spacing") return { spacing };
@@ -91,7 +91,8 @@ test("Discovery's card variant also removes only the helper line", () => {
   const tree = DiscoveryEmptyState({ title: "Could not load properties", description: "Old supporting instruction." });
   assert.equal(tree.type, "Card");
   assert.equal(tree.props.tone, "sunken");
-  assert.deepEqual(nodes(tree, "Text").map((node) => node.props.children), ["Discovery", "Could not load properties"]);
+  // No "Discovery" eyebrow over the title either (user, 2026-11-07).
+  assert.deepEqual(nodes(tree, "Text").map((node) => node.props.children), ["Could not load properties"]);
 });
 
 test("Discovery's animated search prompt remains title-only with its illustration intact", () => {

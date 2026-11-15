@@ -37,6 +37,8 @@ export type HowItWorksStep = {
  * the app ends up explaining itself in two different voices.
  */
 export function HowItWorksSheet({
+  children,
+  keepTitle = false,
   markers,
   onClose,
   steps,
@@ -48,10 +50,14 @@ export function HowItWorksSheet({
    * marked with its own pill).
    */
   markers?: ReactNode[];
+  /** Content of its own in place of the steps (2026-11-07: the damage level boxes). */
+  children?: ReactNode;
   /** What is being explained, above the title. */
   eyebrow: string;
+  /** Show `title` as it is, rather than "How it works". */
+  keepTitle?: boolean;
   onClose: () => void;
-  steps: HowItWorksStep[];
+  steps?: HowItWorksStep[];
   title: string;
 }) {
   const { colors, fonts, type } = useTheme();
@@ -68,14 +74,14 @@ export function HowItWorksSheet({
             borderTopRightRadius: 22,
             borderWidth: 1,
             gap: spacing.md,
-            maxHeight: "76%",
+            maxHeight: "100%",
             padding: spacing.lg,
           }}
         >
-          <HelpModalHeader title={title} />
+          <HelpModalHeader keepTitle={keepTitle} title={title} />
 
           <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ gap: 24, paddingTop: 12, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
-            {steps.map((step, index) => (
+            {children ?? (steps ?? []).map((step, index) => (
               <View
                 key={step.title}
                 style={{ flexDirection: "row", alignItems: "flex-start", gap: 16 }}

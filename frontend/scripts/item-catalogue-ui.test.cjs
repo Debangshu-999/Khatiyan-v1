@@ -85,7 +85,7 @@ function amenityStrip() {
     ) },
     "@/store/services/property-api": { ROOM_AMENITIES: ["CUPBOARD", "ATTACHED_TOILET", "TV", "GEYSER", "BEDDING"] },
     "@/theme/spacing": { spacing: { xs: 4, sm: 8 } },
-    "@/theme/shadows": { softShadow: () => ({}) },
+    "@/theme/shadows": { softShadow: () => ({}), cardShadow: () => ({}) },
     "@/theme/use-theme": { useTheme: () => ({ colors: {}, fonts: {}, type: {} }) },
   }).RoomAmenityStrip;
 }
@@ -144,7 +144,7 @@ for (const [x, y, label] of [[40, 200, "Geyser"], [330, 20, "Cupboard"], [150, 5
         return [states[at], (next) => { states[at] = typeof next === "function" ? next(states[at]) : next; }];
       },
       View: "View", Text: "Text", Modal: "Modal", Pressable: "Backdrop", AnimatedPressable: "Button",
-      softShadow: () => ({}), spacing: { md: 12, sm: 8 },
+      softShadow: () => ({}), cardShadow: () => ({}), spacing: { md: 12, sm: 8 },
     });
     const render = () => { slot = 0; return Glyph({ children: "icon", label, tiles: true }); };
     render().props.children[0].props.children[0].props.onPress();

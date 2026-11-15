@@ -1,7 +1,8 @@
 import { Text, View } from "react-native";
 
+import { EmptyAllCaughtUp } from "@/components/empty-art";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
-import { DigestPaymentsEmptyIcon } from "@/components/tenancy-line-icons";
+import { DigestPaymentsBlueIcon } from "@/components/digest-color-icons";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen-header";
@@ -55,7 +56,7 @@ export default function OwnerPaymentsTodayScreen() {
 
       {!paidQuery.isLoading && paid.length === 0 ? (
         <EmptyState
-          artworkNode={<DigestPaymentsEmptyIcon size={64} />}
+          artworkNode={<EmptyAllCaughtUp size={120} />}
           title="No payments today"
         />
       ) : null}

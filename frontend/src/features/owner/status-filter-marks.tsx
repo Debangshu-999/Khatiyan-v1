@@ -15,17 +15,17 @@ import {
   Hourglass,
   ListFilter,
   LogOut,
-  Wallet,
   X,
   type LucideProps,
 } from "lucide-react-native";
 
+import { UnpaidBillGlyph } from "@/components/billing-vector-icons";
 import { useTheme } from "@/theme/use-theme";
 
-function Disc({ color, icon: Icon }: { color: string; icon: ComponentType<LucideProps> }) {
+function Disc({ color, glyphSize = 13, icon: Icon }: { color: string; glyphSize?: number; icon: ComponentType<LucideProps> }) {
   return (
     <View style={{ alignItems: "center", backgroundColor: color, borderRadius: 999, height: 22, justifyContent: "center", width: 22 }}>
-      <Icon color="#FFFFFF" size={13} strokeWidth={2.6} />
+      <Icon color="#FFFFFF" size={glyphSize} strokeWidth={glyphSize > 13 ? 2.2 : 2.6} />
     </View>
   );
 }
@@ -71,7 +71,7 @@ export function BillStatusMark({ value }: { value: string }) {
     case "UPCOMING":
       return <Disc color={colors.primary} icon={CalendarClock} />;
     case "UNPAID":
-      return <Disc color={colors.warning} icon={Wallet} />;
+      return <Disc color={colors.warning} glyphSize={16} icon={UnpaidBillGlyph} />;
     case "OVERDUE":
       return <Disc color={colors.danger} icon={AlertTriangle} />;
     case "CONFIRMATION_PENDING":
@@ -96,7 +96,7 @@ export function FilterMark({ value }: { value: string }) {
     case "ACTIVE":
       return <Disc color={colors.jade} icon={Check} />;
     case "UNPAID":
-      return <Disc color={colors.warning} icon={Wallet} />;
+      return <Disc color={colors.warning} glyphSize={16} icon={UnpaidBillGlyph} />;
     case "OVERDUE":
       return <Disc color={colors.danger} icon={AlertTriangle} />;
     case "CONFIRMATION_PENDING":

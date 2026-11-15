@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { EmptyChats } from "@/components/empty-art";
 import { Image, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BellRing, MessageCircle, MessageCirclePlus, UsersRound, type LucideProps } from "lucide-react-native";
@@ -316,7 +317,7 @@ function ManagementChats() {
           <EmptyState
             compact
             description={emptyCopy(section)}
-            artworkNode={<NoChatsArtwork />}
+            artworkNode={<EmptyChats size={120} />}
             title={emptyTitle(section)}
           />
         </CentredEmpty>
@@ -739,7 +740,7 @@ function PersonalChats() {
                   ? "Chats about your bookings appear here. Start one with Chat on a booking."
                   : "When a property answers your enquiry over chat, it appears here."
             }
-            artworkNode={<NoChatsArtwork />}
+            artworkNode={<EmptyChats size={120} />}
             title={section === "MINE" ? "No chats yet" : section === "BOOKINGS" ? "No booking chats" : "No enquiry chats"}
           />
         </CentredEmpty>

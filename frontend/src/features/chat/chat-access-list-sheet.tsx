@@ -122,7 +122,8 @@ export function ChatAccessListSheet({ onClose, propertyId }: { onClose: () => vo
 
   return (
     <>
-      <SheetShell size="tall" onClose={onClose} title="Access list">
+      {/* No title, no boxes, no lines (user, 2026-11-14), as on the property sheet. */}
+      <SheetShell size="tall" onClose={onClose} title="">
         {/* One line, said once. Which managers can read tenant messages is the
             question, and the sentence a reader needs is what it does NOT
             touch — their own conversations are not the owner's to hand out. */}
@@ -197,13 +198,11 @@ function ManagerAccessRow({
     <View
       style={{
         alignItems: "center",
-        borderColor: colors.borderStrong,
-        borderCurve: "continuous",
-        borderRadius: 10,
-        borderWidth: 1,
         flexDirection: "row",
         gap: spacing.sm,
-        padding: spacing.md,
+        paddingLeft: spacing.xs,
+        paddingRight: spacing.xs,
+        paddingVertical: spacing.sm,
       }}
     >
       <View

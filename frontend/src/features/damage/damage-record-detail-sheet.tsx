@@ -151,7 +151,7 @@ export function DamageRecordDetailSheet({
         <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
           <ItemIcon color={colors.inkSoft} name={record.itemName} size={22} />
           <FitText style={{ color: colors.ink, flexShrink: 1, fontFamily: fonts.display, fontSize: 20 }}>{damageRecordName(record)}</FitText>
-          <View style={{ marginTop: 4 }}><DamageLevelPill level={record.damageLevel} /></View>
+          {record.damageLevel ? <View style={{ marginTop: 4 }}><DamageLevelPill level={record.damageLevel} /></View> : null}
           <View style={{ flex: 1 }} />
           <StatePill label={state.label} tone={state.tone} />
         </View>

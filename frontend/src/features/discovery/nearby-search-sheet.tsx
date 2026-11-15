@@ -3,8 +3,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { WrapTitle } from "@/components/wrap-title";
 import { AppTextInput } from "@/components/app-text-input";
-import { MarqueeText } from "@/components/marquee-text";
 import { SheetShell } from "@/components/sheet-shell";
 import { CHIP_GLYPHS, formatMetres, type MaterialGlyph } from "@/features/discovery/nearby-places";
 import { forgetSearch, loadRecentSearches } from "@/features/discovery/recent-place-searches";
@@ -317,7 +317,7 @@ function SuggestionRow({
         <MaterialCommunityIcons color={tint ?? colors.ink} name={glyph} size={17} />
       </View>
       <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
-        <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{title}</MarqueeText>
+        <WrapTitle style={[type.bodyStrong, { color: colors.ink }]}>{title}</WrapTitle>
         {subtitle ? (
           <FitText numberOfLines={1} style={{ fontFamily: fonts.sans, fontSize: 12, lineHeight: 16, color: colors.muted }}>
             {subtitle}

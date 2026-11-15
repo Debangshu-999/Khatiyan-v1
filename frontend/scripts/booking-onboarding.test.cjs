@@ -114,11 +114,11 @@ test("the booking token on the first bill is named wherever the bill is shown", 
   assert.match(api, /export function bookingTokenPaise\(cycle: Pick<BillingCycle, "lineItems">\): number \{/);
   assert.match(api, /if \(item\.type === "BOOKING_TOKEN"\) \{\s+return "Booking token";/);
   assert.match(read("src/features/billing/booking-token-note.tsx"), /\{formatRupees\(paise\)\} booking token received/);
-  for (const file of ["src/features/owner/bill-views.tsx", "src/features/billing/tenant-bill-card.tsx"]) {
-    const view = read(file);
-    assert.match(view, /\{token > 0 \? <BookingTokenNote paise=\{token\} \/> : null\}/, file);
-    assert.match(view, /cycle\.totalAmountPaise \+ cycle\.discountAmountPaise \+ bookingTokenPaise\(cycle\)/, file);
-  }
+  const owner = read("src/features/owner/bill-views.tsx");
+  assert.match(owner, /\{token > 0 \? <BookingTokenNote paise=\{token\} \/> : null\}/);
+  assert.match(owner, /cycle\.totalAmountPaise \+ cycle\.discountAmountPaise \+ bookingTokenPaise\(cycle\)/);
+  // The tenant's card shows the owner's BillTotal, token note and all (2026-11-11).
+  assert.match(read("src/features/billing/tenant-bill-card.tsx"), /<BillTotal cycle=\{cycle\} size=\{30\} \/>/);
   const lines = read("app/tenancy-billing-cycle.tsx");
   assert.match(lines, /value=\{`\$\{token \? "− " : ""\}\$\{formatMoney\(item\.amountPaise\)\}`\}/);
   assert.match(lines, /token \? "Taken off the bill"/);

@@ -75,6 +75,7 @@ const FRAME_TILES = 3;
 export type MessageAnchor = { height: number; y: number };
 
 export function MessageBubble({
+  editing,
   message,
   onLongPress,
   onOpenFile,
@@ -84,6 +85,8 @@ export function MessageBubble({
   selected,
   tail,
 }: {
+  /** The composer is rewriting this one: the row wears the selected highlight, no label (user, 2026-11-13). */
+  editing?: boolean;
   message: ChatMessage;
   /** Receives the row's position in window coordinates. */
   onLongPress?: (anchor: MessageAnchor) => void;
@@ -154,7 +157,7 @@ export function MessageBubble({
       onLongPress={handleLongPress}
       style={{
         alignItems: mine ? "flex-end" : "flex-start",
-        backgroundColor: selected ? SELECTION_TINT : "transparent",
+        backgroundColor: selected || editing ? SELECTION_TINT : "transparent",
         paddingHorizontal: spacing.md,
         paddingVertical: 4,
       }}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Image, Text, View } from "react-native";
+import { EmptyLocation } from "@/components/empty-art";
+import { Image, Text, View, useWindowDimensions } from "react-native";
 import { MapPinned, Search, X } from "lucide-react-native";
 
 import { LoadFailedCard, loadFailure } from "@/components/load-failed";
@@ -17,6 +18,7 @@ import {
 } from "@/store/services/discovery-api";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+import { SEARCH_BAR_HEIGHT, searchBarFrame } from "@/components/search-field";
 
 import { useDebouncedValue } from "../use-debounced-value";
 import { CategoryPickerModal, type CategorySelection } from "./category-picker-modal";
@@ -36,6 +38,7 @@ type PlacesTab = "all" | "recommended" | "category";
 // Category filter strip (the last opening an accordion picker), and Direct /
 // Related result sections.
 export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
+  const { height: windowHeight } = useWindowDimensions();
   const { colors, fonts, type } = useTheme();
   const isTenant = mode === "tenant";
   const location = useAppSelector((state) => state.location);
@@ -126,20 +129,8 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
   return (
     <View style={{ gap: spacing.md }}>
       {/* Smart search */}
-      <View
-        style={{
-          alignItems: "center",
-          backgroundColor: colors.surfaceRaised,
-          borderColor: `${colors.ink}80`,
-          borderRadius: 10,
-          borderWidth: 1,
-          flexDirection: "row",
-          gap: spacing.sm,
-          minHeight: 50,
-          paddingHorizontal: spacing.md,
-        }}
-      >
-        <Search color={colors.muted} size={18} strokeWidth={2.2} />
+      <View style={searchBarFrame(colors)}>
+        <Search color={colors.muted} size={16} strokeWidth={2.2} />
         <AppTextInput
           accessibilityLabel="Search nearby places"
           autoCapitalize="none"
@@ -148,7 +139,7 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
           placeholder="Search for a pharmacy, hospital, ATM, gym or bus stand nearby"
           placeholderTextColor={colors.muted}
           returnKeyType="search"
-          style={{ color: colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 15, minHeight: 48, paddingVertical: 0 }}
+          style={{ color: colors.ink, flex: 1, fontFamily: fonts.sans, fontSize: 14, includeFontPadding: false, minHeight: SEARCH_BAR_HEIGHT - 2, paddingVertical: 0 }}
           value={query}
         />
         {query.length > 0 ? (
@@ -191,19 +182,16 @@ export function NearbyPlacesView({ mode, propertyId }: NearbyPlacesViewProps) {
         <View
           style={{
             alignItems: "center",
+            // Centred in the room the list would have filled (user, 2026-11-14).
+            justifyContent: "center",
+            minHeight: Math.round(windowHeight * 0.42),
             gap: spacing.sm,
             paddingBottom: spacing.sm,
             paddingHorizontal: spacing.md,
             paddingTop: spacing.sm,
           }}
         >
-          <Image
-            resizeMethod="resize"
-            accessibilityIgnoresInvertColors
-            resizeMode="contain"
-            source={NO_LOCATION_ILLUSTRATION}
-            style={{ height: 144, width: 144 }}
-          />
+          <EmptyLocation size={132} />
           <Text
             style={{
               color: colors.ink,

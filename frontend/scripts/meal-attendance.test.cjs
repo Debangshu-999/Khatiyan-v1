@@ -102,14 +102,14 @@ test("the forecast is one card of dishes with lines between, under notification-
   assert.match(forecast, /variant="bubbles"/);
   assert.match(forecast, /first=\{index === 0\}/);
   assert.match(forecast, /borderTopWidth: first \? 0 : 1/);
-  assert.match(forecast, /softShadow\(colors\.shadow, 4, 12\)/);
+  assert.match(forecast, /cardShadow\(colors\.shadow\)/);
   assert.doesNotMatch(forecast, /type\.metric/);
   const ui = read("src/features/food/food-ui.tsx");
   assert.match(ui, /<FilterBubble[\s\S]{0,160}count=\{showDates \? shortDate\(date\) : undefined\}/);
   // The weekly menu gets the same bubbles, with no dates because it repeats, and shadowed meal cards.
   const menu = read("app/owner-food-menu.tsx");
   assert.match(menu, /<DayStrip onSelect=\{setDay\} selected=\{day\} variant="bubbles" week=\{week\} \/>/);
-  assert.match(menu, /softShadow\(colors\.shadow, 4, 12\)/);
+  assert.match(menu, /cardShadow\(colors\.shadow\)/);
   // A meal's dishes share one pale blue card with lines between, and the entry sheet fits what is open.
   assert.match(menu, /backgroundColor: colors\.primarySoft, borderCurve: "continuous", borderRadius: radii\.card/);
   assert.match(menu, /borderTopWidth: index === 0 \? 0 : 1/);
@@ -125,7 +125,8 @@ test("the forecast is one card of dishes with lines between, under notification-
 
 test("Meals: cards have shadows, the items search docks, and How profiles work sits behind a ?", () => {
   for (const file of ["owner-food-overview", "meal-attendance-ui", "owner-food-items", "owner-food-profiles"]) {
-    assert.match(read(`src/features/food/${file}.tsx`), /softShadow\(colors\.shadow, 4, 12\)/, file);
+    // A highlight card brings the same shadow itself (Manage Meals, 2026-11-07).
+    assert.match(read(`src/features/food/${file}.tsx`), /cardShadow\(colors\.shadow\)|<HighlightCard /, file);
   }
   const screen = read("app/owner-food.tsx");
   assert.match(screen, /stickyHeaderIndices=\{itemSearchDocked \? \[2\] : undefined\}/);
@@ -257,7 +258,7 @@ test("the history is one compact card a day, its date in a blue pill on the righ
   assert.doesNotMatch(screen, /"Yesterday"|return "Today"/);
   assert.match(screen, /\{dayName\(day\.date\)\}/);
   assert.match(screen, /backgroundColor: colors\.primary, borderRadius: 999[\s\S]*?\{dayDate\(day\.date\)\}/);
-  assert.match(screen, /softShadow\(colors\.shadow, 4, 12\)/);
+  assert.match(screen, /cardShadow\(colors\.shadow\)/);
   // A day moves here once its last meal is over.
   assert.match(screen, /day\.date !== today \|\| day\.meals\.every\(\(meal\) => meal\.state === "DONE"\)/);
 });

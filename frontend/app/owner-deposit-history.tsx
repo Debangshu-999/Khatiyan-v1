@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { EmptyDeposit } from "@/components/empty-art";
 import { ActivityIndicator, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { CARD_STATUS_ROW, NAME_UNDER_STATUS, smallerCardText } from "@/components/card-name-row";
 import { LoadFailed } from "@/components/load-failed";
@@ -19,6 +20,8 @@ import { ChoiceButton, formatMoneyPaise, shortId } from "@/features/owner/owner-
 import { useAppSelector } from "@/store/hooks";
 import type { DepositAccount, DepositAccountStatus } from "@/store/services/billing-api";
 import { useListPropertyDepositsQuery } from "@/store/services/billing-api";
+import { useListPropertyTenanciesQuery } from "@/store/services/tenancy-api";
+import { TenantAvatar } from "@/features/owner/tenancy-list";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 import { CountTabPills } from "@/components/filter-bubbles";
@@ -71,6 +74,13 @@ export default function OwnerDepositHistoryScreen() {
     { skip: !propertyId },
   );
   const pageData = depositsQuery.data;
+  // The tenants' photos come with the tenancy list, the same request Deposit manager makes,
+  // so it is usually already in hand (user, 2026-11-07).
+  const tenanciesQuery = useListPropertyTenanciesQuery({ includePast: true, propertyId }, { skip: !propertyId });
+  const photoByTenancy = useMemo(
+    () => new Map((tenanciesQuery.data ?? []).map((tenancy) => [tenancy.id, tenancy.tenantPhotoUrl])),
+    [tenanciesQuery.data],
+  );
 
   /**
    * Every page seen so far, appended.
@@ -131,7 +141,7 @@ export default function OwnerDepositHistoryScreen() {
 
       {!property ? (
         <EmptyState
-          artworkNode={<DepositHistoryArtwork size={124} />}
+          artworkNode={<EmptyDeposit size={120} />}
 
           title="Choose a property first"
           description="Open the workspace tab on the home screen and select a property to view its deposit history."
@@ -154,7 +164,7 @@ export default function OwnerDepositHistoryScreen() {
             <OwnerDepositListSkeleton rows={3} />
           ) : items.length === 0 ? (
             <EmptyState
-              artworkNode={<DepositHistoryArtwork size={124} />}
+              artworkNode={<EmptyDeposit size={120} />}
 
               title="No matching deposit accounts"
               description={committedQuery || statusFilter !== "ALL" ? "Try a different search or filter." : "Deposit accounts appear here as tenancies open and settle."}
@@ -165,6 +175,7 @@ export default function OwnerDepositHistoryScreen() {
                 <HistoryRow
                   account={account}
                   key={account.id}
+                  photoUrl={photoByTenancy.get(account.tenancyId) ?? null}
                   // navigate, not push. These two screens open each other, so
                   // pushing built a stack of alternating copies — manager,
                   // history, manager, history — and the back button then
@@ -207,7 +218,7 @@ function depositStatusBadge(status: DepositAccountStatus, colors: ReturnType<typ
   return { background: colors.successSoft, color: colors.successText, icon: Landmark, label: "Active" };
 }
 
-function HistoryRow({ account, onPress }: { account: DepositAccount; onPress: () => void }) {
+function HistoryRow({ account, onPress, photoUrl }: { account: DepositAccount; onPress: () => void; photoUrl: string | null }) {
   const { colors, fonts, type } = useTheme();
 
   return (
@@ -225,6 +236,7 @@ function HistoryRow({ account, onPress }: { account: DepositAccount; onPress: ()
         padding: spacing.md,
       }}
     >
+      <TenantAvatar name={account.tenantName} photoUrl={photoUrl} />
       <View style={{ flex: 1, gap: spacing.xxs }}>
         {NAME_UNDER_STATUS ? <View style={CARD_STATUS_ROW}><BillingStatusBadge {...depositStatusBadge(account.status, colors)} /></View> : null}
         <FitText style={[smallerCardText(type.bodyStrong), { color: colors.ink }]} numberOfLines={1}>

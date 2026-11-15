@@ -1,7 +1,12 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { SubheadingDash } from "@/components/section-heading";
 import { ActivityIndicator, Image, Text, View, type ViewStyle } from "react-native";
 import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { PropertyIcon } from "@/components/property-icon";
+import { TwoBuildingsIcon } from "@/components/two-buildings-icon";
+import { ColorCalendarIcon } from "@/components/color-calendar-icon";
+import { GenderPairIcon } from "@/components/gender-pair-icon";
+import { ProfileStateIcon } from "@/components/profile-state-icon";
 import { AppTextInput } from "@/components/app-text-input";
 import { emailProblem } from "@/features/forms/email-validation";
 import { GENDER_LABELS } from "@/features/account/gender-picker";
@@ -9,10 +14,8 @@ import * as ImagePicker from "expo-image-picker";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import {
   Camera,
-  CalendarDays,
   Check,
   ChevronRight,
-  CircleAlert,
   Hash,
   Home,
   Mail,
@@ -24,7 +27,6 @@ import {
   Plus,
   Power,
   ShieldCheck,
-  UserRound,
   type LucideProps } from "lucide-react-native";
 import { DeleteIcon as Trash2 } from "@/components/delete-icon";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -36,7 +38,6 @@ import { Divider } from "@/components/divider";
 import { Skeleton } from "@/components/skeletons";
 import { OwnerInsetListSkeleton } from "@/components/skeletons/owner";
 import { Lightbox } from "@/components/image-carousel";
-import { Section } from "@/components/section";
 import { SheetShell } from "@/components/sheet-shell";
 import { AlertModal } from "@/components/alert-modal";
 import { FieldError } from "@/components/field-error";
@@ -49,6 +50,7 @@ import { accountDescription, accountLabel, useAvailableAccounts, type AccountTyp
 import { EnquiryReplySettings } from "@/features/account/enquiry-reply-settings";
 import { ProfileEditModal, type ProfileEditField } from "@/features/account/profile-edit-modal";
 import { ActionButton, ConfirmDialog } from "@/features/owner/owner-ui";
+import { LogoutDialog } from "@/features/auth/logout-dialog";
 import { uploadAsset } from "@/features/uploads/upload-asset";
 import { api } from "@/store/api";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -57,7 +59,8 @@ import { MAX_OWNER_PROPERTIES, useListMyPropertiesQuery } from "@/store/services
 import { clearActiveAccount, setActiveAccount } from "@/store/slices/account-slice";
 import { clearSession, setSession } from "@/store/slices/auth-slice";
 import { setPinnedOwnerModules } from "@/store/slices/owner-pins-slice";
-import { spacing } from "@/theme/spacing";
+import { cardShadow, softShadow } from "@/theme/shadows";
+import { radii, spacing } from "@/theme/spacing";
 import { BookingsIcon, EnquiriesIcon, PropertyVisitsIcon } from "@/features/property/property-control-icons";
 import { useTheme } from "@/theme/use-theme";
 import { FitText } from "@/components/fit-text";
@@ -147,6 +150,7 @@ export default function AccountScreen() {
   const [emailDraft, setEmailDraft] = useState("");
   const [profileEdit, setProfileEdit] = useState<ProfileEditField | null>(null);
   const [completionInfoOpen, setCompletionInfoOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   useEffect(() => {
     if (profileCompletion.complete) setCompletionInfoOpen(false);
   }, [profileCompletion.complete]);
@@ -380,64 +384,50 @@ export default function AccountScreen() {
         </View>
       </View>
 
+      {/* No subheadings on this screen, and no lines between its sections (user, 2026-11-08). */}
       <View style={{ gap: spacing.sm }}>
-        <SectionTitle title="Personal information" />
+        {/* The four facts as tiles, the Home wallet tile's look (user, 2026-11-08). */}
         <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
-          <PersonalInfoCard
-            compact
-            icon={ShieldCheck}
-            style={{ flex: 1 }}
-          >
-            <ReadonlyField
-              compact
-              label="Account status"
-              value={user?.active ? "Active" : "Inactive"}
-              valueColor={user?.active ? colors.jade : colors.danger}
-            />
-          </PersonalInfoCard>
-          <PersonalInfoCard
-            accessibilityLabel={profileCompletion.complete ? undefined : "View profile completion"}
-            compact
-            icon={CircleAlert}
+          {/* Coloured marks (user, 2026-11-08): the status shield in its state colour,
+              a filled person in the profile's, both gender symbols, the month picker's calendar. */}
+          <AccountTile
+            art={<ShieldCheck color="#FFFFFF" fill={user?.active ? colors.jade : colors.danger} size={30} strokeWidth={2.1} />}
+            label="Account status"
+            value={user?.active ? "Active" : "Inactive"}
+            valueColor={user?.active ? colors.jade : colors.danger}
+          />
+          <AccountTile
+            accessibilityLabel={profileCompletion.complete ? "Profile" : "View profile completion"}
+            art={<ProfileStateIcon color={profileCompletion.complete ? colors.jade : colors.warning} complete={profileCompletion.complete} />}
+            label="Profile"
+            loading={identityLoading}
             onPress={!identityLoading && !profileCompletion.complete ? () => setCompletionInfoOpen(true) : undefined}
-            style={{ flex: 1 }}
-          >
-            <CompletionField compact complete={profileCompletion.complete} loading={identityLoading} />
-          </PersonalInfoCard>
+            value={profileCompletion.complete ? "Complete" : "Incomplete"}
+            valueColor={profileCompletion.complete ? colors.jade : colors.warningText}
+          />
         </View>
-
         <View style={{ alignItems: "stretch", flexDirection: "row", gap: spacing.sm }}>
-          <PersonalInfoCard
+          <AccountTile
             accessibilityLabel="Edit gender in account settings"
-            compact
-            icon={UserRound}
+            art={<GenderPairIcon size={28} />}
+            label="Gender"
+            loading={identityLoading}
             onPress={() => router.push("/account-settings")}
-            style={{ flex: 1 }}
-          >
-            <ReadonlyField
-              compact
-              label="Gender"
-              loading={identityLoading}
-              value={identity?.gender ? GENDER_LABELS[identity.gender] : "Not set"}
-            />
-          </PersonalInfoCard>
-          <PersonalInfoCard
+            value={identity?.gender ? GENDER_LABELS[identity.gender] : "Not set"}
+          />
+          <AccountTile
             accessibilityLabel="Edit date of birth in account settings"
-            compact
-            icon={CalendarDays}
+            art={<ColorCalendarIcon size={28} />}
+            label="Date of birth"
+            loading={identityLoading}
             onPress={() => router.push("/account-settings")}
-            style={{ flex: 1 }}
-          >
-            <ReadonlyField
-              compact
-              label="Date of birth"
-              loading={identityLoading}
-              value={identity?.dateOfBirth ? formatBirthDate(identity.dateOfBirth) : "Not set"}
-            />
-          </PersonalInfoCard>
+            value={identity?.dateOfBirth ? formatBirthDate(identity.dateOfBirth) : "Not set"}
+          />
         </View>
 
-        <PersonalInfoCard icon={Phone}>
+        {/* Phone, email, address and reference in one card, a line between each (user, 2026-11-08). */}
+        <View style={infoGroupStyle(colors)}>
+        <PersonalInfoCard flat icon={Phone}>
           <ReadonlyField
             hideStatusDivider
             label="Registered phone"
@@ -446,8 +436,9 @@ export default function AccountScreen() {
             value={formatPhone(user?.phone)}
           />
         </PersonalInfoCard>
+        <Divider />
 
-        <PersonalInfoCard icon={Mail}>
+        <PersonalInfoCard flat icon={Mail}>
             {/* Before either branch. "No email yet" and "still asking" are not
                 the same thing, and the form is what the app shows for the
                 first — so every load flashed "Add your email" and an Add email
@@ -554,9 +545,11 @@ export default function AccountScreen() {
               </View>
             )}
         </PersonalInfoCard>
+        <Divider />
 
         <PersonalInfoCard
           accessibilityLabel="Edit permanent address in account settings"
+          flat
           icon={MapPin}
           onPress={() => router.push("/account-settings")}
         >
@@ -567,10 +560,12 @@ export default function AccountScreen() {
             value={identity?.permanentAddress ?? null}
           />
         </PersonalInfoCard>
+        <Divider />
 
-        <PersonalInfoCard icon={Hash}>
+        <PersonalInfoCard flat icon={Hash}>
           <ReadonlyField label="Account reference" value={shortId(user?.id)} />
         </PersonalInfoCard>
+        </View>
       </View>
 
       {/* Tenant side only. This is the standing decision about how a PROPERTY
@@ -585,25 +580,10 @@ export default function AccountScreen() {
 
           md, not sm: the box under this heading is bordered, so at sm its top
           edge sat almost on the section rule and read as one doubled line. */}
-      {/* Tenant side only, like the reply settings below: the enquiries this
-          person raised (My enquiries, 2026-10-03). */}
-      {isOwnerAccount ? null : (
-        <View style={{ gap: spacing.sm }}>
-          <SectionTitle title="Enquiries, Visits & Bookings" />
-          {/* The Property screen's own Enquiries mark (user, 2026-10-03). */}
-          <LinkRow icon={EnquiriesIcon} label="My enquiries" onPress={() => router.push("/my-enquiries")} />
-          {/* Their visits, with the pass on the day, under the Property
-              screen's own Visiting Hours mark (user, 2026-10-04). */}
-          <LinkRow icon={PropertyVisitsIcon} label="My visits" onPress={() => router.push("/my-visits")} />
-          {/* Last, as it comes last: an enquiry, then a visit, then a booking
-              (user, 2026-10-10). Under the Bookings tool's own mark. */}
-          <LinkRow icon={BookingsIcon} label="My bookings" onPress={() => router.push("/my-bookings")} />
-        </View>
-      )}
+      {/* My enquiries, visits and bookings moved to Tenancy tools (user, 2026-11-13). */}
 
       {isOwnerAccount ? null : (
         <View style={{ gap: spacing.md }}>
-          <SectionTitle title="Enquiry replies" />
           <EnquiryReplySettings />
         </View>
       )}
@@ -618,7 +598,6 @@ export default function AccountScreen() {
           appears and then vanishes. */}
       {accounts.length > 1 ? (
         <View style={{ gap: spacing.sm }}>
-          <SectionTitle title="Switch account" />
           <View style={{ gap: spacing.sm }}>
             {accounts.map((account) => (
               <AccountRow account={account} active={account === activeAccount} key={account} onPress={() => switchAccount(account)} />
@@ -629,24 +608,20 @@ export default function AccountScreen() {
 
       {accounts.includes("owner") ? (
         <View style={{ gap: spacing.sm }}>
-          <SectionTitle
-            title="Registered properties"
-            trailing={
-              ownerPropertiesQuery.isFetching && ownerPropertyCount === 0 ? null : (
-                <Text
-                  style={[
-                    type.caption,
-                    // Amber at the cap: it is not an error — four properties is
-                    // a full allowance, not a fault — but it is the moment the
-                    // number starts meaning something.
-                    { color: atPropertyCap ? colors.accent : colors.muted, fontWeight: "700" },
-                  ]}
-                >
-                  {ownerPropertyCount}/{MAX_OWNER_PROPERTIES}
-                </Text>
-              )
-            }
-          />
+          {/* A plain title over the list, not a heading band (user, 2026-11-08), with the
+              slots used. */}
+          <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 10 }}>
+              <SubheadingDash />
+              <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>Registered properties</Text>
+            </View>
+            {ownerPropertiesQuery.isFetching && ownerPropertyCount === 0 ? null : (
+              // Amber at the cap: a full allowance, not a fault.
+              <Text style={[type.caption, { color: atPropertyCap ? colors.accent : colors.muted, fontFamily: fonts.sansBold }]}>
+                {ownerPropertyCount}/{MAX_OWNER_PROPERTIES}
+              </Text>
+            )}
+          </View>
           {/* The properties themselves, not a count of them. "3 registered
               properties" is a number an owner already knows; which three is the
               thing they came to check. */}
@@ -672,14 +647,18 @@ export default function AccountScreen() {
                       padding: spacing.md,
                     }}
                   >
+                    {/* A building for each registered property (user, 2026-11-08). */}
+                    <TwoBuildingsIcon color={colors.ink} size={22} strokeWidth={1.8} />
+                    {/* Smaller names (user, 2026-11-08). */}
                     <FitText
                       numberOfLines={1}
-                      style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 15 }}
+                      style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 13 }}
                     >
                       {property.name}
                     </FitText>
+                    {/* City, state: no country (user, 2026-11-08). */}
                     <FitText numberOfLines={1} style={[type.caption, { color: colors.muted }]}>
-                      {[property.state, "India"].filter(Boolean).join(", ")}
+                      {[property.city, property.state].filter(Boolean).join(", ")}
                     </FitText>
                   </View>
                 </View>
@@ -705,7 +684,8 @@ export default function AccountScreen() {
       ) : null}
 
       <AnimatedPressable
-        onPress={handleLogout}
+        // Asks first (user, 2026-11-09).
+        onPress={() => setConfirmLogout(true)}
         style={{
           alignItems: "center",
           backgroundColor: colors.danger,
@@ -807,7 +787,10 @@ export default function AccountScreen() {
           acknowledgeOnly
           bullets={profileCompletion.missing}
           confirmLabel="Got it"
-          message="Add these in Settings before onboarding a tenant. An agreement names you as the Landlord, so it needs them."
+          // Worded for who is reading: a tenant never onboards anyone (user, 2026-11-08).
+          message={isOwnerAccount
+            ? "Add these in Settings before onboarding a tenant. An agreement names you as the Landlord, so it needs them."
+            : "Add these in Settings. Booking and visit updates come to your email, and your permanent address goes on any new agreement you sign."}
           onCancel={() => setCompletionInfoOpen(false)}
           onConfirm={() => setCompletionInfoOpen(false)}
           title="Profile incomplete"
@@ -825,6 +808,15 @@ export default function AccountScreen() {
             void removeProfileImage();
           }}
           title="Remove profile photo?"
+        />
+      ) : null}
+      {confirmLogout ? (
+        <LogoutDialog
+          onCancel={() => setConfirmLogout(false)}
+          onConfirm={() => {
+            setConfirmLogout(false);
+            void handleLogout();
+          }}
         />
       ) : null}
       {form.serverError ? <AlertModal message={form.serverError} onClose={form.dismissServerError} /> : null}
@@ -979,8 +971,80 @@ function ProfileAvatar({
   );
 }
 
-function SectionTitle({ title, trailing }: { title: string; trailing?: ReactNode }) {
-  return <Section title={title} trailing={trailing} />;
+/** The card holding phone, email, address and reference, with a shadow like the tiles. */
+function infoGroupStyle(colors: { border: string; shadow: string; surface: string }): ViewStyle {
+  return {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderCurve: "continuous",
+    borderRadius: radii.card,
+    borderWidth: 1,
+    ...cardShadow(colors.shadow),
+  };
+}
+
+/**
+ * One account fact as a tile, the Home wallet tile's look (user, 2026-11-08): its icon and an
+ * arrow on top, then what it is in bold and its value under it.
+ */
+function AccountTile({
+  accessibilityLabel,
+  art,
+  label,
+  loading,
+  onPress,
+  value,
+  valueColor,
+}: {
+  accessibilityLabel?: string;
+  /** The tile's coloured mark, drawn as given. */
+  art: ReactNode;
+  label: string;
+  loading?: boolean;
+  onPress?: () => void;
+  value: string;
+  valueColor?: string;
+}) {
+  const { colors, fonts } = useTheme();
+  const body = (
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderCurve: "continuous",
+        borderRadius: radii.card,
+        borderWidth: 1,
+        flex: 1,
+        gap: spacing.sm,
+        minHeight: 116,
+        padding: spacing.md,
+        ...cardShadow(colors.shadow),
+      }}
+    >
+      <View style={{ alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" }}>
+        {art}
+        {onPress ? <ChevronRight color={colors.muted} size={18} strokeWidth={2.2} /> : null}
+      </View>
+      <View style={{ flex: 1, gap: 2, justifyContent: "flex-end" }}>
+        <FitText numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 16, lineHeight: 21 }}>
+          {label}
+        </FitText>
+        {loading ? (
+          <Skeleton height={14} width="60%" />
+        ) : (
+          <Text numberOfLines={1} style={{ color: valueColor ?? colors.muted, fontFamily: fonts.sansBold, fontSize: 13, lineHeight: 17 }}>
+            {value}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+  if (!onPress) return <View style={{ flex: 1 }}>{body}</View>;
+  return (
+    <AnimatedPressable accessibilityLabel={accessibilityLabel ?? label} accessibilityRole="button" onPress={onPress} style={{ flex: 1 }}>
+      {body}
+    </AnimatedPressable>
+  );
 }
 
 /**
@@ -994,6 +1058,7 @@ function PersonalInfoCard({
   accessibilityLabel,
   children,
   compact = false,
+  flat = false,
   icon: Icon,
   onPress,
   style,
@@ -1001,6 +1066,8 @@ function PersonalInfoCard({
   accessibilityLabel?: string;
   children: ReactNode;
   compact?: boolean;
+  /** A row inside the grouped card: no border or surface of its own. */
+  flat?: boolean;
   icon: ComponentType<LucideProps>;
   onPress?: () => void;
   style?: ViewStyle;
@@ -1008,10 +1075,10 @@ function PersonalInfoCard({
   const { colors } = useTheme();
   const frame: ViewStyle = {
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: flat ? "transparent" : colors.surface,
     borderColor: colors.border,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: flat ? 0 : 1,
     flexDirection: "row",
     gap: compact ? spacing.xxs : spacing.sm,
     minHeight: compact ? 94 : 78,
@@ -1177,6 +1244,7 @@ function AccountRow({ account, active, onPress }: { account: AccountType; active
         flexDirection: "row",
         gap: spacing.md,
         padding: spacing.md,
+        ...cardShadow(colors.shadow),
       }}
     >
       <View
@@ -1235,6 +1303,7 @@ function LinkRow({
         flexDirection: "row",
         gap: spacing.md,
         padding: spacing.md,
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "center", height: 42, justifyContent: "center", width: 42 }}>
@@ -1267,7 +1336,8 @@ function HeaderIconButton({
       accessibilityLabel={label}
       hitSlop={10}
       onPress={onPress}
-      style={{ alignItems: "center", height: 44, justifyContent: "center", width: 44 }}
+      // Nudged right, nearer the screen's edge (user, 2026-11-08).
+      style={{ alignItems: "center", height: 44, justifyContent: "center", marginRight: -spacing.sm, width: 44 }}
     >
       <Icon color={colors.ink} size={22} strokeWidth={2.2} />
     </AnimatedPressable>

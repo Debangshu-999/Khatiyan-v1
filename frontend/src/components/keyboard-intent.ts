@@ -1,4 +1,4 @@
-import { Platform, TextInput } from "react-native";
+import { Keyboard, Platform, TextInput } from "react-native";
 
 type Listener = () => void;
 
@@ -54,6 +54,32 @@ export function holdKeyboardForModal() {
 
 export function keyboardHeldByModal() {
   return modalsHoldingKeyboard > 0;
+}
+
+const comingListeners = new Set<Listener>();
+
+/**
+ * The keyboard is on its way up, said before Android says so (user, 2026-11-08: "do the same
+ * fix as the PIN modal, app wide for all modals").
+ *
+ * <p>Android only reports `keyboardDidShow` once the keyboard has finished opening, so a sheet
+ * or dialog waiting for it moved late. An input taking focus is the moment the keyboard starts
+ * to rise, so the shared input announces it here and whatever makes room starts at once, from
+ * the keyboard's last measured height. Focus moving between inputs with the keyboard already up
+ * is not announced.
+ */
+export function announceInputFocus() {
+  if (Platform.OS !== "android") return;
+  if (Keyboard.isVisible()) return;
+  comingListeners.forEach((listener) => listener());
+}
+
+/** Called when the keyboard starts to open. Returns the unsubscribe. */
+export function onKeyboardComing(listener: Listener) {
+  comingListeners.add(listener);
+  return () => {
+    comingListeners.delete(listener);
+  };
 }
 
 /** Called when the keyboard starts to close. Returns the unsubscribe. */

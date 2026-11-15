@@ -15,7 +15,9 @@ import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SkeletonCard } from "@/components/skeleton";
 import { foodIcon, MEAL_LABEL } from "@/features/food/food-ui";
 import { formatMealMoment } from "@/features/food/meal-pass";
-import { MealGlassPanel, MealSkyBackground, ServingMealCard } from "@/features/food/serving-meal-card";
+import { MealGlassPanel, ServingMealCard } from "@/features/food/serving-meal-card";
+import { highlightPalette } from "@/components/highlight-card";
+import { LinearGradient } from "expo-linear-gradient";
 import { errorMessage } from "@/features/forms/server-error";
 import { FormInput } from "@/features/owner/owner-ui";
 import { useRouteGate } from "@/features/owner/route-gates";
@@ -132,7 +134,13 @@ export default function OwnerMealScanScreen() {
   return (
     <>
     <StatusBar style="light" />
-    <ScreenScrollView background={<MealSkyBackground />} contentContainerStyle={{ paddingBottom: spacing.lg }} safeAreaEdges={["top", "bottom"]} surface="#101B3E">
+    {/* The tenant's meal pass colours, plain: no sky, no stars (user, 2026-11-13). */}
+    <ScreenScrollView
+      background={<LinearGradient colors={highlightPalette.night.gradient} end={{ x: 1, y: 1 }} pointerEvents="none" start={{ x: 0, y: 0 }} style={StyleSheet.absoluteFill} />}
+      contentContainerStyle={{ paddingBottom: spacing.lg }}
+      safeAreaEdges={["top", "bottom"]}
+      surface={highlightPalette.night.gradient[0]}
+    >
       {header}
       {live.isLoading ? (
         <SkeletonCard />

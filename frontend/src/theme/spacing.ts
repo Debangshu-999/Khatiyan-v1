@@ -32,7 +32,9 @@ export const radii = {
    * <p>Not for modals, dialogs, sheets, inputs, images or pills. A modal is not
    * a card, and each of those already has a corner of its own.
    */
-  card: 10,
+  // 16, the owner's Edit property room-tab cards' corner, with their faint depth
+  // (cardShadow), app wide (user, 2026-11-13). Was 10.
+  card: 16,
 };
 
 /**

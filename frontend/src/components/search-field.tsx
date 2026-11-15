@@ -1,11 +1,80 @@
 import { useState, type ReactNode } from "react";
-import { View } from "react-native";
+import { Text, View, type ViewStyle } from "react-native";
 import { AppTextInput } from "@/components/app-text-input";
-import { Search, X } from "lucide-react-native";
+import { Search, SlidersHorizontal, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
+
+/** The search bar's height: thin and compact (user, 2026-11-13). */
+export const SEARCH_BAR_HEIGHT = 38;
+export const SEARCH_BAR_HEIGHT_COMPACT = 34;
+
+/**
+ * Every search bar's frame, app wide (user, 2026-11-13): a pill with a thin
+ * edge floating on a soft shadow, the search glyph bare inside on the left.
+ * Hand-built bars (Home quick actions, Nearby, pickers) take it too.
+ */
+export function searchBarFrame(colors: { ink: string; primary: string; shadow: string; surface: string }, { compact = false, focused = false }: { compact?: boolean; focused?: boolean } = {}): ViewStyle {
+  return {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: focused ? colors.primary : `${colors.ink}40`,
+    borderRadius: 999,
+    borderWidth: focused ? 1.5 : 1,
+    flexDirection: "row",
+    gap: 6,
+    minHeight: compact ? SEARCH_BAR_HEIGHT_COMPACT : SEARCH_BAR_HEIGHT,
+    paddingHorizontal: compact ? 10 : 12,
+    ...cardShadow(colors.shadow),
+  };
+}
+
+/**
+ * The filter button by a search bar (user, 2026-11-13): round like the bar.
+ * Beside it, the bar's own height, edge and shadow. Inside it (`inside`), a
+ * smaller grey disc. Solid blue while a filter is on, with the count on a red dot.
+ */
+export function SearchFilterButton({ accessibilityLabel, active, count = 0, inside = false, onPress }: {
+  accessibilityLabel: string;
+  active: boolean;
+  count?: number;
+  inside?: boolean;
+  onPress: () => void;
+}) {
+  const { colors, fonts } = useTheme();
+  const size = inside ? SEARCH_BAR_HEIGHT - 10 : SEARCH_BAR_HEIGHT;
+  return (
+    <AnimatedPressable
+      accessibilityLabel={count > 0 ? `${accessibilityLabel}, ${count} on` : accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      hitSlop={inside ? 8 : 4}
+      onPress={onPress}
+      style={{
+        alignItems: "center",
+        // Never a grey disc, inside the bar or beside it: white with the bar's edge (user, 2026-11-14).
+        backgroundColor: active ? colors.primary : colors.surface,
+        borderColor: active ? colors.primary : `${colors.ink}40`,
+        borderRadius: 999,
+        borderWidth: 1,
+        height: size,
+        justifyContent: "center",
+        width: size,
+        ...(inside ? {} : cardShadow(colors.shadow)),
+      }}
+    >
+      <SlidersHorizontal color={active ? colors.onPrimary : colors.ink} size={inside ? 15 : 16} strokeWidth={2.3} />
+      {count > 0 ? (
+        <View style={{ alignItems: "center", backgroundColor: colors.danger, borderColor: colors.surface, borderRadius: 999, borderWidth: 1.5, height: 16, justifyContent: "center", minWidth: 16, paddingHorizontal: 3, position: "absolute", right: -4, top: -4 }}>
+          <Text style={{ color: "#FFFFFF", fontFamily: fonts.sansBold, fontSize: 9.5, lineHeight: 12 }}>{count}</Text>
+        </View>
+      ) : null}
+    </AnimatedPressable>
+  );
+}
 
 /**
  * Reusable search box for history/data screens: leading search icon, clear
@@ -52,21 +121,8 @@ export function SearchField({
   const [focused, setFocused] = useState(false);
 
   return (
-    <View
-      style={{
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        // A dark edge and no shadow (user, 2026-11-02).
-        borderColor: focused ? colors.primary : `${colors.ink}80`,
-        borderRadius: 10,
-        borderWidth: focused ? 1.5 : 1,
-        flexDirection: "row",
-        gap: spacing.sm,
-        minHeight: compact ? 44 : 50,
-        paddingHorizontal: compact ? spacing.sm : spacing.md,
-      }}
-    >
-      <Search color={focused ? colors.primary : colors.kicker} size={18} strokeWidth={2.2} />
+    <View style={searchBarFrame(colors, { compact, focused })}>
+      <Search color={focused ? colors.primary : colors.kicker} size={compact ? 15 : 16} strokeWidth={2.2} />
       <AppTextInput
         autoFocus={autoFocus}
         autoCapitalize={autoCapitalize}
@@ -77,13 +133,14 @@ export function SearchField({
         onFocus={() => setFocused(true)}
         placeholder={placeholder}
         placeholderTextColor={colors.kicker}
-        style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: compact ? 13 : 15, }}
+        // No padding of its own around the words: the bar is the box (user, 2026-11-13).
+        style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansMedium, fontSize: compact ? 13 : 14, includeFontPadding: false, minHeight: (compact ? SEARCH_BAR_HEIGHT_COMPACT : SEARCH_BAR_HEIGHT) - 2, paddingVertical: 0 }}
         value={value}
       />
       {value.length > 0 ? (
-        <AnimatedPressable accessibilityLabel="Clear search" onPress={() => onChangeText("")} hitSlop={clearButtonVariant === "circle" ? 8 : undefined}
+        <AnimatedPressable accessibilityLabel="Clear search" onPress={() => onChangeText("")} hitSlop={clearButtonVariant === "circle" ? 10 : undefined}
           style={clearButtonVariant === "circle"
-            ? { alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 999, backgroundColor: colors.neutralSoft }
+            ? { alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: 999, backgroundColor: colors.neutralSoft }
             : { padding: 2 }}>
           <X color={colors.muted} size={clearButtonVariant === "circle" ? 15 : 17} strokeWidth={2.3} />
         </AnimatedPressable>
@@ -93,7 +150,7 @@ export function SearchField({
           {/* Inset top and bottom rather than a full-height edge, so the rule
               reads as a separator inside one control instead of the seam
               between two. */}
-          <View style={{ backgroundColor: colors.border, marginVertical: spacing.sm, width: 1 }} />
+          <View style={{ alignSelf: "stretch", backgroundColor: colors.border, marginVertical: 8, width: 1 }} />
           {trailing}
         </>
       ) : null}

@@ -4,23 +4,32 @@ import { LoadFailed } from "@/components/load-failed";
 import { ExitTenancyIcon } from "@/components/artwork-icon";
 import { useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
-import { AppTextInput } from "@/components/app-text-input";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { BedDouble, CalendarClock, CalendarDays, ChevronRight, FileText, MessageSquare, TriangleAlert } from "lucide-react-native";
+import { CalendarClock, FileText, TriangleAlert } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
 import { PINNED_FOOTER_CLEARANCE, PinnedFooter } from "@/components/pinned-footer";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { SheetShell } from "@/components/sheet-shell";
 import { TenantExitRequestSkeleton } from "@/components/skeletons/tenancy/exit-request";
-import { StatusPill } from "@/components/status-pill";
+import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 import { AlertModal } from "@/components/alert-modal";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, NoticeBar } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput, NoticeBar } from "@/features/owner/owner-ui";
+import { formatFloor } from "@/features/property/floor";
+import {
+  CalendarPageTile,
+  FactColumn,
+  FooterNote,
+  FormCard,
+  HeaderHelp,
+  PropertyStayCard,
+  SectionLabel,
+  longDay,
+} from "@/features/tenancy/request-form-cards";
 import {
   exitRequestBlock,
 } from "@/features/tenancy/request-blocked-modal";
@@ -85,6 +94,7 @@ export default function TenancyExitRequestScreen() {
 function ExitRequestPage({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   const { colors } = useTheme();
   const [footerHeight, setFooterHeight] = useState(PINNED_FOOTER_CLEARANCE);
+  const [howOpen, setHowOpen] = useState(false);
   return (
     <View style={{ backgroundColor: colors.background, flex: 1 }}>
       <ScreenScrollView
@@ -95,6 +105,7 @@ function ExitRequestPage({ children, footer }: { children: ReactNode; footer?: R
           title="Exit"
           italicTail="request."
           subtitle="Choose your checkout date and let the property team know you plan to leave."
+          trailing={<HeaderHelp label="How an exit works" onPress={() => setHowOpen(true)} />}
         />
         {children}
       </ScreenScrollView>
@@ -103,7 +114,26 @@ function ExitRequestPage({ children, footer }: { children: ReactNode; footer?: R
           {footer}
         </PinnedFooter>
       ) : null}
+      {howOpen ? <ExitHowItWorks onClose={() => setHowOpen(false)} /> : null}
     </View>
+  );
+}
+
+/** The exit rules, behind the ? (user, 2026-11-11). */
+function ExitHowItWorks({ onClose }: { onClose: () => void }) {
+  return (
+    <HowItWorksSheet
+      eyebrow="Exit request"
+      onClose={onClose}
+      steps={[
+        { body: "An exit request can only be raised in the rent window, from the first day of your bill to its due date.", title: "Raise it in the rent window" },
+        { body: "Your notice period starts the day you ask to leave.", title: "Notice starts when you ask" },
+        { body: "The checkout date starts on the day your full notice is served. Leaving then costs nothing extra.", title: "Full notice has a date" },
+        { body: "A date before that is an early exit. Management can apply the early exit policy in your agreement, or turn it down.", title: "Earlier is an early exit" },
+        { body: "Management reviews your checkout date. Follow their answer on the Request desk.", title: "Management reviews it" },
+      ]}
+      title="How an exit works"
+    />
   );
 }
 
@@ -194,7 +224,7 @@ function ExitRequestGate({
 }
 
 function goToTenancy(router: ReturnType<typeof useRouter>) {
-  router.replace({ pathname: "/tenancy", params: { exitRequestCreated: "1" } });
+  router.replace({ pathname: "/tenancy-request-desk", params: { exitRequestCreated: "1" } });
 }
 
 /**
@@ -262,6 +292,7 @@ function NoticeWindowForm({
   const [createExit, createState] = useCreateExitRequestMutation();
   const [reason, setReason] = useState(initialReason ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
 
   // Starts on the notice-served date — the one that carries no consequence. The
   // tenant can move it earlier, but never by accident: that takes a deliberate
@@ -279,6 +310,11 @@ function NoticeWindowForm({
   });
 
   const chosenIso = toISODate(chosenDate);
+  // Past this rent window (not a re-raise): the dates shown are the next window's (2026-11-11).
+  const windowClosed = !checkoutWindow.reRaise
+    && Boolean(checkoutWindow.requestWindowClosesOn)
+    && toISODate(new Date()) > checkoutWindow.requestWindowClosesOn!
+    && checkoutWindow.noticeAnchorDate !== toISODate(new Date());
   const premature = chosenIso < checkoutWindow.earliestCheckoutDate;
 
   // Server refusal — no field owns it, so it takes a modal.
@@ -297,20 +333,29 @@ function NoticeWindowForm({
     <ExitRequestPage
       footer={
         <View style={{ gap: spacing.sm }}>
-          <Text style={[type.caption, { color: colors.muted, textAlign: "center" }]}>
-            Checkout: {formatDateLong(chosenDate)}
-          </Text>
+          <FooterNote>Management reviews your request before approving it.</FooterNote>
           <View style={{ flexDirection: "row" }}>
             <ActionButton
-              disabled={createState.isLoading}
-              label={createState.isLoading ? "Submitting..." : premature ? "Request early exit" : "Submit exit request"}
+              disabled={createState.isLoading || windowClosed}
+              label={windowClosed && checkoutWindow.nextRequestWindowOpensOn
+                ? `Opens on ${formatDate(checkoutWindow.nextRequestWindowOpensOn)}`
+                : createState.isLoading ? "Submitting..." : premature ? "Request early exit" : "Submit exit request"}
               onPress={() => void submit()}
             />
           </View>
         </View>
       }
     >
-      <CurrentStayCard stay={stay} />
+      <PropertyStayCard
+        address={[stay.property.address, stay.property.city, stay.property.state, stay.property.pincode].filter(Boolean).join(", ")}
+        name={stay.property.name}
+        referenceCode={stay.tenancy.referenceCode}
+        roomLabel={`Room ${stay.room.roomNumber}`}
+      >
+        <FactColumn label="Room" value={stay.room.roomNumber} />
+        <FactColumn divided dividerColor={colors.borderStrong} label="Floor" value={formatFloor(stay.room.floor)} />
+        <FactColumn divided dividerColor={colors.borderStrong} label="Notice" value={NOTICE_PERIOD_LABELS[checkoutWindow.noticePeriod]} />
+      </PropertyStayCard>
 
       {checkoutWindow.reRaise ? (
         <NoticeBar
@@ -329,60 +374,74 @@ function NoticeWindowForm({
         />
       ) : null}
 
-      <Card>
-        <SectionHeading icon={<CalendarClock color={colors.primary} size={20} />} title="Notice period" />
-        <Text style={[type.label, { color: colors.ink, fontSize: 22, lineHeight: 28 }]}>{NOTICE_PERIOD_LABELS[checkoutWindow.noticePeriod]}</Text>
-        <View style={{ borderTopColor: colors.border, borderTopWidth: 1, flexDirection: "row", flexWrap: "wrap", gap: spacing.md, paddingTop: spacing.md }}>
-          <DateDetail label="Notice starts" value={checkoutWindow.noticeAnchorDate} />
-          <DateDetail label="Full notice served" value={checkoutWindow.earliestCheckoutDate} />
-        </View>
-      </Card>
-
-      <Card>
-        <SectionHeading icon={<CalendarDays color={colors.primary} size={20} />} title="Checkout date" />
-        <AnimatedPressable
-          accessibilityLabel={`Change checkout date, ${formatDateLong(chosenDate)}`}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: createState.isLoading }}
-          disabled={createState.isLoading}
-          onPress={() => setPickerOpen(true)}
-          style={{ alignItems: "center", backgroundColor: colors.neutralSoft, borderColor: colors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 68, padding: spacing.md }}
-        >
-          <View style={{ flex: 1, gap: spacing.xxs }}>
-            <Text style={[type.caption, { color: colors.muted }]}>Your last day at the property</Text>
-            <Text style={[type.label, { color: colors.ink, fontSize: 19, lineHeight: 26 }]}>{formatDateLong(chosenDate)}</Text>
+      {/* The notice, as two dates on a ruled row. */}
+      <View style={{ gap: spacing.sm }}>
+        <SectionLabel helpLabel="How notice works" label={windowClosed ? "Next notice period" : "Notice period"} onHelp={() => setHowOpen(true)} />
+        <FormCard>
+          <View style={{ flexDirection: "row" }}>
+            <FactColumn label="Notice starts" value={formatDate(checkoutWindow.noticeAnchorDate)} />
+            <FactColumn divided label="Full notice served" tone={colors.jade} value={formatDate(checkoutWindow.earliestCheckoutDate)} />
           </View>
-          <Text style={[type.caption, { color: colors.primary }]}>Change</Text>
-          <ChevronRight color={colors.primary} size={18} />
-        </AnimatedPressable>
-        <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <StatusPill
-            label={premature ? "Early exit" : "Full notice"}
-            style={{ alignSelf: "center" }}
-            textStyle={{ fontFamily: fonts.sansBold }}
-            tone={premature ? "warning" : "success"}
-          />
+        </FormCard>
+      </View>
+
+      {/* The checkout day on a calendar page, with Change beside it. */}
+      <View style={{ gap: spacing.sm }}>
+        <SectionLabel
+          label="Checkout date"
+          trailing={
+            <View style={{ backgroundColor: premature ? colors.warningSoft : colors.jadeSoft, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 6 }}>
+              <Text style={{ color: premature ? colors.warningText : colors.jade, fontFamily: fonts.sansBold, fontSize: 12.5 }}>
+                {premature ? "Early exit" : "Full notice"}
+              </Text>
+            </View>
+          }
+        />
+        <FormCard>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+            <CalendarPageTile iso={chosenIso} />
+            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+              <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 16 }}>{longDay(chosenIso)}</Text>
+              <Text style={[type.caption, { color: colors.muted }]}>Your last day at the property</Text>
+            </View>
+            <AnimatedPressable
+              accessibilityLabel={`Change checkout date, ${formatDateLong(chosenDate)}`}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: createState.isLoading }}
+              disabled={createState.isLoading}
+              onPress={() => setPickerOpen(true)}
+              style={{
+                alignItems: "center",
+                backgroundColor: colors.surface,
+                borderColor: colors.primary,
+                borderRadius: radii.card,
+                borderWidth: 1.5,
+                justifyContent: "center",
+                minHeight: 36,
+                paddingHorizontal: spacing.md,
+              }}
+            >
+              <Text style={{ color: colors.primary, fontFamily: fonts.sansBold, fontSize: 13 }}>Change</Text>
+            </AnimatedPressable>
+          </View>
+          <View style={{ backgroundColor: colors.border, height: 1 }} />
+          <Text style={[type.caption, { color: colors.muted }]}>
+            {premature
+              ? `Before your full notice date, ${formatDate(checkoutWindow.earliestCheckoutDate)}.`
+              : checkoutWindow.fixed
+                ? "Your notice runs to the end of a billing cycle, so this is the date it lands on."
+                : `Any day up to ${formatDate(checkoutWindow.latestCheckoutDate)} still serves your full notice. You have already paid for this month, so leaving earlier does not reduce the rent.`}
+          </Text>
           {premature ? (
-            <View style={{ width: 145, maxWidth: "100%" }}>
-              <ActionButton
-                compact
-                disabled={createState.isLoading}
-                icon={FileText}
-                label="View agreement"
-                onPress={() => router.push("/tenancy-agreement-view")}
-                variant="primaryQuiet"
-              />
+            <View style={{ flexDirection: "row" }}>
+              <ActionButton compact disabled={createState.isLoading} icon={FileText} label="View agreement" onPress={() => router.push("/tenancy-agreement-view")} variant="primaryQuiet" />
             </View>
           ) : null}
-        </View>
-        {!premature ? (
-          <Text style={[type.description, { color: colors.muted }]}>
-            {checkoutWindow.fixed
-              ? "Your notice runs to the end of a billing cycle, so this is the date it lands on."
-              : `Any day up to ${formatDate(checkoutWindow.latestCheckoutDate)} still serves your full notice. You have already paid for this month, so leaving earlier does not reduce the rent.`}
-          </Text>
-        ) : null}
-      </Card>
+        </FormCard>
+      </View>
+
+      {/* When a request can be raised, under the checkout date (user, 2026-11-11). */}
+      <RequestWindowNote window={checkoutWindow} />
 
       {premature ? (
         <PrematureWarning
@@ -392,26 +451,18 @@ function NoticeWindowForm({
         />
       ) : null}
 
-      <Card>
-        <SectionHeading icon={<MessageSquare color={colors.primary} size={20} />} title="Reason for leaving" trailing={<StatusPill label="Optional" />} />
-        <Text style={[type.description, { color: colors.muted }]}>Add any context you would like the property team to consider.</Text>
-        <FormField
-          disabled={createState.isLoading}
-          maxLength={500}
-          multiline
-          onChangeText={setReason}
-          placeholder="Tell us why you are leaving..."
-          value={reason}
-        />
-      </Card>
-
-      <NoticeBar
-        title="Reviewed by your property team"
-        tone="info"
-        message="The property team will review your checkout date and any reason you add. Track their decision from your tenancy screen."
+      <FormInput
+        disabled={createState.isLoading}
+        label="Reason for leaving"
+        maxLength={500}
+        multiline
+        onChangeText={setReason}
+        placeholder="Add anything you want the property team to know"
+        value={reason}
       />
 
       {opErrors.serverError ? <AlertModal message={opErrors.serverError} onClose={opErrors.dismissServerError} /> : null}
+      {howOpen ? <ExitHowItWorks onClose={() => setHowOpen(false)} /> : null}
 
       {pickerOpen ? (
         <CheckoutDatePicker
@@ -426,42 +477,8 @@ function NoticeWindowForm({
   );
 }
 
-function CurrentStayCard({ stay }: { stay: TenantActiveTenancy }) {
-  const { colors, type } = useTheme();
-  return (
-    <Card style={{ flexDirection: "row", alignItems: "center" }}>
-      <View style={{ alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: 999, height: 44, justifyContent: "center", width: 44 }}>
-        <BedDouble color={colors.primary} size={23} />
-      </View>
-      <View style={{ flex: 1, gap: spacing.xxs }}>
-        <Text style={[type.eyebrow, { color: colors.muted }]}>Current stay</Text>
-        <Text style={[type.label, { color: colors.ink, fontSize: 18, lineHeight: 24 }]}>{stay.property.name}</Text>
-        <Text style={[type.caption, { color: colors.muted }]}>Room {stay.room.roomNumber}{stay.room.floor ? ` · Floor ${stay.room.floor}` : ""}</Text>
-      </View>
-    </Card>
-  );
-}
 
-function SectionHeading({ icon, title, trailing }: { icon: ReactNode; title: string; trailing?: ReactNode }) {
-  const { colors, fonts } = useTheme();
-  return (
-    <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      {icon}
-      <Text style={{ color: colors.ink, flex: 1, fontFamily: fonts.sansBold, fontSize: 16 }}>{title}</Text>
-      {trailing}
-    </View>
-  );
-}
 
-function DateDetail({ label, value }: { label: string; value: string }) {
-  const { colors, type } = useTheme();
-  return (
-    <View style={{ flex: 1, minWidth: 120, gap: spacing.xs }}>
-      <Text style={[type.caption, { color: colors.muted }]}>{label}</Text>
-      <Text style={[type.body, { color: colors.ink }]}>{formatDate(value)}</Text>
-    </View>
-  );
-}
 
 /**
  * Shown when the chosen day falls before the notice has been served.
@@ -485,64 +502,40 @@ function PrematureWarning({
   onServeFullNotice: () => void;
 }) {
   return (
-    <View style={{ gap: spacing.sm }}>
-      <NoticeBar
-        icon={TriangleAlert}
-        title="This is an early exit"
-        tone="warning"
-        message={`You will not be serving your full notice. Management can apply the early exit policy as per your agreement or decline the request. Serving full notice would mean leaving on ${formatDate(noticeDate)}.`}
-      />
-      <View style={{ flexDirection: "row" }}>
-        <ActionButton disabled={disabled} label="Serve full notice instead" onPress={onServeFullNotice} variant="primaryQuiet" />
-      </View>
-    </View>
+    <NoticeBar
+      action={<ActionButton compact disabled={disabled} label="Serve full notice" onPress={onServeFullNotice} />}
+      icon={TriangleAlert}
+      title="This is an early exit"
+      tone="warning"
+      message={`You will not be serving your full notice. Management can apply the early exit policy as per your agreement or decline the request. Serving full notice would mean leaving on ${formatDate(noticeDate)}.`}
+    />
   );
 }
 
-function FormField({
-  disabled,
-  maxLength,
-  multiline,
-  onChangeText,
-  placeholder,
-  value,
-}: {
-  disabled?: boolean;
-  maxLength?: number;
-  multiline?: boolean;
-  onChangeText: (value: string) => void;
-  placeholder: string;
-  value: string;
-}) {
-  const { colors, fonts, type } = useTheme();
 
+/**
+ * When an exit request can be raised (user, 2026-11-11): only from a bill's
+ * first day to its due date. Says until when, and when the next window opens.
+ */
+function RequestWindowNote({ window }: { window: ExitCheckoutWindow }) {
+  const { colors, type } = useTheme();
+  const closes = window.requestWindowClosesOn;
+  const next = window.nextRequestWindowOpensOn;
+  if (!next) return null;
+  // While this rent window is open, its last day. Once it has passed, the next
+  // window's first day (user, 2026-11-11).
+  const open = Boolean(closes) && toISODate(new Date()) <= closes!;
   return (
-    <View style={{ gap: spacing.sm }}>
-      <AppTextInput
-        accessibilityLabel="Reason for leaving, optional"
-        editable={!disabled}
-        maxLength={maxLength}
-        multiline={multiline}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.kicker}
-        style={{
-          backgroundColor: colors.neutralSoft,
-          borderColor: colors.border,
-          borderRadius: radii.md,
-          borderWidth: 1,
-          color: colors.ink,
-          fontFamily: fonts.sans,
-          fontSize: 15,
-          minHeight: multiline ? 130 : 54,
-          padding: spacing.md,
-          textAlignVertical: multiline ? "top" : "center",
-        }}
-        value={value}
-      />
-      {maxLength ? (
-        <Text style={[type.caption, { color: colors.muted, textAlign: "right" }]}>{value.length}/{maxLength}</Text>
-      ) : null}
+    // A pale purple card with a purple edge (user, 2026-11-11).
+    <View style={{ alignItems: "center", backgroundColor: "#F4F3FF", borderColor: "#9E77ED", borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flexDirection: "row", gap: spacing.sm, padding: spacing.md }}>
+      <CalendarClock color="#6941C6" size={18} strokeWidth={2.2} />
+      <Text style={[type.caption, { color: "#53389E", flex: 1, fontSize: 12.5, lineHeight: 18 }]}>
+        {open ? (
+          <>You can raise an exit request until <Text style={{ fontWeight: "800" }}>{formatDate(closes!)}</Text>, the last day of this rent window.</>
+        ) : (
+          <>A request can be raised again on <Text style={{ fontWeight: "800" }}>{formatDate(next)}</Text>, when the next rent window starts.</>
+        )}
+      </Text>
     </View>
   );
 }

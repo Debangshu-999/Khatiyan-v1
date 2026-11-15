@@ -6,13 +6,14 @@ import { loadFailure, LoadFailedScreen } from "@/components/load-failed";
 import { AlertModal } from "@/components/alert-modal";
 import { Card } from "@/components/card";
 import { EmptyState } from "@/components/empty-state";
+import { HowItWorksSheet } from "@/components/how-it-works-sheet";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
 import { OwnerPaymentDetailsSkeleton } from "@/components/skeletons/owner";
 import { useToast } from "@/components/toast";
 import { errorMessage } from "@/features/forms/server-error";
 import { useFormErrors } from "@/features/forms/use-form-errors";
-import { ActionButton, FormInput, NoticeBar } from "@/features/owner/owner-ui";
+import { ActionButton, FormInput } from "@/features/owner/owner-ui";
 import { UpiQrField } from "@/features/billing/upi-qr-field";
 import { PaymentMethodToggle } from "@/features/billing/payment-method-toggle";
 import { METHOD_LABEL, METHOD_ORDER, type TenderMethod } from "@/features/billing/payment-methods";
@@ -39,6 +40,30 @@ const FIELD_RADIUS = 6;
 const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const IFSC_NOT_FOUND = "No bank branch uses this IFSC. Check your cheque book or passbook.";
 const ACCOUNT_MISMATCH = "Account numbers do not match.";
+
+/** Each method's How it works: its title, then what happens in order. */
+const METHOD_HELP: Record<TenderMethod, { steps: string[]; title: string }> = {
+  BANK_TRANSFER: {
+    steps: ["Tenants transfer to this account quoting the bill reference.", "They then raise a claim, and you confirm it."],
+    title: "How bank transfer works",
+  },
+  CARD: {
+    steps: ["Tenants pay by card at your desk.", "They then raise a claim with the slip's approval code or a photo."],
+    title: "How card works",
+  },
+  CASH: {
+    steps: ["Tenants hand over cash at your desk.", "No claim is raised, you mark the bill paid."],
+    title: "How cash works",
+  },
+  CHEQUE: {
+    steps: ["Tenants hand over a cheque.", "They then raise a claim with its number or a photo."],
+    title: "How cheque works",
+  },
+  UPI: {
+    steps: ["Tenants pay from their UPI app.", "They then raise a claim, and you confirm it."],
+    title: "How UPI works",
+  },
+};
 
 /**
  * Where this property's rent should be paid to.
@@ -289,7 +314,6 @@ export default function OwnerPaymentDetailsScreen() {
         <>
           <MethodBlock
             checked={accepted.has("CASH")}
-            description="Tenants hand over cash at your desk. No claim is raised, you mark the bill paid."
             method="CASH"
             onToggle={() => toggleMethod("CASH")}
           >
@@ -323,7 +347,6 @@ export default function OwnerPaymentDetailsScreen() {
 
           <MethodBlock
             checked={accepted.has("UPI")}
-            description="Tenants pay from their UPI app, then raise a claim you confirm."
             method="UPI"
             onToggle={() => toggleMethod("UPI")}
           >
@@ -389,7 +412,6 @@ export default function OwnerPaymentDetailsScreen() {
 
           <MethodBlock
             checked={accepted.has("BANK_TRANSFER")}
-            description="Tenants transfer to this account quoting the bill reference, then raise a claim you confirm."
             method="BANK_TRANSFER"
             onToggle={() => toggleMethod("BANK_TRANSFER")}
           >
@@ -456,14 +478,12 @@ export default function OwnerPaymentDetailsScreen() {
 
           <MethodBlock
             checked={accepted.has("CARD")}
-            description="Tenants pay by card at your desk, then raise a claim with the slip's approval code or a photo."
             method="CARD"
             onToggle={() => toggleMethod("CARD")}
           />
 
           <MethodBlock
             checked={accepted.has("CHEQUE")}
-            description="Tenants hand over a cheque, then raise a claim with its number or a photo."
             method="CHEQUE"
             onToggle={() => toggleMethod("CHEQUE")}
           />
@@ -498,29 +518,37 @@ export default function OwnerPaymentDetailsScreen() {
 }
 
 /**
- * One payment method in Payment setup: its checkbox as the heading, what it
- * means for tenants in a blue notice, then its settings. Everything stays open
- * whether it is ticked or not, so an owner can read what a method does before
- * turning it on.
+ * One payment method in Payment setup: a heading with its checkbox at the right
+ * and a ? beside its name that opens how it works, then its settings. Everything
+ * stays open whether it is ticked or not, so an owner can read what a method
+ * does before turning it on.
  */
 function MethodBlock({
   checked,
   children,
-  description,
   method,
   onToggle,
 }: {
   checked: boolean;
   children?: ReactNode;
-  description: string;
   method: TenderMethod;
   onToggle: () => void;
 }) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const help = METHOD_HELP[method];
+
   return (
     <View style={{ gap: spacing.sm }}>
-      <PaymentMethodToggle checked={checked} method={method} onToggle={onToggle} />
-      <NoticeBar message={description} title="How it works" tone="info" />
+      <PaymentMethodToggle checked={checked} method={method} onHelp={() => setHelpOpen(true)} onToggle={onToggle} />
       {children}
+      {helpOpen ? (
+        <HowItWorksSheet
+          eyebrow="Payment setup"
+          onClose={() => setHelpOpen(false)}
+          steps={help.steps.map((step) => ({ body: step, title: step }))}
+          title={help.title}
+        />
+      ) : null}
     </View>
   );
 }

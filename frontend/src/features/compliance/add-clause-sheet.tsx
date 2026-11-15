@@ -1,11 +1,12 @@
 import { ModalTitleRule } from "@/components/modal-title-rule";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { ModalTitle } from "@/components/modal-title";
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { Animated, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Plus, X } from "lucide-react-native";
 
-import { useKeyboardInset } from "@/components/use-keyboard-inset";
+import { useKeyboardRoom, useRevealInputScroll } from "@/components/use-keyboard-inset";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
 import { ActionButton, FormInput, IconButton } from "@/features/owner/owner-ui";
 import { useFormErrors } from "@/features/forms/use-form-errors";
@@ -22,7 +23,9 @@ import { useTheme } from "@/theme/use-theme";
  */
 export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, body: string) => void; onClose: () => void }) {
   const { colors, fonts, type } = useTheme();
-  const keyboardInset = useKeyboardInset();
+  const { room: keyboardRoom } = useKeyboardRoom();
+  // The list scrolls to the focused input with the keyboard up (user, 2026-11-08).
+  const revealInput = useRevealInputScroll();
   const [heading, setHeading] = useState("");
   const [body, setBody] = useState("");
   const form = useFormErrors<"body" | "heading">();
@@ -49,15 +52,16 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
           shoved up the screen after the keyboard closed. */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          <View
+          <SheetCloseButton onClose={() => dismiss()} />
+          <Animated.View
             style={{
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               borderWidth: 1,
-              marginBottom: keyboardInset,
-              maxHeight: "92%",
+              paddingBottom: keyboardRoom,
+              maxHeight: "100%",
               paddingHorizontal: spacing.lg,
               paddingTop: spacing.lg,
             }}
@@ -68,7 +72,7 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
               </ModalTitle>
             </View>
             <ModalTitleRule />
-            <ScrollView
+            <ScrollView {...revealInput}
               contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xs }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
@@ -103,7 +107,7 @@ export function AddClauseSheet({ onAdd, onClose }: { onAdd: (heading: string, bo
               <ActionButton disabled={form.blocked} icon={Plus} label="Add clause" onPress={() => submit(dismiss)} />
             </View>
             <SafeAreaView edges={["bottom"]} style={{ paddingBottom: spacing.md }} />
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
       </>}

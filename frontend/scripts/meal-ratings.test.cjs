@@ -12,9 +12,11 @@ const rating = read("src/features/food/meal-rating.tsx");
 // Meal ratings (user, 2026-11-01). The rules live on the server and are tested
 // there. These pin what the screens promise.
 
-test("the tenant's card sits on Home under the meal pass", () => {
-  assert.match(read("app/(tabs)/index.tsx"), /<MealPassCard [^\n]*\/>\s+<MealRatingHomeCard /);
-  assert.match(rating, /Rate your last meal/);
+test("rating the last meal is a button on Home's meals card, above Meals and plan (2026-11-10)", () => {
+  const home = read("app/(tabs)/index.tsx");
+  assert.match(home, /<MealRatingButton skip=\{!moduleEnabled\} \/>[\s\S]{0,200}accessibilityLabel="Meals and plan"/);
+  assert.doesNotMatch(home, /MealRatingHomeCard/);
+  assert.match(rating, /export function MealRatingButton/);
 });
 
 test("a rating is whole stars, one dish is enough, and the review is optional and capped", () => {
@@ -174,7 +176,7 @@ test("Discover's smart search wears the AI's card, toggle and button", () => {
   assert.match(card, /<AiModeToggle accessibilityLabel="Smart search" disabled=\{aiBusy\} enabled=\{aiOn\}/);
   assert.doesNotMatch(card, /<Switch|aiOn \? colors\.primarySoft/);
   // The gradient edge stays with the toggle off, and only the button changes with it.
-  assert.match(card, /<AiGradient \/>\s+<View\s+style=\{\{\s+backgroundColor: colors\.surfaceRaised/);
+  assert.match(card, /<AiGradient \/>\s+<View\s+style=\{\{\s+backgroundColor: colors\.surface,/);
   assert.match(card, /label="Search"\r?\n/);
   assert.doesNotMatch(card, /Search with AI/);
   // Each property's explanation is the meal reviews' card with no title: the mark and its words.
@@ -182,6 +184,9 @@ test("Discover's smart search wears the AI's card, toggle and button", () => {
   assert.match(listing, /<AiNoteCard text=\{reason\} \/>/);
   assert.doesNotMatch(aiStyle.slice(aiStyle.indexOf("function AiNoteCard"), aiStyle.indexOf("function AiCardFrame")), /AI review/);
   assert.doesNotMatch(listing, /ReasonLine/);
+  // A shadow a phone draws too, and a red pin with a white centre.
+  assert.match(listing, /<Card style=\{\{ gap: 0, padding: spacing\.md, \.\.\.cardShadow\(colors\.shadow\) \}\}>/);
+  assert.match(listing, /fill=\{colors\.danger\}[\s\S]{0,80}<Circle cx=\{12\} cy=\{10\} fill="#FFFFFF"/);
   // Measured, as a percent Svg on a phone kept its first size and left gaps when a card grew.
   assert.match(aiStyle, /onLayout=/);
   assert.match(aiStyle, /<Svg height=\{size\.height\} width=\{size\.width\}>/);
@@ -195,7 +200,14 @@ test("Discover's smart search wears the AI's card, toggle and button", () => {
   const results = read("src/features/discovery/components/ai-results.tsx");
   assert.doesNotMatch(results, /Sparkles|primarySoft/);
   assert.match(results, /spans=\{aiGradientSpans\(foundLine\)\}/);
-  assert.match(results, /softShadow\(colors\.shadow, 2, 6\)[\s\S]*?<AiGradient \/>[\s\S]*?backgroundColor: colors\.surface/);
+  assert.match(results, /cardShadow\(colors\.shadow\)[\s\S]*?<AiGradient \/>[\s\S]*?backgroundColor: colors\.surface/);
+  // Related results: the AI review card's heading, with no line under it.
+  assert.match(results, /fontFamily: fonts\.display, fontSize: 15[^>]*>\s+Related results/);
+  assert.doesNotMatch(results, /Each one says what it does not/);
+  // The sort button: small and blue-edged with a shadow, and never in the AI theme.
+  assert.match(results, /<ListingSortButton onPress/);
+  assert.match(sortSheet, /borderColor: colors\.primary,[\s\S]*?cardShadow\(colors\.shadow\)/);
+  assert.doesNotMatch(sortSheet, /AiGradient|AI_INK|neutralSoft/);
   // The pill says just Searching while it runs, then the place, in both modes.
   assert.match(card, /searchStatus === "searching"\s+\? "Searching"\s+: `Searched/);
   assert.doesNotMatch(card, /AI searching/);
@@ -241,3 +253,30 @@ test("the words for a rating: delightful, good, average and poor, on the screen 
   assert.match(line, /shown >= 4\.5\s+\? `This \$\{noun\} is delightful\.`\s+: shown >= 4\s+\? `This \$\{noun\} is good\.`\s+: shown >= 2\.5\s+\? `This \$\{noun\} is average\.`\s+: `This \$\{noun\} is poor\.`/);
 });
 
+test("Manage listing can show the meal rating, and the profile's Food card carries it", () => {
+  const listing = read("app/owner-property.tsx");
+  assert.match(listing, /Show meal rating/);
+  assert.match(listing, /showMealRating: next/);
+  assert.match(listing, /mealRating == null \?[\s\S]{0,80}No ratings yet/);
+  const profile = read("src/features/discovery/components/property-profile.tsx");
+  assert.match(profile, /label="Food" rating=\{property\.mealRating\}/);
+  assert.match(profile, /rating != null \?[\s\S]{0,300}color=\{ratingColor\(rating, colors\)\} name="star"[\s\S]{0,200}rating\.toFixed\(1\)\}\/5/);
+});
+
+test("Manage listing previews the property from a fixed footer, without counting as a profile view", () => {
+  const manage = read("app/owner-manage-listing.tsx");
+  assert.match(manage, /<PinnedFooter>[\s\S]{0,160}label="Show listing preview"/);
+  assert.match(manage, /router\.push\("\/owner-listing-preview"\)/);
+  // Without this the page counts as fitting and locks, with its last button under the footer.
+  assert.match(manage, /bottomPaddingCovered=\{canPreview\}/);
+  const preview = read("app/owner-listing-preview.tsx");
+  assert.match(preview, /useGetListingPreviewQuery/);
+  assert.doesNotMatch(preview, /useProfileView|useProfileActions/);
+  assert.match(read("app/_layout.tsx"), /name="owner-listing-preview"/);
+});
+
+test("the profile's room cards show amenities the way Rooms & beds does, icons then +n", () => {
+  const showcase = read("src/features/discovery/components/room-type-showcase.tsx");
+  assert.match(showcase, /<RoomAmenityStrip amenities=\{room\.amenities\} custom=\{room\.customAmenities\} small tiles \/>/);
+  assert.doesNotMatch(showcase, /AMENITY_LABELS|customAmenities\.map/);
+});

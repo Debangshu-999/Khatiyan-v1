@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
@@ -92,6 +93,7 @@ export function CalendarPicker({
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => (
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          <SheetCloseButton onClose={() => dismiss()} />
           <View
             style={{
               backgroundColor: colors.surface,

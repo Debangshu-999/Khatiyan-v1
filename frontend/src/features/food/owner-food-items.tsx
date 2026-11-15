@@ -1,5 +1,6 @@
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { HelpModalClose } from "@/components/help-modal-header";
+import { WrapTitle } from "@/components/wrap-title";
 import { FilterMark } from "@/features/owner/status-filter-marks";
 import { ModalTitle } from "@/components/modal-title";
 import { CenterModal } from "@/components/center-modal";
@@ -454,7 +455,7 @@ function FoodItemRow({
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.sm + 1,
-        ...softShadow(colors.shadow, 4, 12),
+        ...cardShadow(colors.shadow),
       }}
     >
       <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
@@ -467,14 +468,11 @@ function FoodItemRow({
               down and left the image standing a line taller than everything
               beside it. */}
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
-            {/* Scrolls back and forth when it overflows rather than
-                ellipsising. A dish whose name is cut off is one the owner
-                cannot tell apart from the next — and the app marquees every
-                overflowing label it has. Honours reduce-motion on its own.
-                flex with minWidth 0 is what gives the marquee a box to measure
-                against instead of letting it push the chip off the row. */}
+            {/* The whole name, wrapping onto the next line, never cut off (user,
+                2026-11-07). It scrolled back and forth. flex with minWidth 0 keeps
+                the chip on the row. */}
             <View style={{ flex: 1, minWidth: 0 }}>
-              <MarqueeText style={[type.bodyStrong, { color: colors.ink }]}>{item.name}</MarqueeText>
+              <WrapTitle style={[type.bodyStrong, { color: colors.ink }]}>{item.name}</WrapTitle>
             </View>
             <FoodStatusChip
               icon={item.active ? "check-circle" : "pause-circle-outline"}

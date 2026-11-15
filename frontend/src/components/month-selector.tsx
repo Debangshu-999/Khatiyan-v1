@@ -1,11 +1,13 @@
 import { useState } from "react";
+import { SheetCloseButton } from "@/components/help-modal-header";
 import { Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, X } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
+import { ColorCalendarIcon } from "@/components/color-calendar-icon";
 import { BottomSheetModal } from "@/components/bottom-sheet-modal";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -66,7 +68,7 @@ export function MonthSelector({
           justifyContent: "space-between",
           paddingHorizontal: spacing.sm,
           paddingVertical: spacing.xs,
-          ...softShadow(colors.shadow, 4, 12),
+          ...cardShadow(colors.shadow),
         }}
       >
         <RoundIconButton icon={ChevronLeft} label="Previous month" onPress={() => onChange(shiftMonth(value, -1, limit))} />
@@ -77,7 +79,8 @@ export function MonthSelector({
           onPress={() => setGridOpen(true)}
           style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}
         >
-          <CalendarDays color={colors.ink} size={19} strokeWidth={2.1} />
+          {/* Coloured, not a line icon (user, 2026-11-08). */}
+          <ColorCalendarIcon size={22} />
           <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 18 }}>{monthLabel(value)}</Text>
         </Pressable>
 
@@ -127,6 +130,7 @@ function MonthGridModal({
   return (
     <BottomSheetModal navigationBarTranslucent onRequestClose={onClose} statusBarTranslucent visible>
       {(dismiss) => <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <SheetCloseButton onClose={() => dismiss()} />
         <View
           style={{
             backgroundColor: colors.surface,

@@ -204,4 +204,38 @@ class MealScheduleServiceTest {
         assertThat(response.nextMeal()).isNull();
         assertThat(response.today()).hasSize(2);
     }
+
+    // ----- New meal times tell every food subscriber (P1.5.h.4, 2026-11-08) -----
+
+    @Test
+    void changedMealTimesTellEveryFoodSubscriber() {
+        servingOnly(MealType.BREAKFAST, MealType.LUNCH, MealType.DINNER);
+        UUID tenant = UUID.randomUUID();
+        when(subscriptionRepository.findCurrentOrUpcoming(PROPERTY, TODAY)).thenReturn(List.of(
+                FoodSubscription.start(PROPERTY, UUID.randomUUID(), tenant,
+                        FoodSubscription.everyDay(UUID.randomUUID()), TODAY.plusDays(1))));
+
+        serviceAtIst("10:00").saveTimings(ACTOR, PROPERTY, new SaveMealTimingsRequest(List.of(
+                new SaveMealTimingsRequest.Timing(MealType.LUNCH, LocalTime.of(13, 0), LocalTime.of(14, 30)),
+                // Dinner is sent as it already is, so it is not news.
+                new SaveMealTimingsRequest.Timing(MealType.DINNER, LocalTime.of(20, 0), LocalTime.of(22, 0)))));
+
+        ArgumentCaptor<com.khatiyan.d_modules.food.event.MealTimingsChangedEvent> event =
+                ArgumentCaptor.forClass(com.khatiyan.d_modules.food.event.MealTimingsChangedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().changed()).containsOnlyKeys(MealType.LUNCH);
+        assertThat(event.getValue().changed().get(MealType.LUNCH))
+                .isEqualTo(new MealScheduleRules.MealWindow(LocalTime.of(13, 0), LocalTime.of(14, 30)));
+        assertThat(event.getValue().tenantUserIds()).containsExactly(tenant);
+    }
+
+    @Test
+    void savingTheSameMealTimesTellsNobody() {
+        servingOnly(MealType.BREAKFAST, MealType.LUNCH, MealType.DINNER);
+
+        serviceAtIst("10:00").saveTimings(ACTOR, PROPERTY, new SaveMealTimingsRequest(List.of(
+                new SaveMealTimingsRequest.Timing(MealType.LUNCH, LocalTime.of(12, 30), LocalTime.of(14, 30)))));
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
 }

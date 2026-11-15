@@ -111,9 +111,12 @@ export function CountTabPills<T extends string>({
 
 /**
  * One filter bubble, the notification screen's, at the same size (user,
- * 2026-10-31): pale blue with a blue border, solid blue when chosen, the count in
- * an inner white bubble.
+ * 2026-10-31): pale blue, solid blue when chosen, the count in an inner white
+ * bubble. No blue border while not chosen (user, 2026-11-07).
  */
+/** Every filter chip and filter button's corner (user, 2026-11-07: rounded boxes, not pills). */
+export const FILTER_CHIP_RADIUS = 10;
+
 export function FilterBubble({
   active,
   badge = 0,
@@ -143,9 +146,12 @@ export function FilterBubble({
       onPress={onPress}
       style={{
         alignItems: "center",
-        backgroundColor: active ? colors.primary : colors.primarySoft,
-        borderColor: colors.primary,
-        borderRadius: 999,
+        // Unchosen: white with the search bar's edge, no tinted fill (user, 2026-11-14).
+        backgroundColor: active ? colors.primary : colors.surface,
+        borderColor: active ? colors.primary : `${colors.ink}40`,
+        // A rounded box like the food app's filter chips, not a pill (user, 2026-11-07).
+        borderCurve: "continuous",
+        borderRadius: FILTER_CHIP_RADIUS,
         borderWidth: 1,
         flexDirection: "row",
         // Sized to its own label: the strip must not squeeze it until it clips.
@@ -155,7 +161,7 @@ export function FilterBubble({
         // solid blue read as slightly smaller than the outlined pills beside it.
         paddingLeft: active ? spacing.sm + 3 : spacing.sm,
         paddingRight: count != null ? 4 : active ? spacing.sm + 3 : spacing.sm,
-        paddingVertical: active ? 6 : 4,
+        paddingVertical: active ? 8 : 7,
       }}
       // No tap lock: switching filters in quick succession must not drop taps.
       tapLockMs={0}
@@ -184,7 +190,7 @@ export function FilterBubble({
           style={{
             alignItems: "center",
             backgroundColor: colors.surface,
-            borderRadius: 999,
+            borderRadius: 6,
             height: 20,
             justifyContent: "center",
             minWidth: 20,
@@ -356,7 +362,8 @@ export function CollapsibleFilterBubbles<T extends string>({
           alignItems: "center",
           backgroundColor: colors.surface,
           borderColor: colors.borderStrong,
-          borderRadius: 999,
+          borderCurve: "continuous",
+          borderRadius: FILTER_CHIP_RADIUS,
           borderWidth: 1,
           flexDirection: "row",
           // Never squeezed by the scroller beside it.
@@ -408,7 +415,8 @@ function Bubble({ label, on, onPress }: { label: string; on: boolean; onPress: (
       style={{
         backgroundColor: on ? colors.primary : colors.surface,
         borderColor: on ? colors.primary : colors.borderStrong,
-        borderRadius: 999,
+        borderCurve: "continuous",
+        borderRadius: FILTER_CHIP_RADIUS,
         borderWidth: 1,
         paddingHorizontal: spacing.sm,
         paddingVertical: 3,

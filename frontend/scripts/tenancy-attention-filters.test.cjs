@@ -38,7 +38,7 @@ function compile(source, globals = {}, dependencies = {}) {
 const theme = { colors: { ink: "ink", inkSoft: "inkSoft", muted: "muted" }, fonts: {} };
 const ui = Object.fromEntries([
   "CenterModal", "View", "ModalTitle", "IconButton", "HelpModalClose", "StayStatusMark", "BillStatusMark", "PickerOptionRow", "X", "CheckCircle2",
-  "AlertTriangle", "Clock3", "CircleAlert", "CalendarClock", "CalendarX2", "ExitTenancyIcon",
+  "AlertTriangle", "Clock3", "CircleAlert", "IndianRupee", "CalendarClock", "CalendarX2", "ExitTenancyIcon",
   "UpcomingExitsIcon", "Check", "ScreenScrollView", "ScreenHeader", "EmptyState", "FilterPillRow",
   "OwnerActionCenterSkeleton", "MovingBorder", "ActionRow", "Banknote", "ShieldAlert", "AlertCircle",
   "Repeat2", "KeyRound", "MessageSquare", "Wallet", "HandCoins", "FileSignature", "BedDouble",

@@ -5,6 +5,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { CircleHelp, Clock } from "lucide-react-native";
 
 import { AlertModal } from "@/components/alert-modal";
+import { useModalOrigin } from "@/components/anchored-dropdown";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { AppTextInput } from "@/components/app-text-input";
 import { FieldError } from "@/components/field-error";
@@ -330,6 +331,7 @@ function IndividualsHint() {
   const { width: windowWidth } = useWindowDimensions();
   const trigger = useRef<View>(null);
   const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
+  const modalOrigin = useModalOrigin();
   const close = () => setAnchor(null);
   const open = () =>
     trigger.current?.measureInWindow((x, y, width, height) => {
@@ -356,6 +358,8 @@ function IndividualsHint() {
       </View>
       {anchor ? (
         <Modal animationType="fade" navigationBarTranslucent onRequestClose={close} statusBarTranslucent transparent visible>
+          {/* Measured from this window's own start, which Android may place differently (2026-11-07). */}
+          <View {...modalOrigin.rootProps}>
           {/* A sibling behind the card, never its parent. */}
           <Pressable
             accessibilityLabel="Close"
@@ -379,13 +383,15 @@ function IndividualsHint() {
               shadowOffset: { height: 6, width: 0 },
               shadowOpacity: 0.14,
               shadowRadius: 14,
-              top: anchor.top,
+              opacity: modalOrigin.ready ? 1 : 0,
+                top: anchor.top - modalOrigin.originY,
               width: HINT_WIDTH,
             }}
           >
             <Text style={{ color: colors.ink, fontFamily: fonts.sansMedium, fontSize: 13, lineHeight: 18 }}>
               Number of people who came together for this visit.
             </Text>
+          </View>
           </View>
         </Modal>
       ) : null}

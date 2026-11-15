@@ -1,20 +1,18 @@
 import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
-import { Animated, BackHandler, Easing, RefreshControl, StyleSheet, View } from "react-native";
+import { Animated, BackHandler, Easing, RefreshControl, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { BlurTargetView, BlurView } from "expo-blur";
 import { useFocusEffect } from "expo-router";
 import { ArrowLeft } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { LoadFailed } from "@/components/load-failed";
-import { pinnedFooterEdge } from "@/components/pinned-footer";
 import { useHideTabBar } from "@/components/tab-bar-visibility";
 import { PropertyProfileSkeleton } from "@/components/skeletons/discovery/property-profile";
 import { SlideInView } from "@/components/slide-in-view";
 import { useProfileView, type ProfileSource } from "@/features/analytics/use-profile-view";
 import { ProfileTopActions, PropertyProfile } from "@/features/discovery/components/property-profile";
 import { useGetDiscoveryPropertyQuery } from "@/store/services/discovery-api";
-import { softShadow } from "@/theme/shadows";
+import { cardShadow, softShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -45,10 +43,8 @@ export type PropertyProfileLayerHandle = {
  * back button closes it first and is let through only when it is not open.
  */
 export const PropertyProfileLayer = forwardRef<PropertyProfileLayerHandle>(function PropertyProfileLayer(_props, ref) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  // What the footer's glass blurs on Android, where a blur sees only inside a BlurTargetView.
-  const pageForGlass = useRef<View | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [source, setSource] = useState<ProfileSource>("SEARCH");
@@ -68,10 +64,10 @@ export const PropertyProfileLayer = forwardRef<PropertyProfileLayerHandle>(funct
   const detailQuery = useGetDiscoveryPropertyQuery({ propertyId: propertyId ?? "" }, { skip: !propertyId });
   const property = detailQuery.currentData;
 
-  // Enquire, Visit and Booking (user, 2026-11-02): one row in a fixed footer, with the app's
-  // bottom tabs out of the way while the profile fills the screen.
+  // Enquire, Book a visit and Book a stay: a Next steps section in the page, above Property
+  // details (user, 2026-11-14; was a fixed footer). The app's bottom tabs stay out of the way
+  // while the profile fills the screen.
   const actions = useProfileActions(propertyId, property?.name ?? "");
-  const [footerHeight, setFooterHeight] = useState(0);
   useHideTabBar(Boolean(propertyId) && focused);
 
   const close = useCallback(() => {
@@ -175,7 +171,7 @@ export const PropertyProfileLayer = forwardRef<PropertyProfileLayerHandle>(funct
                   borderBottomColor: colors.border,
                   borderBottomWidth: 1,
                   opacity: scrollY.interpolate({ extrapolate: "clamp", inputRange: [0, 16], outputRange: [0, 1] }),
-                  ...softShadow(colors.shadow, 4, 12),
+                  ...cardShadow(colors.shadow),
                 },
               ]}
             />
@@ -200,14 +196,14 @@ export const PropertyProfileLayer = forwardRef<PropertyProfileLayerHandle>(funct
             <View style={{ flex: 1 }} />
             {property ? <ProfileTopActions property={property} /> : null}
           </View>
-          <BlurTargetView ref={pageForGlass} style={{ flex: 1 }}>
+          <View style={{ flex: 1 }}>
           {/* A plain ScrollView, so it brings its own RefreshControl, driven by
               its own state rather than isFetching, which is also true on first
               open and would spin over a screen nobody pulled. */}
           <Animated.ScrollView
             onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
             scrollEventThrottle={16}
-            contentContainerStyle={{ gap: spacing.lg, paddingBottom: (property && actions.available ? footerHeight : insets.bottom) + spacing.xl, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}
+            contentContainerStyle={{ gap: spacing.lg, paddingBottom: insets.bottom + spacing.xl, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}
             keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
@@ -222,6 +218,7 @@ export const PropertyProfileLayer = forwardRef<PropertyProfileLayerHandle>(funct
           >
             {property ? (
               <PropertyProfile
+                nextSteps={actions.nextSteps()}
                 property={property}
               />
             ) : failed ? (
@@ -230,36 +227,9 @@ export const PropertyProfileLayer = forwardRef<PropertyProfileLayerHandle>(funct
               <PropertyProfileSkeleton />
             )}
           </Animated.ScrollView>
-          </BlurTargetView>
+          </View>
         </SlideInView>
       </SafeAreaView>
-      {/* Fixed, and blurred like the app's bottom tabs: only on this screen (user, 2026-11-02). */}
-      {property && actions.available ? (
-        <View
-          onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}
-          style={{
-            ...pinnedFooterEdge(colors),
-            bottom: 0,
-            left: 0,
-            overflow: "hidden",
-            paddingBottom: insets.bottom + spacing.sm,
-            paddingHorizontal: spacing.lg,
-            paddingTop: spacing.sm,
-            position: "absolute",
-            right: 0,
-          }}
-        >
-          <BlurView
-            blurMethod="dimezisBlurViewSdk31Plus"
-            blurTarget={pageForGlass}
-            intensity={isDark ? 55 : 60}
-            style={StyleSheet.absoluteFill}
-            tint={isDark ? "dark" : "default"}
-          />
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `${colors.surfaceSunken}CC` }]} />
-          {actions.row(false)}
-        </View>
-      ) : null}
       {actions.sheets}
     </Animated.View>
   );

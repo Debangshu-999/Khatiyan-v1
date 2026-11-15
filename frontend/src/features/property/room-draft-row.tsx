@@ -215,7 +215,7 @@ export function RoomDraftRow({
     if (headingBands) {
       return (
         <View style={{ gap: spacing.md }}>
-          <SectionHeading title="Room type" trailing={<Text style={{ color: colors.danger, fontSize: 18 }}>*</Text>} trailingInline />
+          <SectionHeading title="Room type" />
           <Card>{details}</Card>
           {amenityFields}
         </View>

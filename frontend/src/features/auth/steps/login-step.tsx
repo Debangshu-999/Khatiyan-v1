@@ -54,7 +54,8 @@ export function LoginStep({
           <AuthChipLink align="auto" icon={KeyRound} label="Forgot or reset PIN" onPress={onForgotPin} />
         </FieldWithLink>
       </View>
-      <View style={{ gap: spacing.sm, marginTop: "auto", paddingTop: spacing.lg }}>
+      {/* A little room under the chips (user, 2026-11-14), off the screen's floor. */}
+      <View style={{ gap: spacing.sm, marginTop: "auto", paddingBottom: spacing.md, paddingTop: spacing.lg }}>
         <PrimaryButton label="Log in" onPress={onLogin} busy={busy} />
         {/* Both are ways OUT of this form, so they sit together on one row
             rather than stacking as two more things to read past the button. */}

@@ -10,6 +10,7 @@ import { buildActionItems } from "@/features/owner/action-center";
 import { useGuardedRouter } from "@/navigation/use-guarded-router";
 import type { OwnerDashboard } from "@/store/services/dashboard-api";
 import { radii, spacing } from "@/theme/spacing";
+import { SEARCH_BAR_HEIGHT, searchBarFrame } from "@/components/search-field";
 import { useTheme } from "@/theme/use-theme";
 import { suggestedQuickActions } from "./catalogue";
 import { QuickActionSuggestionRow } from "./quick-action-ui";
@@ -43,15 +44,12 @@ export function HomeQuickActions({ dashboard }: { dashboard?: OwnerDashboard }) 
     </View>
     {/* Looks like a search field, opens the full list to search it (user, 2026-10-29). */}
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xs }}>
-      <View
-        style={{ alignItems: "center", backgroundColor: colors.surface, borderColor: `${colors.ink}80`, borderCurve: "continuous",
-          borderRadius: radii.card, borderWidth: 1, flex: 1, minWidth: 0, flexDirection: "row", gap: spacing.sm, minHeight: 44, paddingHorizontal: spacing.md }}
-      >
-        <Search color={colors.muted} size={18} strokeWidth={2.2} />
-        <FitText numberOfLines={1} minimumFontScale={0.85} style={{ color: colors.muted, flex: 1, minWidth: 0, fontFamily: fonts.sans, fontSize: 14 }}>What would you like to do?</FitText>
+      <View style={[searchBarFrame(colors), { flex: 1, minWidth: 0 }]}>
+        <Search color={colors.muted} size={16} strokeWidth={2.2} />
+        <FitText numberOfLines={1} minimumFontScale={0.85} style={{ color: colors.muted, flex: 1, minWidth: 0, fontFamily: fonts.sans, fontSize: 13.5 }}>What would you like to do?</FitText>
       </View>
       <View
-        style={{ alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: 999, backgroundColor: colors.neutralSoft }}>
+        style={{ alignItems: "center", justifyContent: "center", width: SEARCH_BAR_HEIGHT, height: SEARCH_BAR_HEIGHT, borderRadius: 999, backgroundColor: colors.neutralSoft }}>
         <ArrowRight color={colors.ink} size={20} strokeWidth={2} />
       </View>
     </View>

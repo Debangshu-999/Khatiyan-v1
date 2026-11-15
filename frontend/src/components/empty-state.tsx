@@ -1,4 +1,5 @@
-import { useRef, useState, type ComponentType, type ReactNode } from "react";
+import { type ComponentType, type ReactNode, useEffect, useRef, useState } from "react";
+import { EMPTY_ART_FOR_PICTURE, EMPTY_TONE, type EmptyArt } from "@/components/empty-art";
 import { Dimensions, Image, Text, View, type ImageSourcePropType } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
@@ -56,6 +57,16 @@ export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spac
   const { colors, fonts } = useTheme();
   const anchor = useRef<View>(null);
   const [centredHeight, setCentredHeight] = useState(0);
+  // Hidden until it knows where the centre is, so it never shows high and then
+  // drops into place as a screen opens (user, 2026-11-09). A compact one has
+  // nothing to measure and shows at once.
+  const [placed, setPlaced] = useState(Boolean(compact));
+  useEffect(() => {
+    // Never left invisible: if the measurement does not come back, show it anyway.
+    if (placed) return undefined;
+    const timer = setTimeout(() => setPlaced(true), 300);
+    return () => clearTimeout(timer);
+  }, [placed]);
 
   // In the middle of the screen itself, on every screen (user, 2026-11-01). The
   // middle of the room below the header read as too low on a phone. From where it
@@ -69,6 +80,7 @@ export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spac
     anchor.current?.measureInWindow((_x, y) => {
       const screen = Dimensions.get("window").height;
       setCentredHeight(Math.round(footerHeight != null ? screen - footerHeight - y : screen - 2 * y));
+      setPlaced(true);
     });
   }
 
@@ -81,6 +93,7 @@ export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spac
         gap: spacing.md,
         justifyContent: "center",
         minHeight,
+        opacity: placed ? 1 : 0,
         paddingHorizontal: spacing.lg,
         paddingVertical: compact ? spacing.xl : 0,
       }}
@@ -94,6 +107,11 @@ export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spac
         // artwork slot, not the icon slot: `icon` is sized for a 46pt lucide
         // glyph, and an illustration at that size is a speck above a heading.
         artworkNode
+      ) : artwork && EMPTY_ART_FOR_PICTURE.has(artwork) ? (
+        // The old picture's vector redraw, in the one empty-state tone (user, 2026-11-14).
+        <View style={{ marginBottom: artworkTextGap - spacing.md - 18, marginTop: -10 }}>
+          {renderEmptyArt(EMPTY_ART_FOR_PICTURE.get(artwork)!)}
+        </View>
       ) : artwork ? (
         <Image
           accessibilityIgnoresInvertColors
@@ -103,7 +121,7 @@ export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spac
         />
       ) : Icon ? (
         <View style={{ alignItems: "center", justifyContent: "center", marginBottom: -spacing.xs }}>
-          <Icon color={colors.ink} size={46} strokeWidth={1.6} />
+          <Icon color={EMPTY_TONE.deep} size={46} strokeWidth={1.6} />
         </View>
       ) : null}
 
@@ -120,4 +138,9 @@ export function EmptyState({ action, artwork, artworkNode, artworkTextGap = spac
       {action}
     </View>
   );
+}
+
+/** Draws a redraw at the picture slot's size. */
+function renderEmptyArt(Art: EmptyArt) {
+  return <Art size={132} />;
 }

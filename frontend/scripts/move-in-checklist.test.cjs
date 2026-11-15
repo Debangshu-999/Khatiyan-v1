@@ -12,10 +12,18 @@ const policies = read("app/owner-exit-policies.tsx");
 test("four damage levels, NA to D3, priced per item on Exit policies", () => {
   assert.match(read("src/store/services/property-api.ts"), /export const DAMAGE_LEVELS: DamageLevel\[\] = \["NA", "D1", "D2", "D3"\];/);
   assert.match(policies, /<Section title="Damage levels">/);
-  assert.match(policies, /The same four levels for every item\. D3 means the most damage\./);
-  // Each level inside its field like a ₹; NA fixed as no damage (user, 2026-10-29).
-  assert.match(policies, /<NotchedInput editable=\{false\} prefix="NA:" value="No damage" \/>/);
-  assert.ok(policies.includes('prefix={`${key.toUpperCase()}:`}'));
+  assert.match(policies, /The same four levels for every item\.\n/);
+  assert.match(policies, /Each item can be charged at one or more damage levels\./);
+  // No levels toggle and no lifecycle sheet: levels are only price tiers (user, 2026-11-07).
+  assert.doesNotMatch(policies, /damageLevelsEnabled|IconSwitch|ITEM_LIFECYCLE/);
+  // Fixed for the whole system, shown as boxes in each level's colour, nothing to edit (user, 2026-11-07).
+  assert.match(policies, /<DamageLevelBoxes \/>/);
+  assert.doesNotMatch(policies, /damageLevels:|DamageLevelsEditor/);
+  const levels = read("src/features/tenancy/damage-level.tsx");
+  for (const level of ["NA", "D1", "D2", "D3"]) assert.match(levels, new RegExp(`level: "${level}",`));
+  assert.doesNotMatch(levels, /levels: DamageLevelWords/);
+  // NA and D1 are pale like their boxes, so on a box their chip turns white with the box's edge.
+  assert.match(levels, /<DamageLevelPill level=\{entry\.level\} onTint=\{box\(entry\.level\)\.border\} \/>/);
   // By category, every room amenity on it by itself, Add per category, levels deleted down.
   assert.match(policies, /roomItems=\{roomDamageItems\(roomsQuery\.data \?\? \[\], bathroomType\)\}/);
   assert.match(policies, /onAdd=\{readOnly \? undefined : \(\) => setSheet\(\{ category, name: null \}\)\}/);
@@ -33,22 +41,28 @@ test("the checklist is a required step between Verify and Review, never for a da
   assert.doesNotMatch(wizard, /Skip move-in/);
   assert.doesNotMatch(wizard, /moveInSkipped/);
   // Every item a photo, every damage described, and at least 1 key (user, 2026-10-29).
-  assert.match(wizard, /moveInItems\.every\(\(item\) => item\.photoUrls\.length > 0 && \(item\.damageLevel === "NA" \|\| item\.note\.trim\(\)\)\)/);
+  // Every item a photo, no damage note: the step curates items (user, 2026-11-07).
+  // Every item a condition and a photo (user, 2026-11-07).
+  assert.match(wizard, /moveInItems\.every\(\(item\) => item\.condition !== null && item\.photoUrls\.length > 0\)/);
   assert.match(wizard, /Number\(keysHandedOver\) >= 1/);
   assert.match(wizard, /<Field error=\{Number\(keysHandedOver\) >= 1 \? undefined : "Provide at least 1 key\."\} label="Keys handed over" required>/);
   assert.match(wizard, /useState\("1"\)/);
-  assert.match(wizard, /<Field label="What is damaged" required>/);
+  assert.doesNotMatch(wizard, /What is damaged/);
   assert.match(wizard, /disabled=\{!moveInReady\}\s+label="Continue"/);
   assert.match(wizard, /moveInChecklist: moveInPayload,/);
 });
 
-test("each item starts from the room's condition, and carried photos cannot be removed", () => {
-  assert.match(wizard, /useGetRoomItemConditionsQuery\(/);
-  assert.match(wizard, /damageLevel: condition\?\.level \?\? "NA"/);
-  assert.match(wizard, /photoUrls: carried,/);
-  // A carried photo has a lock where an added one has its remove x.
-  assert.match(wizard, /\(item\.carried \?\? \[\]\)\.includes\(url\) \?/);
-  assert.match(wizard, /<Lock color=\{colors\.muted\} size=\{12\}/);
+test("each move-in sets every item's condition fresh, nothing carried from an earlier tenant", () => {
+  // Working, Damaged or Broken, from "Select an option" (user, 2026-11-07).
+  assert.doesNotMatch(wizard, /useGetRoomItemConditionsQuery\(/);
+  assert.match(wizard, /condition: null,\s+custom: false,/);
+  assert.match(wizard, /<ItemConditionDropdown onChange=\{\(condition\) => update\(\{ condition \}\)\} value=\{item\.condition\} \/>/);
+  // A taller note for every condition, Working included, no "optional" in the label (user, 2026-11-07).
+  assert.match(wizard, /<Field label="Note">\s*<Input\s+maxLength=\{200\}\s+multiline/);
+  // A nudge for an item with an open damage record.
+  assert.match(wizard, /is still open\. If it has not been repaired or replaced, set the condition to match\./);
+  const dropdown = read("src/features/tenancy/item-condition.tsx");
+  assert.match(dropdown, /"Select an option"/);
 });
 
 test("the checklist shows what the room's type picked, from the damage list, and more can be added", () => {
@@ -67,7 +81,8 @@ test("the checklist shows what the room's type picked, from the damage list, and
   assert.match(wizard, /needPhotos > 0 \? `\$\{needPhotos\} need/);
   // 1 to 3 photos on each item, and its level from a dropdown with an ⓘ.
   assert.match(wizard, /<MultiImageField\s+label=\{`Photos \(\$\{item\.photoUrls\.length\} of 3\)`\}\s+max=\{3\}/);
-  assert.match(wizard, /<DamageLevelDropdown levels=\{levelWords\}/);
+  // No damage level at move-in, only the condition (user, 2026-11-07).
+  assert.doesNotMatch(wizard, /<DamageLevelDropdown/);
 });
 
 test("room types pick their things from the damage list, in a Room and a Bathroom section", () => {

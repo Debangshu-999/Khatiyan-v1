@@ -377,6 +377,13 @@ export type MealRatingPrompt = {
   date: string;
   mealType: MealType;
   dishes: { itemId: string; name: string }[];
+  /** Everyone's average for this meal so far, or null before any rating. */
+  averageRating: number | null;
+  /**
+   * What this tenant gave it, empty before they rate. Rated, the meal stays on
+   * offer to be changed until the next one starts (user, 2026-11-14).
+   */
+  mine: { itemId: string; rating: number; review: string | null }[];
 };
 
 export type FoodDishType = "COMMON" | "DRINK" | "VEG" | "NON_VEG";

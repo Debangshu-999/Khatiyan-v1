@@ -16,9 +16,6 @@ export function DiscoveryEmptyState({ title }: DiscoveryEmptyStateProps) {
   return (
     <Card tone="sunken">
       <View style={{ gap: spacing.xs }}>
-        <Text style={[type.eyebrow, { color: colors.kicker }]}>
-          Discovery
-        </Text>
         <Text
           style={{
             color: colors.ink,

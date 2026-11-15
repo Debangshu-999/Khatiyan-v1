@@ -56,6 +56,7 @@ class OtpServiceRateLimitTest {
     @Mock private ValkeyOtpStore valkeyOtpStore;
     @Mock private OtpDeliveryService otpDeliveryService;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private OtpSendSchedule sendSchedule;
 
     private OtpService otpService;
 
@@ -63,7 +64,7 @@ class OtpServiceRateLimitTest {
     void setUp() {
         when(passwordEncoder.encode(anyString())).thenReturn("hash");
         otpService = new OtpService(otpRepository, valkeyOtpStore, otpDeliveryService, passwordEncoder,
-                new ValkeyHealth(List::of, System::nanoTime));
+                new ValkeyHealth(List::of, System::nanoTime), sendSchedule);
     }
 
     private void issue(String ip) {
@@ -72,8 +73,6 @@ class OtpServiceRateLimitTest {
 
     private void valkeyAllows() {
         when(valkeyOtpStore.startResendCooldown(eq(PHONE), any(), any())).thenReturn(true);
-        when(valkeyOtpStore.incrementRequestCount(eq(PHONE), any())).thenReturn(1L);
-        when(valkeyOtpStore.incrementHourlyRequestCount(eq(PHONE), any())).thenReturn(1L);
         when(valkeyOtpStore.incrementIpRequestCount(eq(IP), any())).thenReturn(1L);
     }
 
@@ -119,53 +118,75 @@ class OtpServiceRateLimitTest {
 
         assertThatThrownBy(() -> issue(IP)).isInstanceOf(TooManyRequestsException.class);
 
-        verify(valkeyOtpStore, never()).incrementRequestCount(anyString(), any());
         verify(valkeyOtpStore, never()).incrementIpRequestCount(anyString(), any());
     }
 
+    // ---- The resend schedule (user, 2026-11-14) -------------------------------
+    //
+    // One code every 30 seconds for the first 20 in a day, then the gap doubles
+    // for every further 10: a minute before codes 21-30, two before 31-40, four
+    // before 41-50, and so on, never more than a day.
+
     @Test
-    void theFourthCodeToOneNumberInTheWindowIsRefused() {
+    void theServiceUsesTheSchedulesGaps() {
+        assertThat(OtpService.resendGapAfter(1)).isEqualTo(Duration.ofSeconds(30));
+        assertThat(OtpService.resendGapAfter(3)).isEqualTo(Duration.ofMinutes(1));
+        assertThat(OtpService.resendGapAfter(400)).isEqualTo(Duration.ofDays(1));
+    }
+
+    /** One device: 20 codes an hour (user, 2026-11-14). It was 20 in five minutes. */
+    @Test
+    void theDeviceCountRunsOverAnHour() {
         valkeyAllows();
-        when(valkeyOtpStore.incrementRequestCount(eq(PHONE), any())).thenReturn(4L);
-        when(valkeyOtpStore.requestWindowRemainingSeconds(PHONE)).thenReturn(240L);
+
+        issue(IP);
+
+        verify(valkeyOtpStore).incrementIpRequestCount(IP, Duration.ofHours(1));
+    }
+
+    /** A code an owner asks for is claimed on its own schedule, by the number. */
+    @Test
+    void aCashCodeIsClaimedOnItsOwnScheduleBeforeItIsSent() {
+        valkeyAllows();
+
+        issue(IP);
+
+        verify(sendSchedule).claim(eq("phone:" + PHONE), eq("CASH_PAYMENT"), any());
+        verify(otpDeliveryService).deliverOtp(eq(PHONE), any(), anyString(), eq(OtpPurpose.CASH_PAYMENT), any(), any());
+    }
+
+    /** A refusal from the schedule sends nothing. */
+    @Test
+    void aCodeTheScheduleRefusesIsNotSent() {
+        valkeyAllows();
+        org.mockito.Mockito.doThrow(new TooManyRequestsException("Please wait", 45L))
+                .when(sendSchedule).claim(anyString(), anyString(), any());
 
         assertThatThrownBy(() -> issue(IP))
                 .isInstanceOfSatisfying(TooManyRequestsException.class,
-                        refused -> assertThat(refused.retryAfterSeconds()).isEqualTo(240L));
+                        refused -> assertThat(refused.retryAfterSeconds()).isEqualTo(45L));
         verifyNothingSent();
     }
 
-    /**
-     * 3 in ten minutes alone let one number be sent 18 codes an hour. The hour
-     * has its own budget, and it holds even while the short window has room.
-     */
+    /** Sign-in codes were claimed before the account lookup; sending one does not claim twice. */
     @Test
-    void theSixthCodeInAnHourIsRefusedEvenWithRoomInTheShortWindow() {
+    void aSignInCodeIsNotClaimedAgainWhenSent() {
         valkeyAllows();
-        when(valkeyOtpStore.incrementHourlyRequestCount(eq(PHONE), any())).thenReturn(6L);
-        when(valkeyOtpStore.hourlyRequestWindowRemainingSeconds(PHONE)).thenReturn(2_400L);
 
-        assertThatThrownBy(() -> issue(IP))
-                .isInstanceOfSatisfying(TooManyRequestsException.class,
-                        refused -> assertThat(refused.retryAfterSeconds()).isEqualTo(2_400L));
-        verifyNothingSent();
+        otpService.issue(PHONE, IP, OtpPurpose.LOGIN, OtpDeliveryChannel.SMS);
+
+        verify(sendSchedule, never()).claim(anyString(), anyString(), any());
     }
 
-    /**
-     * Both full: the wait given is the hour's. Giving the short window's few
-     * minutes sent the person away only to be refused again on return.
-     */
+    /** The old three-in-ten-minutes and five-an-hour windows are no longer asked. */
     @Test
-    void whenBothWindowsAreFullTheLongerWaitIsGiven() {
+    void theOldWindowsAreNotAsked() {
         valkeyAllows();
-        when(valkeyOtpStore.incrementRequestCount(eq(PHONE), any())).thenReturn(4L);
-        when(valkeyOtpStore.requestWindowRemainingSeconds(PHONE)).thenReturn(300L);
-        when(valkeyOtpStore.incrementHourlyRequestCount(eq(PHONE), any())).thenReturn(6L);
-        when(valkeyOtpStore.hourlyRequestWindowRemainingSeconds(PHONE)).thenReturn(2_400L);
 
-        assertThatThrownBy(() -> issue(IP))
-                .isInstanceOfSatisfying(TooManyRequestsException.class,
-                        refused -> assertThat(refused.retryAfterSeconds()).isEqualTo(2_400L));
+        issue(IP);
+
+        verify(valkeyOtpStore, never()).incrementRequestCount(anyString(), any());
+        verify(valkeyOtpStore, never()).incrementHourlyRequestCount(anyString(), any());
     }
 
     /** The per-device limit lives in Valkey now, not only in the database check. */

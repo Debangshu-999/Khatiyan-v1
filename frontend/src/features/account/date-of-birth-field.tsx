@@ -59,7 +59,9 @@ export function DateOfBirthField({
         {labelAccessory}
       </View>
 
-      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+      {/* The clear sits inside the field's edge (user, 2026-11-08), laid over it as a sibling: a
+          button nested in the field would also open the picker it sits on. */}
+      <View style={{ justifyContent: "center" }}>
         <AnimatedPressable
           accessibilityRole="button"
           disabled={disabled}
@@ -75,7 +77,9 @@ export function DateOfBirthField({
             flexDirection: "row",
             gap: spacing.sm,
             minHeight: 46,
-            paddingHorizontal: spacing.md,
+            paddingLeft: spacing.md,
+            // Room for the clear button over the right end.
+            paddingRight: valid && !disabled ? spacing.md + 28 : spacing.md,
           }}
         >
           <CalendarDays color={colors.muted} size={17} strokeWidth={2} />
@@ -103,12 +107,14 @@ export function DateOfBirthField({
               alignItems: "center",
               backgroundColor: colors.surfaceSunken,
               borderRadius: 999,
-              height: 32,
+              height: 26,
               justifyContent: "center",
-              width: 32,
+              position: "absolute",
+              right: spacing.sm + 2,
+              width: 26,
             }}
           >
-            <X color={colors.inkSoft} size={15} strokeWidth={2.6} />
+            <X color={colors.inkSoft} size={14} strokeWidth={2.6} />
           </AnimatedPressable>
         ) : null}
       </View>

@@ -22,7 +22,8 @@ public record SaveDamageRecordRequest(
         @NotNull(message = "Pick the room") UUID roomId,
         @NotBlank(message = "Pick the item") @Size(max = 80) String itemName,
         String section,
-        @NotNull(message = "Pick the damage level") DamageLevel damageLevel,
+        /** Required while the property grades damage by level, ignored when it does not (2026-11-07). */
+        DamageLevel damageLevel,
         @Min(value = 1, message = "Enter the cost") long costPaise,
         @Size(max = 300) String note,
         @NotEmpty(message = "Add at least one photo of the damage") @Size(max = 3, message = "Add at most 3 photos") List<String> photoUrls,

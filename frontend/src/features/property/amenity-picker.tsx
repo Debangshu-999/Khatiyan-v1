@@ -126,7 +126,7 @@ export function AmenityPicker({
   return (
     <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
       {headingBand ? (
-        <SectionHeading title="Amenities" trailing={<Text style={{ color: colors.danger, fontSize: 18 }}>*</Text>} trailingInline />
+        <SectionHeading title="Amenities" />
       ) : (
         <Text style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 17 }}>Amenities</Text>
       )}

@@ -63,7 +63,7 @@ const ui = {};
 const colors = { surface: "white", surfaceSunken: "grey", border: "border", borderStrong: "strong", primary: "blue", ink: "black", danger: "red", muted: "muted" };
 vm.runInNewContext(compile(`${["WorkspaceViewToggle", "WorkspaceServiceGrid", "ServiceCard"].map(definition).join("\n")}\nexports.Toggle = WorkspaceViewToggle; exports.Grid = WorkspaceServiceGrid; exports.Card = ServiceCard;`), {
   exports: ui, colors, PIN_TILT: {}, spacing: { xxs: 4, xs: 6, sm: 10, md: 14 },
-  useTheme: () => ({ colors, fonts: { display: "Display", sansMedium: "Medium" }, type: {} }), softShadow: () => ({}),
+  useTheme: () => ({ colors, fonts: { display: "Display", sansMedium: "Medium" }, type: {} }), softShadow: () => ({}), cardShadow: () => ({}),
   View: "View", Text: "Text", Image: "Image", AnimatedPressable: "Button", LayoutGrid: "GridIcon", List: "ListIcon", ChevronRight: "Chevron", Pin: "Pin", Menu: "Menu",
   require: (name) => { assert.equal(name, "react/jsx-runtime"); return { jsx, jsxs: jsx }; },
 });

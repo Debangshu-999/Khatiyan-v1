@@ -34,6 +34,11 @@ public class MoveInChecklistItem {
     @Column(name = "custom", nullable = false)
     private boolean custom;
 
+    /** Working, Damaged or Broken (2026-11-07). Null on items recorded before it existed. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "item_condition", length = 10)
+    private ItemCondition itemCondition;
+
     @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
     @Column(name = "section", nullable = false, length = 10)
     private MoveInSection section = MoveInSection.ROOM;
@@ -49,21 +54,30 @@ public class MoveInChecklistItem {
 
     public MoveInChecklistItem(String name, DamageLevel damageLevel, String note, boolean custom,
             java.util.List<String> photoUrls, MoveInSection section) {
+        this(name, damageLevel, null, note, custom, photoUrls, section);
+    }
+
+    public MoveInChecklistItem(String name, DamageLevel damageLevel, ItemCondition condition, String note, boolean custom,
+            java.util.List<String> photoUrls, MoveInSection section) {
         if (photoUrls == null || photoUrls.isEmpty()) {
             throw new com.khatiyan.c_shared.exception.ValidationException("Add at least one photo of " + name);
         }
         if (photoUrls.size() > 3) {
             throw new com.khatiyan.c_shared.exception.ValidationException("Add at most 3 photos of " + name);
         }
-        // Any damage is described (user, 2026-10-29): the note is required above NA.
-        if (damageLevel != DamageLevel.NA && (note == null || note.isBlank())) {
-            throw new com.khatiyan.c_shared.exception.ValidationException("Describe the damage to " + name);
-        }
+        // No note is asked for (user, 2026-11-07): the move-in checklist no longer records
+        // damage, it carries each item's level from the room as it stands.
         this.name = name;
-        this.damageLevel = damageLevel;
+        this.damageLevel = damageLevel == null ? DamageLevel.NA : damageLevel;
+        this.itemCondition = condition;
         this.note = note;
         this.custom = custom;
         this.photoUrls = new java.util.ArrayList<>(photoUrls);
         this.section = section == null ? MoveInSection.ROOM : section;
+    }
+
+    /** The condition, or for an item recorded before conditions, what its level reads as. */
+    public ItemCondition condition() {
+        return itemCondition != null ? itemCondition : ItemCondition.fromLevel(damageLevel);
     }
 }

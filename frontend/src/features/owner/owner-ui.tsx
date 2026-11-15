@@ -356,7 +356,7 @@ export function FormInput({
   icon?: ComponentType<LucideProps>;
   /** Optional visual overrides for this field only; other inputs keep their defaults. */
   inputStyle?: TextStyle;
-  keyboardType?: "decimal-pad" | "number-pad" | "phone-pad";
+  keyboardType?: "decimal-pad" | "email-address" | "number-pad" | "phone-pad";
   label: string;
   /** Beside the label, e.g. a "Verified" pill on a locked field. */
   labelAccessory?: ReactNode;
@@ -575,6 +575,7 @@ export function ChoiceButton({ active, label, onPress, soft = false, square }: {
  * a specific mechanism, such as a pending clock or Service balance wallet.
  */
 export function NoticeBar({
+  action,
   icon: NoticeIcon,
   message,
   messageStyle,
@@ -582,6 +583,8 @@ export function NoticeBar({
   title,
   tone = "success",
 }: {
+  /** A button under the message, inside the bar (2026-11-11: Serve full notice). */
+  action?: ReactNode;
   /** A context-specific mark, such as a clock for a pending state. */
   icon?: LucideIcon;
   /** Text, or text with a nested pressable link. */
@@ -642,6 +645,7 @@ export function NoticeBar({
         <Text selectable={selectable} style={[type.caption, { color: colors.muted, fontSize: 12.5, lineHeight: 18 }, messageStyle]}>
           {message}
         </Text>
+        {action ? <View style={{ flexDirection: "row", paddingTop: spacing.sm }}>{action}</View> : null}
       </View>
     </View>
   );
@@ -658,9 +662,12 @@ export function ConfirmDialog({
   message,
   onCancel,
   onConfirm,
+  overlayColor,
   title,
 }: {
   animatedTransition?: boolean;
+  /** A darker dim for one dialog, where it asked for one (Log out, user, 2026-11-09). */
+  overlayColor?: string;
   /**
    * Renders a single dismiss button instead of Cancel + Confirm.
    *
@@ -709,7 +716,7 @@ export function ConfirmDialog({
   return (
     <Modal animationType={animatedTransition ? "none" : "fade"} onShow={open} navigationBarTranslucent onRequestClose={() => finish(onCancel)} statusBarTranslucent transparent visible>
       <CenterDialogContext.Provider value>
-      <Animated.View style={{ alignItems: "center", backgroundColor: colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
+      <Animated.View style={{ alignItems: "center", backgroundColor: overlayColor ?? colors.overlay, flex: 1, justifyContent: "center", padding: spacing.lg }}>
         <Animated.View
           style={{
             opacity: transition,
@@ -724,7 +731,7 @@ export function ConfirmDialog({
             width: "100%",
           }}
         >
-          <ModalTitle style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
+          <ModalTitle fullWidth style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 21, }}>
             {title}
           </ModalTitle>
           <Text style={[type.modalDescription, { color: colors.muted }]}>

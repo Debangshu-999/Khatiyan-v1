@@ -533,8 +533,12 @@ public class MealAttendanceService {
     /** Writes whoever is missing from the meal's roster, with a pass each. */
     private void ensureRoster(UUID propertyId, LocalDate date, MealType meal) {
         Set<UUID> served = servedProfiles(propertyId, date, meal);
+        // Away on a declared stay out: not expected, no pass (user, 2026-11-08).
+        // Back early and the return changed, the next ask writes them in.
+        Set<UUID> away = tenancyModule.awayTenancyIds(propertyId, date, meal);
         List<FoodSubscription> plans = subscriptionRepository.findCovering(propertyId, date).stream()
                 .filter(plan -> served.contains(plan.profileOn(date)))
+                .filter(plan -> !away.contains(plan.getTenancyId()))
                 .toList();
         for (int attempt = 0; attempt < ROSTER_TRIES; attempt++) {
             List<Row> existing = store.findForMeal(propertyId, date, meal);

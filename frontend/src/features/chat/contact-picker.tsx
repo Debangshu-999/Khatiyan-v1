@@ -40,7 +40,8 @@ export function ContactPicker({
   onPick,
   propertyId,
   roles,
-  title = "New chat",
+  // No title over the list (user, 2026-11-14), as on the property sheet.
+  title = "",
 }: {
   onClose: () => void;
   onPick: (contact: ChatContact) => void;
@@ -98,13 +99,13 @@ export function ContactPicker({
               key={contact.userId}
               onPress={() => onPick(contact)}
               style={{
+                // No box and no lines, the face further left (user, 2026-11-14).
                 alignItems: "center",
-                borderColor: colors.border,
                 borderRadius: 12,
-                borderWidth: 1,
                 flexDirection: "row",
                 gap: spacing.sm,
-                paddingHorizontal: spacing.sm,
+                paddingLeft: spacing.xs,
+                paddingRight: spacing.sm,
                 paddingVertical: spacing.sm,
               }}
             >

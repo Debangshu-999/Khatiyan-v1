@@ -44,7 +44,8 @@ public class DamageRecordNotificationEventListener {
             switch (event.kind()) {
                 case CREATED -> {
                     title = "Damage recorded";
-                    body = event.itemName() + " in your room was recorded at " + event.damageLevel() + ". "
+                    body = event.itemName() + " in your room was recorded"
+                            + (event.damageLevel() == null ? " as damaged. " : " at " + event.damageLevel() + ". ")
                             + amount + " of it is on you.";
                     subtype = NotificationSubtype.DAMAGE_RECORDED;
                 }

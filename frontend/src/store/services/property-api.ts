@@ -389,6 +389,8 @@ export type PropertyExitPolicy = {
    * on it, so a record someone else changed since is refused, not overwritten.
    */
   version: number;
+  /** Whether damage is graded by level here (user, 2026-11-07). Off: no level, a manual amount. */
+  damageLevelsEnabled: boolean;
 };
 
 export type DeductionCategory = "DAMAGE" | "UNPAID_DUES" | "CLEANING" | "UTILITIES";
@@ -400,6 +402,8 @@ export type UpdateExitPoliciesPayload = {
   permittedDeductions: DeductionCategory[];
   /** What D1, D2 and D3 mean. Omitted keeps the current wording. */
   damageLevels?: { d1: string; d2: string; d3: string };
+  /** Grade damage by level. Omitted keeps the current setting (2026-11-07). */
+  damageLevelsEnabled?: boolean;
 };
 
 

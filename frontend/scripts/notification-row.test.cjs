@@ -8,9 +8,9 @@ const row = fs.readFileSync(path.join(__dirname, "..", "src/features/notificatio
 
 test("the card uses the card radius and lifts off the page", () => {
   assert.match(row, /borderRadius: radii\.card,/);
-  assert.match(row, /softShadow\(colors\.shadow, 4, 12\)/);
+  assert.match(row, /cardShadow\(colors\.shadow\)/);
   // A tab's own shadow is one a phone does not draw.
-  assert.match(row, /import \{ softShadow \} from "@\/theme\/shadows"/);
+  assert.match(row, /import \{[^}]*cardShadow[^}]*\} from "@\/theme\/shadows"/);
   assert.doesNotMatch(row, /useSoftShadow\(\)/);
 });
 
@@ -46,10 +46,21 @@ test("the filter row stops short of the screen edge and still lines up with the 
   assert.match(filters, /marginHorizontal: -ROW_BLEED/);
 });
 
-test("filter bubbles are pale blue with a blue border, no icons, counts in an inner bubble", () => {
+test("filter bubbles are pale blue, blue-bordered only when chosen, no icons, counts in an inner bubble", () => {
   const filters = fs.readFileSync(path.join(__dirname, "..", "src/features/notifications/alert-filters.tsx"), "utf8");
   assert.match(filters, /backgroundColor: active \? colors\.primary : colors\.primarySoft/);
-  assert.match(filters, /borderColor: colors\.primary/);
+  assert.match(filters, /borderColor: active \? colors\.primary : "transparent"/);
   assert.doesNotMatch(filters, /lucide-react-native|ALERT_ICONS/);
-  assert.match(filters, /backgroundColor: colors\.surface,\s+borderRadius: 999,\s+height: 20/);
+  assert.match(filters, /backgroundColor: colors\.surface,\s+borderRadius: 6,\s+height: 20/);
+});
+
+// The rest of the food notices (P1.5.h, 2026-11-08).
+test("the new food notices show their meal, dish, plan or new times", () => {
+  for (const subtype of ["FOOD_DISH_UNAVAILABLE", "FOOD_DISH_AVAILABLE", "FOOD_MENU_CHANGED", "FOOD_MEAL_TIMINGS_CHANGED"]) {
+    assert.match(row, new RegExp(`case "${subtype}":`), subtype);
+  }
+  assert.match(row, /add\(details, "Dish", data\.itemName\)/);
+  assert.match(row, /add\(details, "Plan", data\.profileName\)/);
+  // New times read in the order of the day, not the label map's.
+  assert.match(row, /for \(const meal of MEAL_ORDER\) \{\s+const \[start, end\] = \(data\[`time_\$\{meal\}`\] \?\? ""\)\.split\("-"\)/);
 });

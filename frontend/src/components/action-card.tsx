@@ -3,7 +3,7 @@ import { Text, View } from "react-native";
 import { ArrowUpRight, type LucideProps } from "lucide-react-native";
 
 import { AnimatedPressable } from "@/components/animated-pressable";
-import { useSoftShadow } from "@/theme/shadows";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -108,7 +108,7 @@ export function ActionCard({ badge, borderRadius, description, flush, icon: Icon
           borderRadius: borderRadius ?? 20,
           borderWidth: flush ? 0 : 1,
           padding: spacing.lg,
-          ...(raised ? softShadow(colors.shadow, 4, 12) : null),
+          ...(raised ? cardShadow(colors.shadow) : null),
           ...(Icon ? { alignItems: "flex-start", flexDirection: "row" as const, gap: spacing.md } : { gap: spacing.sm }),
         }}
       >

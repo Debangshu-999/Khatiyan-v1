@@ -83,4 +83,13 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
           AND r.active = true
     """)
     Optional<Long> findLowestActiveRoomRentPaise(@Param("propertyId") UUID propertyId);
+
+    /** Each property's lowest active rent, as [propertyId, rent], for many properties in one read. */
+    @Query("""
+        SELECT r.propertyId, MIN(r.baseRentPaise) FROM Room r
+        WHERE r.propertyId IN :propertyIds
+          AND r.active = true
+        GROUP BY r.propertyId
+    """)
+    List<Object[]> findLowestActiveRoomRentsPaise(@Param("propertyIds") Collection<UUID> propertyIds);
 }

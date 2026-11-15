@@ -5,7 +5,8 @@ import type { ModalTitleProps } from "./modal-title";
 import { modalTitleFontSize } from "./modal-title-size";
 
 /** React Native Web ignores adjustsFontSizeToFit, so measure the loaded face. */
-export function ModalTitle({ style, minimumFontScale = 0.65, ...props }: ModalTitleProps) {
+export function ModalTitle({ style, fullWidth = false, minimumFontScale = 0.65, personName: _personName, ...props }: ModalTitleProps) {
+  const span = fullWidth ? "100%" : "80%";
   const ref = useRef<Text>(null);
   const baseSize = StyleSheet.flatten(style)?.fontSize ?? 22;
   const [fontSize, setFontSize] = useState(baseSize);
@@ -47,6 +48,6 @@ export function ModalTitle({ style, minimumFontScale = 0.65, ...props }: ModalTi
     {...props}
     ref={ref}
     numberOfLines={1}
-    style={[style, { flexShrink: 1, fontSize, maxWidth: "80%", minWidth: 0, width: "80%" }]}
+    style={[style, { flexShrink: 1, fontSize, maxWidth: span, minWidth: 0, width: span }]}
   />;
 }

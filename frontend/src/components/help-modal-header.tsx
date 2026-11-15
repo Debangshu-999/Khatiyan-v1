@@ -5,31 +5,41 @@ import { AnimatedPressable } from "@/components/animated-pressable";
 import { softShadow } from "@/theme/shadows";
 import { useTheme } from "@/theme/use-theme";
 
-export function HelpModalHeader({ title = "How it works" }: { title?: string }) {
+export function HelpModalHeader({ keepTitle = false, title = "How it works" }: { keepTitle?: boolean; title?: string }) {
   const { colors, fonts } = useTheme();
-  const heading = /^how\b.*\bworks?$/i.test(title.trim()) ? title : "How it works";
+  // A sheet explaining one thing keeps its own name, as Damage levels does (user, 2026-11-07).
+  const heading = keepTitle || /^how\b.*\bworks?$/i.test(title.trim()) ? title : "How it works";
   return <View style={{ alignItems: "center", gap: 12, paddingBottom: 4 }}>
     <Image source={require("../../assets/images/workspace/how-it-works-lightbulb.png")} style={{ width: 64, height: 80 }} resizeMode="contain" accessible={false} />
     <ModalTitle accessibilityRole="header" style={{ color: colors.ink, fontFamily: fonts.display, fontSize: 22, textAlign: "center" }}>{heading}</ModalTitle>
   </View>;
 }
 
+/** The dark disc the × sits on above every bottom-up sheet. */
+export const SHEET_CLOSE_SIZE = 46;
+/** The gap between the × and the sheet's top edge. */
+export const SHEET_CLOSE_GAP = 14;
+
 /**
- * The × on a bottom-up How it works: above the sheet, in a raised white circle (user,
- * 2026-10-31). A centred How it works keeps its × in the corner, and other bottom
- * sheets have none.
+ * The × above every bottom-up sheet (user, 2026-11-07): a dark disc with a white cross,
+ * centred, floating on the dim just over the sheet's top edge, as food apps draw it.
+ * A centred modal keeps its × in the corner.
  */
-export function HowItWorksClose({ onClose }: { onClose: () => void }) {
-  const { colors } = useTheme();
+export function SheetCloseButton({ accessibilityLabel = "Close", onClose }: { accessibilityLabel?: string; onClose: () => void }) {
   return <AnimatedPressable
-    accessibilityLabel="Close explanation"
+    accessibilityLabel={accessibilityLabel}
     accessibilityRole="button"
     hitSlop={8}
     onPress={onClose}
-    style={{ alignItems: "center", alignSelf: "center", backgroundColor: colors.surface, borderRadius: 999, height: 36, justifyContent: "center", marginBottom: 16, width: 36, ...softShadow(colors.shadow, 2, 8) }}
+    style={{ alignItems: "center", alignSelf: "center", backgroundColor: "rgba(28, 28, 28, 0.88)", borderRadius: 999, height: SHEET_CLOSE_SIZE, justifyContent: "center", marginBottom: SHEET_CLOSE_GAP, width: SHEET_CLOSE_SIZE }}
   >
-    <X color={colors.ink} size={20} strokeWidth={2.75} />
+    <X color="#FFFFFF" size={22} strokeWidth={3} />
   </AnimatedPressable>;
+}
+
+/** The same × on a How it works sheet. */
+export function HowItWorksClose({ onClose }: { onClose: () => void }) {
+  return <SheetCloseButton accessibilityLabel="Close explanation" onClose={onClose} />;
 }
 
 /**

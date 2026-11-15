@@ -139,18 +139,16 @@ class ExistingTenantOnboardingIntegrationTest {
     }
 
     @Test
-    void theChecklistBecomesTheRoomConditionAndWhatIsWorseIsRecorded() {
+    void theChecklistLeavesTheRoomConditionAndOpensNoDamageRecords() {
         // The room's cupboard was D1 when the last tenant left.
         propertyModule.raiseCondition(room, owner, "Cupboard", "ROOM",
                 com.khatiyan.d_modules.property.model.DamageLevel.D1, List.of("https://res.cloudinary.com/x/old.jpg"));
         var checklist = new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput(List.of(
-                // No worse than it was: nothing recorded.
                 new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput.ItemInput(
-                        "cupboard", com.khatiyan.d_modules.property.model.DamageLevel.D1, "Door scratched", false,
+                        "cupboard", null, com.khatiyan.d_modules.tenancy.model.ItemCondition.DAMAGED, "Door scratched", false,
                         List.of("https://res.cloudinary.com/x/old.jpg"), null),
-                // Worse than the room knew: a record with nobody responsible.
                 new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput.ItemInput(
-                        "Geyser", com.khatiyan.d_modules.property.model.DamageLevel.D2, "Knob missing", false,
+                        "Geyser", null, com.khatiyan.d_modules.tenancy.model.ItemCondition.BROKEN, "Knob missing", false,
                         List.of("https://res.cloudinary.com/x/geyser.jpg"),
                         com.khatiyan.d_modules.tenancy.model.MoveInSection.BATHROOM)),
                 1);
@@ -159,12 +157,13 @@ class ExistingTenantOnboardingIntegrationTest {
                 request(AgreementKind.PAPER, today.minusMonths(5), today.plusDays(3), photo(), null), checklist),
                 "10.0.0.7", UUID.randomUUID());
 
+        // Each move-in records its own conditions (user, 2026-11-07): the room's levels are
+        // untouched and nothing is opened as a damage.
         assertThat(propertyModule.roomConditions(room))
-                .extracting(c -> c.itemName() + ":" + c.section() + ":" + c.level())
-                .containsExactlyInAnyOrder("cupboard:ROOM:D1", "Geyser:BATHROOM:D2");
+                .extracting(c -> c.itemName() + ":" + c.level())
+                .containsExactly("Cupboard:D1");
         assertThat(jdbc.queryForList(
-                "SELECT item_name || ':' || responsibility || ':' || source || ':' || cost_paise FROM billing.damage_records WHERE property_id = ?",
-                String.class, property)).containsExactly("Geyser:NONE:MOVE_IN:0");
+                "SELECT item_name FROM billing.damage_records WHERE property_id = ?", String.class, property)).isEmpty();
     }
 
     @Test
@@ -221,11 +220,11 @@ class ExistingTenantOnboardingIntegrationTest {
         var checklist = new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput(
                 List.of(
                         new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput.ItemInput(
-                                "Mattress", com.khatiyan.d_modules.property.model.DamageLevel.NA, null, false,
+                                "Mattress", null, com.khatiyan.d_modules.tenancy.model.ItemCondition.WORKING, null, false,
                                 List.of("https://res.cloudinary.com/x/mattress.jpg"),
                                 com.khatiyan.d_modules.tenancy.model.MoveInSection.ROOM),
                         new com.khatiyan.d_modules.tenancy.api.dto.MoveInChecklistInput.ItemInput(
-                                "Study lamp", com.khatiyan.d_modules.property.model.DamageLevel.D1, " Scratched base ", true,
+                                "Study lamp", com.khatiyan.d_modules.property.model.DamageLevel.D1, null, " Scratched base ", true,
                                 List.of("https://res.cloudinary.com/x/lamp-1.jpg", "https://res.cloudinary.com/x/lamp-2.jpg"),
                                 null)),
                 2);
@@ -244,8 +243,8 @@ class ExistingTenantOnboardingIntegrationTest {
                 .containsExactly("Keys returned", "Wardrobe emptied");
 
         var asOwner = moveInChecklists.get(owner, stay);
-        assertThat(asOwner.items()).extracting(item -> item.name() + ":" + item.damageLevel() + ":" + item.note())
-                .containsExactly("Mattress:NA:null", "Study lamp:D1:Scratched base");
+        assertThat(asOwner.items()).extracting(item -> item.name() + ":" + item.condition() + ":" + item.note())
+                .containsExactly("Mattress:WORKING:null", "Study lamp:DAMAGED:Scratched base");
         assertThat(asOwner.items().get(1).custom()).isTrue();
         // A section that is not sent is Room.
         assertThat(asOwner.items().get(1).section()).isEqualTo(com.khatiyan.d_modules.tenancy.model.MoveInSection.ROOM);
@@ -276,10 +275,10 @@ class ExistingTenantOnboardingIntegrationTest {
                 List.of(new com.khatiyan.d_modules.tenancy.model.MoveInChecklistItem(
                         "Mattress", com.khatiyan.d_modules.property.model.DamageLevel.D2, "Torn corner", false,
                         List.of("https://res.cloudinary.com/x/mattress.jpg"))), 1);
-        // Damage above NA needs its note.
-        assertThatThrownBy(() -> new com.khatiyan.d_modules.tenancy.model.MoveInChecklistItem(
-                "Kettle", com.khatiyan.d_modules.property.model.DamageLevel.D1, " ", false, List.of("k.jpg")))
-                .isInstanceOf(ValidationException.class).hasMessageContaining("Describe the damage to Kettle");
+        // No note is asked for (user, 2026-11-07): the checklist carries the room's level, it records no damage.
+        assertThat(new com.khatiyan.d_modules.tenancy.model.MoveInChecklistItem(
+                "Kettle", com.khatiyan.d_modules.property.model.DamageLevel.D1, " ", false, List.of("k.jpg")).getName())
+                .isEqualTo("Kettle");
         assertThat(checklist.acceptedByDefault(at.plusSeconds(47 * 3600))).isFalse();
         assertThat(checklist.acceptedByDefault(at.plusSeconds(49 * 3600))).isTrue();
         assertThatThrownBy(() -> checklist.respond(true, null, at.plusSeconds(49 * 3600)))

@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import { EmptyLeads } from "@/components/empty-art";
 import { ActivityIndicator, Text, View } from "react-native";
-import { ChevronRight, Hourglass, ListFilter } from "lucide-react-native";
+import { ChevronRight, Hourglass } from "lucide-react-native";
 
 import { LoadFailed } from "@/components/load-failed";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { EmptyState } from "@/components/empty-state";
+import { HighlightPanel, highlightPalette } from "@/components/highlight-card";
 import { ListEnd } from "@/components/list-end";
 import { ScreenHeader } from "@/components/screen-header";
 import { ScreenScrollView } from "@/components/screen-scroll-view";
-import { SearchField } from "@/components/search-field";
+import { SearchField, SearchFilterButton } from "@/components/search-field";
 import { SectionHeading } from "@/components/section-heading";
 import { SkeletonList } from "@/components/skeletons/primitives";
 import { useDebouncedValue } from "@/features/discovery/use-debounced-value";
@@ -74,12 +76,12 @@ export default function OwnerLeadsScreen() {
     {property ? <LeadsWorkspace key={property.id} propertyId={property.id} loadMoreRef={loadMore} />
       : scope.loading ? <SkeletonList rows={3} body={2} action />
       : scope.error ? <LoadFailed error={scope.error} onReload={scope.retry} />
-      : <EmptyState artworkNode={<PropertyLeadsIcon size={64} />} title="Select an active property" description="Choose the property on Home, then open Property Leads." />}
+      : <EmptyState artworkNode={<EmptyLeads size={120} />} title="Select an active property" description="Choose the property on Home, then open Property Leads." />}
   </ScreenScrollView>;
 }
 
 function LeadsWorkspace({ propertyId, loadMoreRef }: { propertyId: string; loadMoreRef: LoadMore }) {
-  const { colors } = useTheme();
+  const { colors, fonts } = useTheme();
   const router = useGuardedRouter();
   const [tab, setTab] = useState<LeadKind>("EARLY_LEAD");
   const [filters, setFilters] = useState<LeadFilters>(NO_LEAD_FILTERS);
@@ -133,20 +135,29 @@ function LeadsWorkspace({ propertyId, loadMoreRef }: { propertyId: string; loadM
   return <View style={{ gap: spacing.md }}>
     {cold > 0 && !filters.goingCold ? <ColdBanner count={cold} onPress={() => { setFilters((current) => ({ ...current, goingCold: true })); setPage(0); }} /> : null}
 
-    <SectionHeading title="Pipeline" />
-    <PipelineTabs active={filtered ? null : tab} counts={counts.currentData} onChange={chooseTab} />
+    <HighlightPanel variant="leads">
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={{ color: highlightPalette.leads.ink, fontFamily: fonts.display, fontSize: 20 }}>Pipeline</Text>
+          <Text style={{ color: highlightPalette.leads.muted, fontFamily: fonts.sansMedium, fontSize: 12 }}>From first interest to move-in</Text>
+        </View>
+        <PropertyLeadsIcon size={38} />
+      </View>
+      <PipelineTabs active={filtered ? null : tab} counts={counts.currentData} onChange={chooseTab} />
+    </HighlightPanel>
 
     <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
       <View style={{ flex: 1 }}>
         <SearchField autoCapitalize="none" placeholder="Search name or reference" value={searchDraft} onChangeText={(value) => { setSearchDraft(value); setPage(0); }} />
       </View>
-      <FilterButton count={activeFilterCount(filters)} onPress={() => setFiltering(true)} />
+      {/* The app's round filter button by a search bar (user, 2026-11-15), not a square box. */}
+      <SearchFilterButton accessibilityLabel="Filter" active={activeFilterCount(filters) > 0} count={activeFilterCount(filters)} onPress={() => setFiltering(true)} />
     </View>
 
     {!data && !list.isError ? <SkeletonList rows={3} body={2} action /> : null}
     {list.isError && !data ? <LoadFailed error={list.error} onReload={() => void list.refetch()} /> : null}
     {data && data.totalElements === 0 ? <EmptyState
-      artworkNode={<PropertyLeadsIcon size={64} />}
+      artworkNode={<EmptyLeads size={120} />}
       title={narrowed ? "No matching leads" : EMPTY_TITLE[tab]}
       description={narrowed ? "Try another search or filter." : EMPTY_DESCRIPTION[tab]}
     /> : null}
@@ -220,7 +231,9 @@ function ColdBanner({ count, onPress }: { count: number; onPress: () => void }) 
  */
 function PipelineTabs({ active, counts, onChange }: { active: LeadKind | null; counts: LeadCounts | undefined; onChange: (kind: LeadKind) => void }) {
   const { colors, fonts } = useTheme();
-  return <View style={{ borderColor: colors.border, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flexDirection: "row", overflow: "hidden" }}>
+  // White with a firm edge, so the row stands off the card's own tint (user, 2026-11-15): the light
+  // border on a see-through row blended into the background.
+  return <View style={{ backgroundColor: colors.surface, borderColor: colors.borderStrong, borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, flexDirection: "row", overflow: "hidden" }}>
     {PIPELINE_TABS.map((option, index) => {
       const on = option.kind === active;
       const count = countOf(counts, option.kind);
@@ -229,24 +242,13 @@ function PipelineTabs({ active, counts, onChange }: { active: LeadKind | null; c
         accessibilityRole="tab"
         accessibilityState={{ selected: on }}
         onPress={() => onChange(option.kind)}
-        style={{ alignItems: "center", backgroundColor: on ? colors.primarySoft : "transparent", borderLeftColor: colors.border, borderLeftWidth: index === 0 || on ? 0 : 1, flex: 1, gap: 2, paddingVertical: spacing.sm }}
+        style={{ alignItems: "center", backgroundColor: on ? colors.primary : "transparent", borderLeftColor: colors.border, borderLeftWidth: index === 0 || on ? 0 : 1, flex: 1, gap: 2, paddingVertical: spacing.sm }}
       >
-        <FitText numberOfLines={1} style={{ color: on ? colors.primaryDeep : colors.muted, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>{option.label}</FitText>
-        <Text style={{ color: on ? colors.primaryDeep : colors.ink, fontFamily: fonts.sansBold, fontSize: 17 }}>{count ?? "–"}</Text>
+        {/* Solid blue when chosen: the pale tint was barely visible on the card's own (user, 2026-11-07). */}
+        <FitText numberOfLines={1} style={{ color: on ? colors.onPrimary : colors.muted, fontFamily: fonts.sansSemiBold, fontSize: 13 }}>{option.label}</FitText>
+        <Text style={{ color: on ? colors.onPrimary : colors.ink, fontFamily: fonts.sansBold, fontSize: 17 }}>{count ?? "–"}</Text>
       </AnimatedPressable>;
     })}
   </View>;
 }
 
-/** The filter, with how many are ticked on it. */
-function FilterButton({ count, onPress }: { count: number; onPress: () => void }) {
-  const { colors, fonts } = useTheme();
-  return <AnimatedPressable accessibilityLabel={count ? `Filter, ${count} on` : "Filter"} accessibilityRole="button" onPress={onPress}>
-    <View style={{ alignItems: "center", borderColor: count ? colors.primary : colors.borderStrong, borderCurve: "continuous", borderRadius: radii.md, borderWidth: 1, height: 48, justifyContent: "center", width: 48 }}>
-      <ListFilter color={count ? colors.primary : colors.ink} size={20} strokeWidth={2} />
-      {count ? <View style={{ alignItems: "center", backgroundColor: colors.primary, borderRadius: 999, height: 18, justifyContent: "center", minWidth: 18, paddingHorizontal: 4, position: "absolute", right: -6, top: -6 }}>
-        <Text style={{ color: colors.onPrimary, fontFamily: fonts.sansBold, fontSize: 11 }}>{count}</Text>
-      </View> : null}
-    </View>
-  </AnimatedPressable>;
-}

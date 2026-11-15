@@ -22,9 +22,12 @@ import { useTheme } from "@/theme/use-theme";
  * shouted over the address it belongs to.
  */
 export function DirectionsButton({
+  borderColor,
   parts,
   url,
 }: {
+  /** An edge round the button (2026-11-11: purple on the Tenancy tab's property card). */
+  borderColor?: string;
   /**
    * The destination address, street to pincode. Blanks are dropped, so a caller
    * can pass whatever its own data happens to hold.
@@ -67,7 +70,9 @@ export function DirectionsButton({
       style={{
         alignItems: "center",
         backgroundColor: colors.primarySoft,
+        borderColor,
         borderRadius: 18,
+        borderWidth: borderColor ? 1.5 : 0,
         height: 36,
         justifyContent: "center",
         width: 36,

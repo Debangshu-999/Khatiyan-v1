@@ -217,29 +217,26 @@ test("the property page books a visit or a stay straight, with no enquiry, after
   assert.ok(flows.includes('router.push({ pathname: "/booking-request", params: { enquiryId: eligibility.enquiryId } })'));
   const sheet = read("src/features/enquiry/visit-sheet.tsx");
   assert.ok(sheet.includes("await scheduleDirectVisit({ date, propertyId, slotStart }).unwrap();"));
-  // Enquire, Visit and Booking in one glass row (user, 2026-10-17), each with its own picture beside its name.
+  // Next steps (user, 2026-11-14): Enquire, Book a visit and Book a stay as bubbles with vector drawings,
+  // in a section above Property details with two bold orange lines and an orange wash. No footer.
   const actions = read("src/features/discovery/components/profile-actions.tsx");
   assert.ok(actions.includes('label={canEnquire ? "Enquire" : "Enquiry sent"}'));
-  assert.ok(actions.includes('label="Visit"') && actions.includes('label="Booking"'));
-  assert.ok(actions.includes('require("../../../../assets/empty-states/enquiries.png")'));
-  assert.ok(actions.includes('require("../../../../assets/images/workspace/manage_visits.png")'));
-  assert.ok(actions.includes('require("../../../../assets/icons/home-tools/bookings.png")'));
-  // Glass, a rectangle with the picture beside the words, a phone's shadow floating and a border resting.
-  assert.ok(actions.includes("<BlurView") && actions.includes('flexDirection: "row", gap: 6'));
-  assert.ok(actions.includes("borderColor: !floating ? colors.borderStrong"));
-  assert.ok(actions.includes('import { softShadow } from "@/theme/shadows";') && !actions.includes("useSoftShadow()"));
-  // Nothing for who manages the place. Who stays there may enquire, and gets no Visit or Booking.
-  assert.ok(actions.includes("{staysHere ? null : <GlassActionButton artwork={VISIT_ARTWORK}"));
-  assert.ok(actions.includes("{staysHere ? null : <GlassActionButton artwork={BOOKING_ARTWORK}"));
-  // One row in a fixed footer, and the app's tabs are hidden while the profile is open.
+  assert.ok(actions.includes('label="Book a visit"') && actions.includes('label="Book a stay"'));
+  assert.ok(actions.includes("<EnquireArt size={40} />") && actions.includes("<VisitArt size={40} />") && actions.includes("<StayArt size={40} />"));
+  assert.doesNotMatch(actions, /require\(|<BlurView|GlassActionButton/);
+  assert.ok(actions.includes("<LinearGradient") && actions.includes("lines={2}") && actions.includes('title="Next steps"'));
+  // Nothing for who manages the place. Who stays there may enquire, and gets no visit or stay.
+  assert.ok(actions.includes("{staysHere ? null : <StepBubble art={<VisitArt"));
+  assert.ok(actions.includes("{staysHere ? null : <StepBubble art={<StayArt"));
   const layer = read("src/features/discovery/components/property-profile-layer.tsx");
-  assert.ok(layer.includes("{actions.row(false)}") && layer.includes("{actions.sheets}"));
-  // Blurred like the tabs, and back and the property's buttons stay in a white card.
-  assert.ok(layer.includes("<BlurTargetView ref={pageForGlass}") && layer.includes("blurTarget={pageForGlass}"));
+  assert.ok(layer.includes("nextSteps={actions.nextSteps()}") && layer.includes("{actions.sheets}"));
+  assert.doesNotMatch(layer, /BlurView|pinnedFooterEdge|footerHeight/);
+  const profileFile = read("src/features/discovery/components/property-profile.tsx");
+  assert.ok(profileFile.indexOf("{nextSteps}") < profileFile.indexOf('title="Property details"'));
   assert.ok(layer.includes("<ProfileTopActions property={property} />") && layer.indexOf("Back to the list") < layer.indexOf("<Animated.ScrollView"));
   // The strip appears as the page moves, edge to edge.
   assert.ok(layer.includes('inputRange: [0, 16], outputRange: [0, 1]') && !layer.includes("borderBottomLeftRadius"));
-  assert.ok(layer.includes("paddingBottom: (property && actions.available ? footerHeight : insets.bottom) + spacing.xl"));
+  assert.ok(layer.includes("paddingBottom: insets.bottom + spacing.xl"));
   assert.ok(layer.includes("useHideTabBar(Boolean(propertyId) && focused)"));
   assert.ok(read("app/(tabs)/_layout.tsx").includes("if (hidden) return null;"));
   const profile = read("src/features/discovery/components/property-profile.tsx");

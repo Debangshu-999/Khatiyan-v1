@@ -1,6 +1,5 @@
 import { useState, type ComponentType } from "react";
 import { Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   AlertTriangle,
   Banknote,
@@ -10,7 +9,7 @@ import {
   History,
   Info,
   ReceiptText,
-  WalletCards,
+  RefreshCw,
   XCircle,
   type LucideProps,
 } from "lucide-react-native";
@@ -19,9 +18,12 @@ import { CardNameRow, CardStatus, cardText, smallerCardText } from "@/components
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { PaymentWindowModal } from "@/features/billing/payment-window-modal";
 import { BookingTokenNote } from "@/features/billing/booking-token-note";
-import { billTitle, bookingTokenPaise, type BillingCycle } from "@/store/services/billing-api";
+import { billTitle, bookingTokenPaise, isDamageBill, type BillingCycle } from "@/store/services/billing-api";
+import { BillTotal } from "@/features/owner/bill-views";
 import type { PaymentIntent } from "@/store/services/payment-intent-api";
-import { useSoftShadow } from "@/theme/shadows";
+import { UnpaidBillGlyph } from "@/components/billing-vector-icons";
+import { PaymentClaimsIcon } from "@/components/artwork-icon";
+import { cardShadow, useSoftShadow } from "@/theme/shadows";
 import { radii, spacing } from "@/theme/spacing";
 import { useTheme } from "@/theme/use-theme";
 
@@ -57,164 +59,96 @@ export function TenantBillCard({
   const discount = tenantDiscountBreakdown(cycle);
   const token = bookingTokenPaise(cycle);
   return (
-    <LinearGradient
-      colors={["#F7FAFF", "#EAF3FF"]}
-      end={{ x: 1, y: 1 }}
-      start={{ x: 0, y: 0 }}
+    // The owner's bill card, on the tenant's side (user, 2026-11-11): the
+    // receipt mark with its window ?, the code, what the bill is and the total,
+    // the status and due date at the right, then the kind of bill and the
+    // way to pay, with the rest behind the dots.
+    <View
       style={{
-        borderColor: "#D9E7FB",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
         borderCurve: "continuous",
-        borderRadius: 18,
+        borderRadius: radii.card,
         borderWidth: 1,
-        gap: spacing.sm,
-        overflow: "hidden",
+        gap: spacing.md,
         padding: spacing.md,
-        position: "relative",
-        ...softShadow(colors.shadow, 4, 10, 0.12),
+        ...cardShadow(colors.shadow),
       }}
     >
-      <CardNameRow rowStyle={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.sm }}>
-        <View
-          style={{
-            alignItems: "center",
-            borderCurve: "continuous",
-            borderRadius: 12,
-            height: 42,
-            justifyContent: "center",
-            width: 42,
-          }}
-        >
-          <ReceiptText color={colors.muted} size={29} strokeWidth={1.9} />
+      <View style={{ alignItems: "flex-start", flexDirection: "row", gap: spacing.md }}>
+        <View style={{ alignItems: "center", gap: spacing.xs }}>
+          <View style={{ alignItems: "center", height: 44, justifyContent: "center", width: 40 }}>
+            <ReceiptText color={colors.ink} size={29} strokeWidth={2} />
+          </View>
+          <AnimatedPressable
+            accessibilityLabel={`Payment window for ${cycle.referenceCode}`}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={() => setWindowInfoOpen(true)}
+            style={{ alignItems: "center", height: 24, justifyContent: "center", width: 24 }}
+            tapLockMs={0}
+          >
+            <CircleHelp color={colors.kicker} size={16} strokeWidth={2.4} />
+          </AnimatedPressable>
+          {/* This bill's payment claims, under the ?, as on the owner's card (user, 2026-11-11). */}
+          <AnimatedPressable
+            accessibilityLabel={`Payment claims for ${cycle.referenceCode}`}
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={onViewIntents}
+            style={{ alignItems: "center", height: 24, justifyContent: "center", width: 24 }}
+            tapLockMs={0}
+          >
+            <PaymentClaimsIcon size={18} />
+            {/* A claim still waiting to be resolved, by the tenant or the property (user, 2026-11-11). */}
+            {openAttempt && (openAttempt.status === "CREATED" || openAttempt.status === "TENANT_CONFIRMED") ? (
+              <View
+                pointerEvents="none"
+                style={{ backgroundColor: colors.danger, borderColor: colors.surface, borderRadius: 999, borderWidth: 1.5, height: 9, position: "absolute", right: 0, top: 0, width: 9 }}
+              />
+            ) : null}
+          </AnimatedPressable>
         </View>
 
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <FitText
-            numberOfLines={1}
-            style={{ color: colors.ink, fontFamily: fonts.display, fontSize: cardText(19), lineHeight: 23 }}
-          >
-            {billTitle(cycle)}
-          </FitText>
+        <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
           <FitText numberOfLines={1} style={[smallerCardText(type.eyebrow), { color: colors.kicker }]}>
             {cycle.referenceCode}
           </FitText>
-        </View>
-
-        <CardStatus><TenantBillStatusBadge cycle={cycle} /></CardStatus>
-      </CardNameRow>
-
-      <View
-        style={{
-          alignItems: "stretch",
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderCurve: "continuous",
-          borderRadius: 12,
-          borderWidth: 1,
-          flexDirection: "row",
-          marginTop: -spacing.xs,
-          paddingHorizontal: spacing.sm,
-          paddingTop: spacing.xs,
-          paddingBottom: spacing.sm,
-        }}
-      >
-        <View style={{ flex: 2.2, gap: 4, minWidth: 0 }}>
-          <Text style={[smallerCardText(type.eyebrow), { color: colors.kicker }]}>Total payable</Text>
-          <View style={{ alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs }}>
-            <FitText
-              numberOfLines={1}
-              style={{
-                color: colors.ink,
-                fontFamily: fonts.display,
-                fontSize: cardText(22),
-                letterSpacing: -0.35,
-                lineHeight: 27,
-              }}
-            >
-              {formatTenantMoney(cycle.totalAmountPaise)}
-            </FitText>
-            {discount ? (
-              <>
-                <FitText
-                  numberOfLines={1}
-                  style={{
-                    color: colors.muted,
-                    fontFamily: fonts.sans,
-                    fontSize: cardText(10.5),
-                    textDecorationLine: "line-through",
-                  }}
-                >
-                  {formatTenantMoney(discount.grossPaise)}
-                </FitText>
-                <View
-                  style={{
-                    backgroundColor: colors.jadeSoft,
-                    borderRadius: 999,
-                    paddingHorizontal: 6,
-                    paddingVertical: 2,
-                  }}
-                >
-                  <FitText
-                    numberOfLines={1}
-                    style={{ color: colors.jade, fontFamily: fonts.sansBold, fontSize: cardText(9.5) }}
-                  >
-                    {discount.percent}% OFF
-                  </FitText>
-                </View>
-              </>
-            ) : null}
-          </View>
-          {/* The booking token already paid, taken off the first bill (2026-10-28). */}
-          {token > 0 ? <BookingTokenNote paise={token} /> : null}
-        </View>
-
-        <View
-          style={{
-            alignSelf: "stretch",
-            backgroundColor: colors.border,
-            marginHorizontal: spacing.sm,
-            width: 1,
-          }}
-        />
-
-        <View style={{ flex: 0.95, gap: 5, minWidth: 0 }}>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: 4 }}>
-            <FitText numberOfLines={1} style={[smallerCardText(type.eyebrow), { color: colors.kicker, flexShrink: 1 }]}>
-              Due date
-            </FitText>
-            <AnimatedPressable
-              accessibilityLabel={`Payment window for ${cycle.referenceCode}`}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => setWindowInfoOpen(true)}
-              style={{
-                alignItems: "center",
-                height: 20,
-                justifyContent: "center",
-                width: 20,
-              }}
-              tapLockMs={0}
-            >
-        <CircleHelp color={colors.kicker} size={12} strokeWidth={2.4} />
-            </AnimatedPressable>
-          </View>
-          <View style={{ alignItems: "center", flexDirection: "row", gap: 5 }}>
-            <CalendarDays
-              color={cycle.status === "OVERDUE" ? colors.danger : colors.muted}
-              size={15}
-              strokeWidth={2.2}
-            />
-            <FitText
-              numberOfLines={1}
-              style={{
-                color: cycle.status === "OVERDUE" ? colors.danger : colors.ink,
-                fontFamily: fonts.sansBold,
-                fontSize: cardText(13.5),
-              }}
-            >
-              {formatTenantDate(cycle.rentDueDate)}
-            </FitText>
+          <FitText numberOfLines={2} style={{ color: colors.ink, fontFamily: fonts.display, fontSize: cardText(21), lineHeight: 25 }}>
+            {billTitle(cycle)}
+          </FitText>
+          <View style={{ marginTop: spacing.xs }}>
+            <BillTotal cycle={cycle} size={30} />
           </View>
         </View>
+
+        <View style={{ alignItems: "flex-end", flexShrink: 0, gap: spacing.sm, marginRight: -spacing.xs }}>
+          <View style={{ alignItems: "flex-end", gap: 3 }}>
+            <Text style={[smallerCardText(type.eyebrow), { color: colors.kicker }]}>Due date</Text>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.xs }}>
+              <CalendarDays color={cycle.status === "OVERDUE" ? colors.danger : colors.ink} size={15} strokeWidth={2.2} />
+              <Text style={{ color: cycle.status === "OVERDUE" ? colors.danger : colors.ink, fontFamily: fonts.sansBold, fontSize: cardText(14) }}>
+                {formatTenantDate(cycle.rentDueDate)}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      <View style={{ backgroundColor: colors.border, height: 1 }} />
+      <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.sm }}>
+        {cycle.category === "RENT_CYCLE" ? (
+          <RefreshCw color={colors.primary} size={17} strokeWidth={2.1} />
+        ) : (
+          <ReceiptText color={colors.primary} size={17} strokeWidth={2.1} />
+        )}
+        <FitText numberOfLines={2} style={[smallerCardText(type.body), { color: colors.muted, flex: 1, fontSize: cardText(13), lineHeight: 18 }]}>
+          {cycle.category === "RENT_CYCLE"
+            ? `Rent for ${formatTenantDate(cycle.periodStartDate)} to ${formatTenantDate(cycle.periodEndDate)}`
+            : (cycle.lineItems?.[0]?.label ?? (isDamageBill(cycle) ? "Damage bill" : "One-off bill")).replace(/^Damage DMG-\d{4}-\d+: /, "Damage bill: ")}
+        </FitText>
+        {/* The status at the right, just above the pay button (user, 2026-11-11). */}
+        <TenantBillStatusBadge cycle={cycle} />
       </View>
 
       {cycle.status === "CANCELLED" && cycle.cancellationReason ? (
@@ -230,39 +164,30 @@ export function TenantBillCard({
       ) : null}
 
       {unanswered ? (
-        <Text style={[smallerCardText(type.description), { color: colors.muted }]}>
-          You started a payment for this bill. Tell us how it went before paying again.
-        </Text>
+        // A pale purple box with a purple edge, pointing at the button (user, 2026-11-11).
+        <View style={{ backgroundColor: "#F4F3FF", borderColor: "#9E77ED", borderCurve: "continuous", borderRadius: radii.card, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+          <Text style={[smallerCardText(type.caption), { color: "#53389E", lineHeight: 18 }]}>
+            You started a payment for this bill. Tell us how it went before paying again. Click on <Text style={{ fontWeight: "800" }}>Finish payment</Text>.
+          </Text>
+        </View>
       ) : null}
 
-      <View style={{ gap: spacing.sm }}>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <TenantBillAction
-            icon={ReceiptText}
-            label="View bill"
-            onPress={onViewBill}
-            variant="secondary"
-          />
-          <TenantBillAction
-            disabled={!onPay || cycle.status === "UPCOMING"}
-            icon={payLabel === "Pay now" ? Banknote : undefined}
-            label={payLabel}
-            onPress={() => onPay?.()}
-            variant={paid ? "paid" : "primary"}
-          />
-        </View>
+      {/* Pay and View bill side by side (user, 2026-11-11). */}
+      <View style={{ flexDirection: "row", gap: spacing.sm, height: 48 }}>
         <TenantBillAction
-          icon={History}
-          label="View payment intents"
-          onPress={onViewIntents}
-          variant="secondary"
+          disabled={!onPay || cycle.status === "UPCOMING"}
+          icon={payLabel === "Pay now" ? Banknote : undefined}
+          label={payLabel}
+          onPress={() => onPay?.()}
+          variant={paid ? "paid" : "primary"}
         />
+        <TenantBillAction icon={ReceiptText} label="View bill" onPress={onViewBill} variant="secondary" />
       </View>
 
       {windowInfoOpen ? (
         <PaymentWindowModal cycle={cycle} onClose={() => setWindowInfoOpen(false)} />
       ) : null}
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -340,7 +265,7 @@ function TenantBillStatusBadge({ cycle }: { cycle: BillingCycle }) {
             : {
                 background: colors.primarySoft,
                 color: colors.primaryDeep,
-                icon: cycle.status === "UPCOMING" ? Clock3 : WalletCards,
+                icon: cycle.status === "UPCOMING" ? Clock3 : UnpaidBillGlyph,
               };
   const Icon = display.icon;
 

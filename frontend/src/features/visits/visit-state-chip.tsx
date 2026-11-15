@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
 import { cardText } from "@/components/card-name-row";
+import { GhostPill, useIsSkeleton } from "@/components/skeletons/boundary";
 import { useTheme } from "@/theme/use-theme";
 
 /** Where a visit stands, as the chip beside its name says it. */
@@ -23,6 +24,7 @@ export type VisitStatus = {
  */
 export function VisitStateChip({ icon: Icon, label, pill = false, tone }: VisitStatus & { pill?: boolean }) {
   const { colors, fonts } = useTheme();
+  const ghost = useIsSkeleton();
   const color = {
     amber: colors.warningText,
     blue: colors.primary,
@@ -30,6 +32,9 @@ export function VisitStateChip({ icon: Icon, label, pill = false, tone }: VisitS
     muted: colors.muted,
     red: colors.danger,
   }[tone];
+  // Inside a skeleton it is a grey bar about its own size, never the sample's
+  // "Pending" (user, 2026-11-15): the tenant's and the owner's visit cards alike.
+  if (ghost) return <GhostPill height={pill ? 22 : 16} width={Math.min(120, 30 + label.length * 6)}><View /></GhostPill>;
   return (
     <View
       style={{
